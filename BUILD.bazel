@@ -1,0 +1,90 @@
+# Copyright (C) 2026 Rui-Hasekura <ruihasekura@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_binary")
+
+cc_library(
+    name = "FastSchema",
+    srcs = [
+        "src/parser/error.cc",
+        "src/parser/unpacker.cc",
+        # NBT Sources
+        "src/parser/nbt/parse.cc",
+        "src/parser/nbt/reader.cc",
+        "src/parser/nbt/skip.cc",
+        # Litematic Sources
+        "src/parser/litematic/detail/block_states.cc",
+        "src/parser/litematic/detail/entity.cc",
+        "src/parser/litematic/detail/metadata.cc",
+        "src/parser/litematic/detail/palette.cc",
+        "src/parser/litematic/detail/pending.cc",
+        "src/parser/litematic/detail/region.cc",
+        "src/parser/litematic/detail/root.cc",
+        "src/parser/litematic/detail/simd_block_states.cc",
+        "src/parser/litematic/detail/tile_entity.cc",
+    ],
+    hdrs = [
+        "include/parser/error.h",
+        "include/parser/limits.h",
+        "include/parser/nbt_tree.h",
+        "include/parser/unpacker.h",
+        # NBT Parser Headers
+        "include/parser/nbt/noinit_allocator.h",
+        "include/parser/nbt/noinit_allocator-inl.h",
+        "include/parser/nbt/parse.h",
+        "include/parser/nbt/reader.h",
+        "include/parser/nbt/reader-inl.h",
+        "include/parser/nbt/skip.h",
+        "include/parser/nbt/tag.h",
+        "include/parser/nbt/tag-inl.h",
+        # Litematic Parser Headers
+        "include/parser/litematic/parse.h",
+        "include/parser/litematic/properties.h",
+        "include/parser/litematic/types.h",
+        "include/parser/litematic/detail/block_states.h",
+        "include/parser/litematic/detail/entity.h",
+        "include/parser/litematic/detail/metadata.h",
+        "include/parser/litematic/detail/palette.h",
+        "include/parser/litematic/detail/pending.h",
+        "include/parser/litematic/detail/region.h",
+        "include/parser/litematic/detail/root.h",
+        "include/parser/litematic/detail/tile_entity.h",
+    ],
+    includes = ["include", "src"],
+    copts = select({
+        "@platforms//os:windows": ["/O2", "/Z7", "/W4", "/WX-", "/utf-8"],
+        "//conditions:default": ["-O2", "-g3", "-Wall", "-Wextra", "-Wpedantic"],
+    }),
+    visibility = ["//visibility:public"],
+    deps = [
+        "@highway//:hwy",
+        "@libdeflate//:libdeflate_static",
+        "@tbb//:tbb",
+    ],
+)
+
+cc_binary(
+    name = "test",
+    srcs = ["bench/litematic_parse_with_output.cc"],
+    defines = ["NOMINMAX"],
+    linkopts = select({
+        "@platforms//os:windows": ["ws2_32.lib"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":FastSchema",
+        "@google_benchmark//:benchmark",
+    ],
+)
