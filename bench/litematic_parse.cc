@@ -1,17 +1,5 @@
 // Copyright (C) 2026 Rui-Hasekura <ruihasekura@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
 
 #include <benchmark/benchmark.h>
 
@@ -84,33 +72,39 @@ extern "C" {
 
 [[nodiscard]] bool IsAirVariant(std::string_view name) noexcept {
   return name == "minecraft:air"
-      || name == "minecraft:void_air"
-      || name == "minecraft:cave_air";
+    || name == "minecraft:void_air"
+    || name == "minecraft:cave_air";
 }
 
 // COMMON DECOMPRESSION DATA
 struct TestFile {
-  std::filesystem::path path;
+  std::string filename;
   std::vector<std::byte> bytes;
 };
 
 [[nodiscard]] std::vector<TestFile> LoadTestFiles() {
-  const std::filesystem::path paths[] = {
-    FASTSCHEMA_SAMPLES_DIR "/dync_lock_sbr.litematic" /* <- 
-                   Please replace it with a larger sample.*/
-  };
   std::vector<TestFile> out;
-  for (const auto& p : paths) {
-    if (!std::filesystem::exists(p)) {
-      std::cerr << "  [warn] File not found: " << p << "\n";
-      continue;
+  const std::filesystem::path dir = FASTSCHEMA_SAMPLES_DIR;
+
+  if (!std::filesystem::exists(dir)) {
+    std::cerr << "  [warn] Samples directory not found: " << dir << "\n";
+    return out;
+  }
+
+  for (const auto& entry : std::filesystem::directory_iterator(dir)) {
+    if (!entry.is_regular_file()) continue;
+
+    auto path = entry.path();
+    if (path.extension() == ".litematic") {
+      std::string filename = path.filename().string();
+
+      auto r = fschema::parser::UnpackLitematicFrom(path);
+      if (!r) {
+        std::cerr << "  [warn] Decompress error or invalid litematic: " << filename << "\n";
+        continue;
+      }
+      out.push_back({ filename, std::move(*r) });
     }
-    auto r = fschema::parser::UnpackLitematicFrom(p);
-    if (!r) {
-      std::cerr << "  [warn] Decompress error: " << p << "\n";
-      continue;
-    }
-    out.push_back({ p, std::move(*r) });
   }
   return out;
 }
@@ -124,6 +118,11 @@ void PrintErrorFn(const fp::ParseError& e) {
 
 // E2E Test
 static void BM_ParseLitematic(benchmark::State& st) {
+  if (g_files.empty()) {
+    st.SkipWithError("No test files loaded");
+    return;
+  }
+
   const auto& tf = g_files[st.range(0)];
   const auto bytes_size = tf.bytes.size();
 
@@ -151,11 +150,6 @@ static void BM_ParseLitematic(benchmark::State& st) {
     }
   }
 }
-BENCHMARK(BM_ParseLitematic)
-->Arg(0)
-->Unit(benchmark::kMillisecond)
-->Repetitions(20)
-->DisplayAggregatesOnly(true);
 
 [[nodiscard]] bool ValidateRegion(const fl::Region& r, bool full) {
   bool ok = true;
@@ -196,9 +190,14 @@ int main(int argc, char* argv[]) {
     << hwy::SupportedTargets() << std::dec << "\n";
 
   bool all_ok = true;
+  if (g_files.empty()) {
+    std::cerr << "  [fatal] No valid .litematic test files found.\n";
+    all_ok = false;
+  }
+
   for (size_t fi = 0; fi < g_files.size(); ++fi) {
     const auto& tf = g_files[fi];
-    std::cout << "\n══════ Verify: " << tf.path.filename() << " ════\n";
+    std::cout << "\n══════ Verify: " << tf.filename << " ════\n";
     auto owner = std::make_unique<std::vector<std::byte>>(tf.bytes);
     auto r = fl::ParseLitematic(std::move(owner));
     if (!r) { PrintErrorFn(r.error()); all_ok = false; continue; }
@@ -217,8 +216,16 @@ int main(int argc, char* argv[]) {
   }
   std::cout << "Verify: " << (all_ok ? "PASS" : "FAIL") << "\n\n";
 
-  // ── GBench ──
+  // GBench
   ::benchmark::Initialize(&argc, argv);
+
+  for (size_t i = 0; i < g_files.size(); ++i) {
+    benchmark::RegisterBenchmark(
+      ("LitematicParse/" + g_files[i].filename).c_str(),
+      BM_ParseLitematic
+    )->Arg(i)->Unit(benchmark::kMillisecond)->Repetitions(20)->DisplayAggregatesOnly(true);
+  }
+
   ::benchmark::RunSpecifiedBenchmarks();
   ::benchmark::Shutdown();
   return all_ok ? 0 : 1;

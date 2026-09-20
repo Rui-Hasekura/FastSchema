@@ -42,9 +42,10 @@ namespace fschema::parser::nbt {
     }
 
     NbtCompound compound;
+    compound.children.reserve(8);
     for (;;) {
-      std::string name;
-      auto tag_result = reader.ReadCompoundEntryHeader(name);
+      std::string_view name;
+      auto tag_result = reader.ReadCompoundEntryHeaderView(name);
       if (!tag_result) {
         reader.pop_depth();
         return std::unexpected(tag_result.error());
@@ -60,7 +61,7 @@ namespace fschema::parser::nbt {
       }
 
       compound.children.push_back(NbtTag{
-          *tag_result, std::move(name), std::move(*payload_result)
+          *tag_result, name, std::move(*payload_result)
         });
     }
 
@@ -118,15 +119,15 @@ namespace fschema::parser::nbt {
     case TagType::Double:
       return reader.Read<double>();
     case TagType::ByteArray: {
-      auto len = reader.ReadLength(reader.limits().max_array_elements);
-      if (!len) return std::unexpected(len.error());
-      std::vector<std::int8_t> arr(*len);
-      auto bulk = reader.ReadBulk<std::int8_t>(*len, std::span<std::int8_t>(arr.data(), arr.size()));
-      if (!bulk) return std::unexpected(bulk.error());
-      return arr;
+      auto arr = reader.ReadArraySpan<std::int8_t>(reader.limits().max_array_elements);
+      if (!arr) return std::unexpected(arr.error());
+      return *arr;
     }
-    case TagType::String:
-      return reader.ReadString();
+    case TagType::String: {
+      auto str = reader.ReadStringView();
+      if (!str) return std::unexpected(str.error());
+      return *str;
+    }
     case TagType::List: {
       auto list_result = ParseList(reader);
       if (!list_result) return std::unexpected(list_result.error());
@@ -138,20 +139,26 @@ namespace fschema::parser::nbt {
       return std::make_unique<NbtCompound>(std::move(*comp_result));
     }
     case TagType::IntArray: {
-      auto len = reader.ReadLength(reader.limits().max_array_elements);
-      if (!len) return std::unexpected(len.error());
-      std::vector<std::int32_t> arr(*len);
-      auto bulk = reader.ReadBulk<std::int32_t>(*len, std::span<std::int32_t>(arr.data(), arr.size()));
-      if (!bulk) return std::unexpected(bulk.error());
-      return arr;
+      auto len_res = reader.ReadLength(reader.limits().max_array_elements);
+      if (!len_res) return std::unexpected(len_res.error());
+
+      const std::size_t total = *len_res * sizeof(std::int32_t);
+      auto raw_res = reader.PeekRaw(total);
+      if (!raw_res) return std::unexpected(raw_res.error());
+
+      reader.advance(total);
+      return *raw_res;
     }
     case TagType::LongArray: {
-      auto len = reader.ReadLength(reader.limits().max_array_elements);
-      if (!len) return std::unexpected(len.error());
-      std::vector<std::int64_t> arr(*len);
-      auto bulk = reader.ReadBulk<std::int64_t>(*len, std::span<std::int64_t>(arr.data(), arr.size()));
-      if (!bulk) return std::unexpected(bulk.error());
-      return arr;
+      auto len_res = reader.ReadLength(reader.limits().max_array_elements);
+      if (!len_res) return std::unexpected(len_res.error());
+
+      const std::size_t total = *len_res * sizeof(std::int64_t);
+      auto raw_res = reader.PeekRaw(total);
+      if (!raw_res) return std::unexpected(raw_res.error());
+
+      reader.advance(total);
+      return *raw_res;
     }
     default:
       [[unlikely]] return std::unexpected(reader.Error(ParseError::Code::InvalidTagId));
@@ -167,13 +174,13 @@ namespace fschema::parser::nbt {
     }
 
     auto tag_type = static_cast<TagType>(*tag_raw);
-    auto name = reader.ReadString();
+    auto name = reader.ReadStringView();
     if (!name) return std::unexpected(name.error());
 
     auto payload_result = ParsePayload(reader, tag_type);
     if (!payload_result) return std::unexpected(payload_result.error());
 
-    return NbtTag{ tag_type, std::move(*name), std::move(*payload_result) };
+    return NbtTag{ tag_type, *name, std::move(*payload_result) };
   }
 
 } // namespace fschema::parser::nbt

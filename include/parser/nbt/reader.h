@@ -72,6 +72,15 @@ namespace fschema::parser::nbt {
 
     // String read
     [[nodiscard]] ParseResult<std::string> ReadString();
+    
+    // Zero-copy string read
+    [[nodiscard]] ParseResult<std::string_view> ReadStringView() noexcept;
+
+    // Zero-copy array read (Returns Big-Endian data!)
+    template <typename T>
+      requires std::integral<T>
+    [[nodiscard]] ParseResult<std::span<const T>> ReadArraySpan(
+      std::size_t max_allowed_elements) noexcept;
 
     // Span truncate
     [[nodiscard]] ParseResult<std::span<const std::byte>> PeekRaw(
@@ -80,6 +89,10 @@ namespace fschema::parser::nbt {
     // Compound / List 's entry read
     [[nodiscard]] ParseResult<TagType> ReadCompoundEntryHeader(
       std::string& name_out);
+
+    // Zero-copy entry header read
+    [[nodiscard]] ParseResult<TagType> ReadCompoundEntryHeaderView(
+      std::string_view& name_out) noexcept;
 
     [[nodiscard]] ParseResult<std::pair<TagType, std::size_t>> ReadListHeader();
 

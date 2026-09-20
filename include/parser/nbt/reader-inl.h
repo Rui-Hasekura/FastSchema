@@ -31,6 +31,7 @@
 #include <utility>
 
 #include "parser/error.h"
+#include "parser/nbt/simd_bswap.h"
 
 namespace fschema::parser::nbt {
 
@@ -56,7 +57,6 @@ namespace fschema::parser::nbt {
   }
 
   // Batch scalar read
-  // Read n T values and write to out. out.size() must be >= n.
   template <typename T>
     requires std::integral<T>
   [[nodiscard]] ParseResult<void> ByteReader::ReadBulk(
@@ -66,21 +66,28 @@ namespace fschema::parser::nbt {
     if (remaining() < total) [[unlikely]] {
       return std::unexpected(Error(ParseError::Code::Truncated));
     }
-    if constexpr (kSize == 1) {
-      std::memcpy(output.data(), buffer_.data() + pos_, total);
-    }
-    else {
-      for (std::size_t i = 0; i < count; ++i) {
-        std::array<std::byte, kSize> temp;
-        std::memcpy(temp.data(), buffer_.data() + pos_ + i * kSize, kSize);
-        if constexpr (std::endian::native == std::endian::little) {
-          for (std::size_t j = 0; j < kSize / 2; ++j) {
-            std::swap(temp[j], temp[kSize - 1 - j]);
-          }
+
+    const std::byte* src = buffer_.data() + pos_;
+
+    // Copy + SIMD Bswap
+    if constexpr (std::endian::native == std::endian::little && kSize > 1) {
+      if constexpr (std::is_same_v<T, std::int32_t>) {
+        CopyAndBswap32(src, output.data(), count);
+      }
+      else if constexpr (std::is_same_v<T, std::int64_t>) {
+        CopyAndBswap64(src, output.data(), count);
+      }
+      else {
+        std::memcpy(output.data(), src, total);
+        for (std::size_t i = 0; i < count; ++i) {
+          output[i] = std::byteswap(output[i]);
         }
-        std::memcpy(&output[i], temp.data(), kSize);
       }
     }
+    else {
+      std::memcpy(output.data(), src, total);
+    }
+
     pos_ += total;
     return {};
   }
@@ -92,19 +99,35 @@ namespace fschema::parser::nbt {
     if constexpr (kSize == 1) {
       return static_cast<T>(buffer_[pos_]);
     }
-    else if constexpr (std::endian::native == std::endian::little) {
-      T value = 0;
-      for (std::size_t i = 0; i < kSize; ++i) {
-        value = static_cast<T>(
-          (value << 8) | static_cast<std::make_unsigned_t<T>>(buffer_[pos_ + i]));
-      }
-      return value;
-    }
     else {
       T value;
       std::memcpy(&value, buffer_.data() + pos_, kSize);
-      return value;
+      if constexpr (std::endian::native == std::endian::little) {
+        return std::byteswap(value);
+      }
+      else {
+        return value;
+      }
     }
+  }
+
+  // Zero-copy array read implementation
+  template <typename T>
+    requires std::integral<T>
+  [[nodiscard]] ParseResult<std::span<const T>> ByteReader::ReadArraySpan(
+    std::size_t max_allowed_elements) noexcept {
+    auto len = ReadLength(max_allowed_elements);
+    if (!len) return std::unexpected(len.error());
+
+    constexpr std::size_t kSize = sizeof(T);
+    const std::size_t total = *len * kSize;
+    if (remaining() < total) [[unlikely]] {
+      return std::unexpected(Error(ParseError::Code::Truncated));
+    }
+
+    const auto* ptr = reinterpret_cast<const T*>(buffer_.data() + pos_);
+    pos_ += total;
+    return std::span<const T>(ptr, *len);
   }
 
 } // namespace fschema::parser::nbt

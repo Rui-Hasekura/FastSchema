@@ -20,11 +20,13 @@
 
 #include <cstdint>
 #include <memory>
-#include <string>
+#include <span>
+#include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
 
+#include "parser/nbt/noinit_allocator.h"
 #include "parser/nbt/tag.h"
 
 namespace fschema::parser::nbt {
@@ -32,8 +34,10 @@ namespace fschema::parser::nbt {
   struct NbtCompound;
   struct NbtList;
 
+  template <typename T>
+  using NbtVector = std::vector<T, NoInitAllocator<T>>;
+
   // A variant holding the payload of any possible NBT tag.
-  // We use std::unique_ptr for compound/list to avoid variant's recursive size issues.
   using NbtPayload = std::variant<
     std::monostate, // For End tag
     std::int8_t,    // Byte
@@ -42,17 +46,16 @@ namespace fschema::parser::nbt {
     std::int64_t,   // Long
     float,          // Float
     double,         // Double
-    std::vector<std::int8_t>,  // ByteArray
-    std::string,               // String
-    std::vector<std::int32_t>, // IntArray
-    std::vector<std::int64_t>, // LongArray
+    std::span<const std::int8_t>,  // ByteArray (Zero-copy)
+    std::string_view,              // String (Zero-copy)
+    std::span<const std::byte>,    // Int/LongArray (Zero-copy Big-Endian)
     std::unique_ptr<NbtCompound>, // Compound
     std::unique_ptr<NbtList>      // List
   >;
 
   struct NbtTag {
     TagType type = TagType::End;
-    std::string name;
+    std::string_view name; // Zero-copy
     NbtPayload payload;
   };
 

@@ -4,7 +4,7 @@ It's a super fast Minecraft schema tool library. Why it's so fast:
 
 ### Features
 
-- **Decompression**: Integrated with `libdeflate` to save a few milliseconds of WallTime during `zlib-ng` unpack.
+- **Decompression**: Integrated with `libdeflate` to save a few milliseconds of WallTime during `zlib-ng` decompression.
 
 - **SIMD**: Built on Google Highway primitives with custom SIMD kernels targeting AVX2.
 
@@ -12,25 +12,13 @@ It's a super fast Minecraft schema tool library. Why it's so fast:
 
 - **Toolchain**: C++23 standard (excluding C++20 Modules for build system compatibility).
 
-
-
 But... How fast is it?
-
-
 
 ### Benchmark
 
-```cmake
-# Benchmark Executable
-add_executable(test
-  # Replace the source file below with the one you want to benchmark/test
-  bench/litematic_parse.cc
-)
-```
-
-**Environment:** Benchmark averaged over 20 repetitions (`repeats:20`).
-
 **Input Size:** 279.642 MiB / 260.297M Blocks.
+
+**Environment& Toolchain:** Intel Core i5-12400F(Alder Lake-S, 6C12T), DDR4-3200 8GB×2. Windows 11 24H2, Clang-CL -O2. Bench for parsing(building full NBT tree or extracting Litematic struct) only.
 
 | Metric     | Wall Time  | CPU Time   | Iterations | Throughput      | Input Size  | Total Blocks |
 | ---------- | ---------- | ---------- | ---------- | --------------- | ----------- | ------------ |
@@ -39,13 +27,13 @@ add_executable(test
 | **StdDev** | 3.50 ms    | 5.29 ms    | 20         | 89.386 MiB/s    | 0           | 5.026        |
 | **CV**     | 2.55 %     | 4.14 %     | 20         | 4.08 %          | 0.00 %      | 0.00 %       |
 
-> The coefficient of variation ($CV \le 2.55\%$) demonstrates high stability across runs.
+> *The low coefficient of variation for Wall Time ($CV = 2.55\%$) demonstrates high measurement stability across runs.*
 
 ### How to use
 
 This library is still under development...
 
-But you can use it to parse `.litematic` files now.
+But you can use it to parse `.litematic` and NBT files now.
 
 For example:
 
@@ -54,7 +42,7 @@ For example:
 #include "parser/litematic/parse.h"
 #include "parser/litematic/types.h"
 // ...
-// STEP1: Deconpression
+// STEP1: Decompression
 auto unpacked_bytes = fschema::parser::UnpackLitematicFrom("path/to/file.litematic");
 if (!unpacked_bytes) {
 }
@@ -75,13 +63,9 @@ if (!result) {
 }
 ```
 
-
-
 ### License
 
 Distributed under the **Apache License 2.0**. See `LICENSE` for details.
-
- 
 
 ### Dependencies
 
@@ -90,5 +74,7 @@ Distributed under the **Apache License 2.0**. See `LICENSE` for details.
 - [Google Highway](https://github.com/google/highway)
 
 - [Google Benchmark](https://github.com/google/benchmark)
+
+- [Google Test](https://github.com/google/googletest)
 
 - [Intel oneAPI TBB](https://github.com/oneapi-src/oneTBB)

@@ -93,6 +93,7 @@ add_library(FastSchema STATIC
     src/parser/nbt/parse.cc
     src/parser/nbt/reader.cc
     src/parser/nbt/skip.cc
+    src/parser/nbt/simd_bswap.cc
 
     # Litematic Sources
     src/parser/litematic/detail/block_states.cc
@@ -188,7 +189,7 @@ if(FASTSCHEMA_BUILD_TESTS)
     include(GoogleTest)
 
     add_executable(fastschema_test
-        test/litematic_parse.cc
+        test/nbt_parse.cc
     )
     
     target_compile_definitions(fastschema_test PRIVATE
@@ -226,5 +227,6 @@ if(FASTSCHEMA_BUILD_BENCHMARKS)
             FastSchema
             benchmark
             wsock32
+            TBB::tbb
     )
 endif()

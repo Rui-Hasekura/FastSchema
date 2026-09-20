@@ -93,6 +93,24 @@ namespace fschema::parser::nbt {
     return str;
   }
 
+  // Zero-copy string read
+  [[nodiscard]] ParseResult<std::string_view> ByteReader::ReadStringView() noexcept {
+    auto raw_len = Read<uint16_t>();
+    if (!raw_len) {
+      return std::unexpected(raw_len.error());
+    }
+    const auto length = static_cast<std::size_t>(*raw_len);
+    if (length > limits_.max_string_bytes) [[unlikely]] {
+      return std::unexpected(Error(ParseError::Code::OversizedPayload));
+    }
+    if (remaining() < length) [[unlikely]] {
+      return std::unexpected(Error(ParseError::Code::Truncated));
+    }
+    std::string_view sv(reinterpret_cast<const char*>(buffer_.data() + pos_), length);
+    pos_ += length;
+    return sv;
+  }
+
   // Span truncate
   [[nodiscard]] ParseResult<std::span<const std::byte>> ByteReader::PeekRaw(
     std::size_t length) noexcept {
@@ -122,6 +140,29 @@ namespace fschema::parser::nbt {
       return std::unexpected(name.error());
     }
     name_out = std::move(*name);
+    return tag;
+  }
+
+  // Zero-copy entry header read
+  [[nodiscard]] ParseResult<TagType> ByteReader::ReadCompoundEntryHeaderView(
+    std::string_view& name_out) noexcept {
+    auto raw_tag = Read<std::uint8_t>();
+    if (!raw_tag) {
+      return std::unexpected(raw_tag.error());
+    }
+    const auto tag = static_cast<TagType>(*raw_tag);
+    if (!IsValidTagType(*raw_tag)) [[unlikely]] {
+      return std::unexpected(Error(ParseError::Code::InvalidTagId));
+    }
+    if (tag == TagType::End) {
+      return tag;
+    }
+
+    auto name_res = ReadStringView();
+    if (!name_res) {
+      return std::unexpected(name_res.error());
+    }
+    name_out = *name_res;
     return tag;
   }
 
