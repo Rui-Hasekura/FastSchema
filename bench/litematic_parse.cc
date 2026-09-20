@@ -33,6 +33,10 @@
 #include "parser/litematic/parse.h"
 #include "parser/litematic/types.h"
 
+#ifndef FASTSCHEMA_SAMPLES_DIR
+#error "FASTSCHEMA_SAMPLES_DIR is not defined. Please check CMakeLists.txt."
+#endif
+
 namespace fp = fschema::parser;
 namespace fl = fschema::parser::litematic;
 
@@ -92,7 +96,8 @@ struct TestFile {
 
 [[nodiscard]] std::vector<TestFile> LoadTestFiles() {
   const std::filesystem::path paths[] = {
-    R"(C:\Users\22744\Desktop\vss.litematic)"
+    FASTSCHEMA_SAMPLES_DIR "/dync_lock_sbr.litematic" /* <- 
+                   Please replace it with a larger sample.*/
   };
   std::vector<TestFile> out;
   for (const auto& p : paths) {

@@ -25,18 +25,23 @@ project(
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-include(FetchContent)
+# Test & Benchmark
+option(FASTSCHEMA_BUILD_BENCHMARKS "Build FastSchema benchmark executable" ${PROJECT_IS_TOP_LEVEL})
+option(FASTSCHEMA_BUILD_TESTS "Build FastSchema tests" ${PROJECT_IS_TOP_LEVEL})
 
 # Dependencies
-# 1. libdeflate
-FetchContent_Declare(
-    libdeflate
-    GIT_REPOSITORY https://github.com/ebiggers/libdeflate.git
-    GIT_TAG        v1.22
-)
-set(LIBDEFLATE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(LIBDEFLATE_BUILD_GZIP OFF CACHE BOOL "" FORCE)
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+include(FetchContent)
+
+# 1. Google Benchmark
+if(FASTSCHEMA_BUILD_BENCHMARKS)
+    FetchContent_Declare(
+      googlebenchmark
+      GIT_REPOSITORY https://github.com/google/benchmark.git
+      GIT_TAG        v1.9.5
+    )
+    set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(googlebenchmark)
+endif()
 
 # 2. Google Highway
 FetchContent_Declare(
@@ -47,15 +52,27 @@ FetchContent_Declare(
 set(HWY_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
 set(HWY_ENABLE_EXAMPLES OFF CACHE BOOL "" FORCE)
 
-# 3. Google Benchmark
-FetchContent_Declare(
-  googlebenchmark
-  GIT_REPOSITORY https://github.com/google/benchmark.git
-  GIT_TAG        v1.9.5
-)
-set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+# 3. Google Test
+if(FASTSCHEMA_BUILD_TESTS)
+    FetchContent_Declare(
+        googletest
+        GIT_REPOSITORY https://github.com/google/googletest.git
+        GIT_TAG        v1.18.0
+    )
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+endif()
 
-# 4. Intel oneAPI TBB
+# 4. libdeflate
+FetchContent_Declare(
+    libdeflate
+    GIT_REPOSITORY https://github.com/ebiggers/libdeflate.git
+    GIT_TAG        v1.22
+)
+set(LIBDEFLATE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(LIBDEFLATE_BUILD_GZIP OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+
+# 5. Intel oneAPI TBB
 FetchContent_Declare(
     oneTBB
     GIT_REPOSITORY https://github.com/oneapi-src/oneTBB.git
@@ -64,7 +81,7 @@ FetchContent_Declare(
 set(TBB_TEST OFF CACHE BOOL "" FORCE)
 set(TBB_EXAMPLES OFF CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(libdeflate hwy googlebenchmark oneTBB)
+FetchContent_MakeAvailable(googlebenchmark hwy googletest libdeflate oneTBB)
 
 # Library Target
 add_library(FastSchema STATIC
@@ -157,18 +174,6 @@ target_include_directories(FastSchema
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-# Benchmark Executable
-add_executable(test
-  # Replace the source file below with the one you want to benchmark/test
-  bench/litematic_parse.cc
-)
-
-if(MSVC)
-    target_link_options(test PRIVATE
-        /DEBUG:FULL
-    )
-endif()
-
 target_link_libraries(FastSchema
     PUBLIC
         hwy
@@ -177,10 +182,49 @@ target_link_libraries(FastSchema
         TBB::tbb
 )
 
-target_link_libraries(test
-    PRIVATE
-        FastSchema
-        benchmark
-        wsock32
-)
-target_compile_definitions(test PRIVATE NOMINMAX)
+# Test Executable
+if(FASTSCHEMA_BUILD_TESTS)
+    include(CTest)
+    include(GoogleTest)
+
+    add_executable(fastschema_test
+        test/litematic_parse.cc
+    )
+    
+    target_compile_definitions(fastschema_test PRIVATE
+        FASTSCHEMA_SAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/samples"
+    )
+
+    if(MSVC)
+        target_link_options(fastschema_test PRIVATE /DEBUG:FULL)
+    endif()
+    target_link_libraries(fastschema_test
+        PRIVATE
+            FastSchema
+            GTest::gtest_main
+    )
+    gtest_discover_tests(fastschema_test)
+endif()
+
+# Benchmark Executable
+if(FASTSCHEMA_BUILD_BENCHMARKS)
+    add_executable(fastschema_bench
+        bench/litematic_parse.cc
+    )
+
+    target_compile_definitions(fastschema_bench PRIVATE
+        FASTSCHEMA_SAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/samples"
+    )
+
+    if(MSVC)
+        target_link_options(fastschema_bench PRIVATE
+            /DEBUG:FULL
+        )
+    endif()
+    target_link_libraries(fastschema_bench
+        PRIVATE
+            FastSchema
+            benchmark
+            wsock32
+    )
+endif()
