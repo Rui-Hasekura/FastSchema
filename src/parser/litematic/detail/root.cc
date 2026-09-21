@@ -46,11 +46,11 @@ namespace fschema::parser::litematic::detail {
         if (*root_tag != static_cast<std::uint8_t>(nbt::TagType::Compound)) {
           return std::unexpected(reader.Error(ParseError::Code::InvalidTagId));
         }
-        auto root_name = reader.ReadString();
+        auto root_name = reader.ReadStringView();
         if (!root_name) {
           return std::unexpected(root_name.error());
         }
-        // Usually the root name is an empty string, ignore its content
+        (void)root_name;
       }
 
       reader.push_depth();
@@ -62,8 +62,8 @@ namespace fschema::parser::litematic::detail {
       bool have_data_version = false;
 
       for (;;) {
-        std::string name;
-        auto tag_result = reader.ReadCompoundEntryHeader(name);
+        std::string_view name;
+        auto tag_result = reader.ReadCompoundEntryHeaderView(name);
         if (!tag_result) {
           reader.pop_depth();
           return std::unexpected(tag_result.error());
@@ -71,8 +71,6 @@ namespace fschema::parser::litematic::detail {
         if (*tag_result == nbt::TagType::End) {
           break;
         }
-
-        reader.set_path(name);
 
         if (name == "Version" && *tag_result == nbt::TagType::Int) {
           auto value = reader.Read<std::int32_t>();
@@ -137,22 +135,26 @@ namespace fschema::parser::litematic::detail {
       // Necessary fields check
       if (!have_version) {
         return std::unexpected(
-          ParseError::At(ParseError::Code::MissingField, "Version", reader.pos()));
+          ParseError::At(ParseError::Code::MissingField, "Version",
+            reader.pos()));
       }
       if (!have_data_version) {
         return std::unexpected(
-          ParseError::At(ParseError::Code::MissingField, "DataVersion", reader.pos()));
+          ParseError::At(ParseError::Code::MissingField, "DataVersion",
+            reader.pos()));
       }
       if (!have_metadata) {
         return std::unexpected(
-          ParseError::At(ParseError::Code::MissingField, "Metadata", reader.pos()));
+          ParseError::At(ParseError::Code::MissingField, "Metadata",
+            reader.pos()));
       }
       if (!have_regions) {
         return std::unexpected(
-          ParseError::At(ParseError::Code::MissingField, "Regions", reader.pos()));
+          ParseError::At(ParseError::Code::MissingField, "Regions",
+            reader.pos()));
       }
 
       return {};
   }
 
-} // namespace fschema::parser::litematic::detail
+}  // namespace fschema::parser::litematic::detail

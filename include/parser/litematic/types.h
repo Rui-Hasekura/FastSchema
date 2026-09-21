@@ -1,19 +1,17 @@
-/*
- * Copyright (C) 2026 Rui-Hasekura <ruihasekura@gmail.com>
- * SPDX-License-Identifier: Apache-2.0
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright (C) 2026 Rui-Hasekura <ruihasekura@gmail.com>
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #ifndef FSCHEMA_PARSER_LITEMATIC_TYPES_H_
 #define FSCHEMA_PARSER_LITEMATIC_TYPES_H_
@@ -27,6 +25,7 @@
 #include <string_view>
 #include <vector>
 
+#include "parser/arena.h"
 #include "parser/nbt/noinit_allocator.h"
 
 template <typename T>
@@ -43,9 +42,9 @@ namespace fschema::parser::litematic {
 
   // Litematic Metadata
   struct Metadata {
-    std::string name;
-    std::string author;
-    std::string description;
+    std::string_view name;
+    std::string_view author;
+    std::string_view description;
     std::int32_t region_count = 0;
     std::int32_t total_blocks = 0;
     std::int32_t total_volume = 0;
@@ -58,7 +57,7 @@ namespace fschema::parser::litematic {
 
   // Palette
   struct BlockState {
-    std::string name;                         // e.g. "minecraft:oak_stairs[facing=north]"
+    std::string_view name;                         // e.g. "minecraft:oak_stairs[facing=north]"
     // Properties are stored as raw NBT Compound bytes (open schema, arbitrary keys).
     std::span<const std::byte> properties;    // May be empty
   };
@@ -68,7 +67,7 @@ namespace fschema::parser::litematic {
   // High-frequency fields are eagerly parsed for convenience,
   // while the full NBT subtree is kept as a raw span for deep parsing if needed.
   struct Entity {
-    std::string id;                          // e.g. "minecraft:item_frame"
+    std::string_view id;                          // e.g. "minecraft:item_frame"
     std::array<double, 3> position;          // World position (x, y, z)
     std::array<double, 3> motion;            // Motion vector (vx, vy, vz)
     std::array<float, 2> rotation;           // yaw, pitch
@@ -76,14 +75,14 @@ namespace fschema::parser::litematic {
   };
 
   struct TileEntity {
-    std::string id;                          // e.g. "minecraft:chest"
+    std::string_view id;                          // e.g. "minecraft:chest"
     std::array<std::int32_t, 3> block_position;   // Block position
     std::span<const std::byte> raw_nbt;      // Full NBT subtree, for deep parsing if needed
   };
 
   // (v6+) Pending lists (Optional)
   struct PendingTick {
-    std::string block;                // e.g. "minecraft:comparator"
+    std::string_view block;                // e.g. "minecraft:comparator"
     std::array<std::int32_t, 3> pos{};     // Region local position
     std::int64_t sub_tick = 0;
     std::int32_t priority = 0;             // May be -1
@@ -91,13 +90,13 @@ namespace fschema::parser::litematic {
   };
 
   struct Region {
-    std::string name;
+    std::string_view name;
     std::array<std::int32_t, 3> position;         // Relative to origin (can be negative)
     std::array<std::int32_t, 3> size;             // Dimensions (can be negative, negative = flipped)
     std::vector<BlockState> palette;
     // Unpacked block indices for each block in the region.
     // Length = |x| * |y| * |z|; values in [0, palette.size())
-    NoInitVector<std::uint32_t> block_indices;
+    NoInitVector<std::uint16_t> block_indices;
     std::vector<Entity> entities;
     std::vector<TileEntity> tile_entities;
 
@@ -119,6 +118,7 @@ namespace fschema::parser::litematic {
     // All spans (properties / raw_nbt / preview_data / pending_*) point to this memory;
     // when Litematic is destructed, all spans become invalid.
     // Downstream should not use this pointer directly.
+    std::unique_ptr<Arena> arena;
     std::unique_ptr<std::vector<std::byte>> owner;
   };
 
@@ -135,16 +135,12 @@ namespace fschema::parser::litematic {
   // Get blockname from block_indices + palette
   [[nodiscard]] inline std::string_view BlockNameAt(
     const Region& region, std::uint64_t index) noexcept {
-    if (index >= region.block_indices.size()) {
-      return {};
-    }
-    const std::uint32_t palette_idx = region.block_indices[index];
-    if (palette_idx >= region.palette.size()) {
-      return {};
-    }
+    if (index >= region.block_indices.size()) return {};
+    const std::uint16_t palette_idx = region.block_indices[index];
+    if (palette_idx >= region.palette.size()) return {};
     return region.palette[palette_idx].name;
   }
 
-} // namespace fschema::parser::litematic
+}  // namespace fschema::parser::litematic
 
-#endif // FSCHEMA_PARSER_LITEMATIC_TYPES_H_
+#endif  // FSCHEMA_PARSER_LITEMATIC_TYPES_H_

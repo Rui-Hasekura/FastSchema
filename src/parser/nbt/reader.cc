@@ -40,44 +40,40 @@ namespace fschema::parser::nbt {
     return buffer_.size() - pos_;
   }
   [[nodiscard]] std::size_t ByteReader::depth() const noexcept { return depth_; }
-  [[nodiscard]] const DecodeLimits& ByteReader::limits() const noexcept { return limits_; }
+  [[nodiscard]] const DecodeLimits& ByteReader::limits() const noexcept {
+    return limits_;
+  }
 
   void ByteReader::advance(std::size_t num_bytes) noexcept { pos_ += num_bytes; }
   void ByteReader::push_depth() noexcept { ++depth_; }
   void ByteReader::pop_depth() noexcept { --depth_; }
 
-  // Debug
-  void ByteReader::set_path(std::string_view path) {
-    path_buf_ = path;
-  }
-  [[nodiscard]] std::string_view ByteReader::path() const noexcept {
-    return path_buf_;
-  }
-
-  [[nodiscard]] ParseError ByteReader::Error(ParseError::Code code) const noexcept {
-    return ParseError{ code, path_buf_, pos_ };
+  [[nodiscard]] ParseError ByteReader::Error(ParseError::Code code) const
+    noexcept {
+    return ParseError{ code, std::string{}, pos_ };
   }
 
   // Length-prefixed read
   [[nodiscard]] ParseResult<std::size_t> ByteReader::ReadLength(
     std::size_t max_allowed) noexcept {
-    auto raw = Read<int32_t>();
+    auto raw = Read<std::int32_t>();
     if (!raw) {
       return std::unexpected(raw.error());
     }
-    const auto length = static_cast<int64_t>(*raw);
+    const auto length = static_cast<std::int64_t>(*raw);
     if (length < 0) [[unlikely]] {
       return std::unexpected(Error(ParseError::Code::NegativeLength));
     }
-    if (static_cast<uint64_t>(length) > max_allowed) [[unlikely]] {
+    if (static_cast<std::uint64_t>(length) > max_allowed) [[unlikely]] {
       return std::unexpected(Error(ParseError::Code::OversizedPayload));
     }
     return static_cast<std::size_t>(length);
   }
 
   // String read
+  // THERE ARE COPYING
   [[nodiscard]] ParseResult<std::string> ByteReader::ReadString() {
-    auto raw_len = Read<uint16_t>();
+    auto raw_len = Read<std::uint16_t>();
     if (!raw_len) {
       return std::unexpected(raw_len.error());
     }
@@ -94,8 +90,9 @@ namespace fschema::parser::nbt {
   }
 
   // Zero-copy string read
-  [[nodiscard]] ParseResult<std::string_view> ByteReader::ReadStringView() noexcept {
-    auto raw_len = Read<uint16_t>();
+  [[nodiscard]] ParseResult<std::string_view> ByteReader::ReadStringView()
+    noexcept {
+    auto raw_len = Read<std::uint16_t>();
     if (!raw_len) {
       return std::unexpected(raw_len.error());
     }
@@ -106,7 +103,8 @@ namespace fschema::parser::nbt {
     if (remaining() < length) [[unlikely]] {
       return std::unexpected(Error(ParseError::Code::Truncated));
     }
-    std::string_view sv(reinterpret_cast<const char*>(buffer_.data() + pos_), length);
+    std::string_view sv(reinterpret_cast<const char*>(buffer_.data() + pos_),
+      length);
     pos_ += length;
     return sv;
   }
@@ -121,9 +119,10 @@ namespace fschema::parser::nbt {
   }
 
   // Compound / List 's entry read
+  // THERE ARE COPYING
   [[nodiscard]] ParseResult<TagType> ByteReader::ReadCompoundEntryHeader(
     std::string& name_out) {
-    auto raw_tag = Read<uint8_t>();
+    auto raw_tag = Read<std::uint8_t>();
     if (!raw_tag) {
       return std::unexpected(raw_tag.error());
     }
@@ -166,8 +165,9 @@ namespace fschema::parser::nbt {
     return tag;
   }
 
-  [[nodiscard]] ParseResult<std::pair<TagType, std::size_t>> ByteReader::ReadListHeader() {
-    auto raw_tag = Read<uint8_t>();
+  [[nodiscard]] ParseResult<std::pair<TagType, std::size_t>>
+    ByteReader::ReadListHeader() {
+    auto raw_tag = Read<std::uint8_t>();
     if (!raw_tag) {
       return std::unexpected(raw_tag.error());
     }
@@ -176,11 +176,11 @@ namespace fschema::parser::nbt {
     }
     const auto element_type = static_cast<TagType>(*raw_tag);
 
-    auto raw_len = Read<int32_t>();
+    auto raw_len = Read<std::int32_t>();
     if (!raw_len) {
       return std::unexpected(raw_len.error());
     }
-    const auto length = static_cast<int64_t>(*raw_len);
+    const auto length = static_cast<std::int64_t>(*raw_len);
     if (length < 0) {
       if (length == -1) {
         return std::make_pair(element_type, std::size_t{ 0 });
@@ -195,4 +195,4 @@ namespace fschema::parser::nbt {
     return buffer_.subspan(start, pos_ - start);
   }
 
-} // namespace fschema::parser::nbt
+}  // namespace fschema::parser::nbt

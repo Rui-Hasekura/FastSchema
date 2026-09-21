@@ -17,7 +17,7 @@
 
 #include <cstddef>
 #include <expected>
-#include <string>
+#include <string_view>
 #include <utility>
 
 #include "parser/nbt/skip.h"
@@ -61,8 +61,8 @@ namespace fschema::parser::litematic::detail {
 
       reader.push_depth();
       for (;;) {
-        std::string name;
-        auto tag_result = reader.ReadCompoundEntryHeader(name);
+        std::string_view name;
+        auto tag_result = reader.ReadCompoundEntryHeaderView(name);
         if (!tag_result) {
           reader.pop_depth();
           reader.pop_depth();
@@ -73,13 +73,13 @@ namespace fschema::parser::litematic::detail {
         }
 
         if (name == "Name" && *tag_result == nbt::TagType::String) {
-          auto value = reader.ReadString();
+          auto value = reader.ReadStringView();
           if (!value) {
             reader.pop_depth();
             reader.pop_depth();
             return std::unexpected(value.error());
           }
-          entry.name = std::move(*value);
+          entry.name = *value;
           have_name = true;
         }
         else if (name == "Properties" && *tag_result == nbt::TagType::Compound) {
@@ -115,4 +115,4 @@ namespace fschema::parser::litematic::detail {
     return {};
   }
 
-} // namespace fschema::parser::litematic::detail
+}  // namespace fschema::parser::litematic::detail

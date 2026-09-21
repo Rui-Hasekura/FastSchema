@@ -1,19 +1,17 @@
-/*
- * Copyright (C) 2026 Rui-Hasekura <ruihasekura@gmail.com>
- * SPDX-License-Identifier: Apache-2.0
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright (C) 2026 Rui-Hasekura <ruihasekura@gmail.com>
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #ifndef FSCHEMA_PARSER_LITEMATIC_DETAIL_REGION_H_
 #define FSCHEMA_PARSER_LITEMATIC_DETAIL_REGION_H_
@@ -24,11 +22,16 @@
 #include <expected>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "parser/error.h"
 #include "parser/litematic/types.h"
 #include "parser/nbt/reader.h"
+
+namespace fschema::parser {
+  class Arena;
+}
 
 namespace fschema::parser::litematic::detail {
 
@@ -51,12 +54,12 @@ namespace fschema::parser::litematic::detail {
     ParseVec3Int(nbt::ByteReader& reader);
 
   [[nodiscard]] ParseResult<Region> ParseRegion(
-    nbt::ByteReader& reader, std::string region_name,
-    std::unique_ptr<std::vector<std::byte>>& owner);
+    nbt::ByteReader& reader, std::string_view region_name,
+    Arena& arena);
 
   [[nodiscard]] ParseResult<void> ParseRegions(
     nbt::ByteReader& reader, Litematic& out);
 
-} // namespace fschema::parser::litematic::detail
+}  // namespace fschema::parser::litematic::detail
 
-#endif // FSCHEMA_PARSER_LITEMATIC_DETAIL_REGION_H_
+#endif  // FSCHEMA_PARSER_LITEMATIC_DETAIL_REGION_H_

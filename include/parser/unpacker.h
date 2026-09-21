@@ -1,5 +1,5 @@
-// Copyright (C) 2026 Rui - Hasekura <ruihasekura@gmail.com>
-// SPDX - License - Identifier: Apache - 2.0
+// Copyright (C) 2026 Rui-Hasekura <ruihasekura@gmail.com>
+// SPDX-License-Identifier: Apache-2.0
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,8 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef FSCHEMA_PARSER_UNPACKER_H
-#define FSCHEMA_PARSER_UNPACKER_H
+#ifndef FSCHEMA_PARSER_UNPACKER_H_
+#define FSCHEMA_PARSER_UNPACKER_H_
 
 #include <cstddef>
 #include <expected>
@@ -25,27 +25,32 @@
 namespace fschema::parser {
 
   enum class DecompressError {
-    FileNotFound,
-    FileReadFailed,
-    ZlibInitFailed,
-    DecompressFailed,
-    InvalidGzipHeader
+    kFileNotFound,
+    kFileReadFailed,
+    kLibdeflateInitFailed,
+    kDecompressFailed,
+    kInvalidGzipHeader
   };
 
   constexpr std::string_view ToString(DecompressError error) noexcept {
     switch (error) {
-    case DecompressError::FileNotFound:        return "Failed to open file: Path does not exist or access denied.";
-    case DecompressError::FileReadFailed:      return "Failed to read file content into memory.";
-    case DecompressError::ZlibInitFailed:      return "Failed to initialize zlib-ng inflate engine.";
-    case DecompressError::DecompressFailed:    return "Zlib-ng decompression failed due to corrupted data.";
-    case DecompressError::InvalidGzipHeader:   return "Invalid Gzip header or unsupported compression type.";
+    case DecompressError::kFileNotFound:
+      return "Failed to open file: Path does not exist or access denied.";
+    case DecompressError::kFileReadFailed:
+      return "Failed to read file content into memory.";
+    case DecompressError::kLibdeflateInitFailed:
+      return "Failed to initialize libdeflate decompressor.";
+    case DecompressError::kDecompressFailed:
+      return "libdeflate decompression failed due to corrupted data.";
+    case DecompressError::kInvalidGzipHeader:
+      return "Invalid Gzip header or unsupported compression type.";
     }
     return "Unknown decompression error.";
   }
 
   [[nodiscard]] std::expected<std::vector<std::byte>, DecompressError>
-    UnpackLitematicFrom(const std::filesystem::path& path);
+    DecompressGzipFile(const std::filesystem::path& path);
 
-} // namespace fschema::parser
+}  // namespace fschema::parser
 
-#endif // FSCHEMA_PARSER_UNPACKER_H
+#endif  // FSCHEMA_PARSER_UNPACKER_H_

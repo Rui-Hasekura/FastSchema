@@ -42,8 +42,8 @@ namespace fschema::parser::litematic::detail {
     reader.push_depth();
 
     for (;;) {
-      std::string name;
-      auto tag_result = reader.ReadCompoundEntryHeader(name);
+      std::string_view name;
+      auto tag_result = reader.ReadCompoundEntryHeaderView(name);
       if (!tag_result) {
         reader.pop_depth();
         return std::unexpected(tag_result.error());
@@ -52,13 +52,11 @@ namespace fschema::parser::litematic::detail {
         break;
       }
 
-      if ((name == "id" || name == "Id") && *tag_result == nbt::TagType::String) {
-        auto value = reader.ReadString();
-        if (!value) {
-          reader.pop_depth();
-          return std::unexpected(value.error());
-        }
-        tile_entity.id = std::move(*value);
+      if ((name == "id" || name == "Id") &&
+        *tag_result == nbt::TagType::String) {
+        auto value = reader.ReadStringView();
+        if (!value) { reader.pop_depth(); return std::unexpected(value.error()); }
+        tile_entity.id = *value;
       }
       else if (name == "x" && *tag_result == nbt::TagType::Int) {
         auto value = reader.Read<std::int32_t>();
@@ -98,8 +96,7 @@ namespace fschema::parser::litematic::detail {
   }
 
   [[nodiscard]] ParseResult<void> ParseTileEntities(
-    nbt::ByteReader& reader, std::vector<TileEntity>& tile_entities,
-    std::unique_ptr<std::vector<std::byte>>& /*owner*/) {
+    nbt::ByteReader& reader, std::vector<TileEntity>& tile_entities) {
     auto header = reader.ReadListHeader();
     if (!header) {
       return std::unexpected(header.error());
@@ -130,4 +127,4 @@ namespace fschema::parser::litematic::detail {
     return {};
   }
 
-} // namespace fschema::parser::litematic::detail
+}  // namespace fschema::parser::litematic::detail

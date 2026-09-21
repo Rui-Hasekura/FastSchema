@@ -25,25 +25,14 @@ project(
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Test & Benchmark
+# Options
 option(FASTSCHEMA_BUILD_BENCHMARKS "Build FastSchema benchmark executable" ${PROJECT_IS_TOP_LEVEL})
 option(FASTSCHEMA_BUILD_TESTS "Build FastSchema tests" ${PROJECT_IS_TOP_LEVEL})
 
 # Dependencies
 include(FetchContent)
 
-# 1. Google Benchmark
-if(FASTSCHEMA_BUILD_BENCHMARKS)
-    FetchContent_Declare(
-      googlebenchmark
-      GIT_REPOSITORY https://github.com/google/benchmark.git
-      GIT_TAG        v1.9.5
-    )
-    set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
-    FetchContent_MakeAvailable(googlebenchmark)
-endif()
-
-# 2. Google Highway
+# 1. Google Highway (Core)
 FetchContent_Declare(
     hwy
     GIT_REPOSITORY https://github.com/google/highway.git
@@ -52,17 +41,7 @@ FetchContent_Declare(
 set(HWY_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
 set(HWY_ENABLE_EXAMPLES OFF CACHE BOOL "" FORCE)
 
-# 3. Google Test
-if(FASTSCHEMA_BUILD_TESTS)
-    FetchContent_Declare(
-        googletest
-        GIT_REPOSITORY https://github.com/google/googletest.git
-        GIT_TAG        v1.18.0
-    )
-    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-endif()
-
-# 4. libdeflate
+# 2. libdeflate (Core)
 FetchContent_Declare(
     libdeflate
     GIT_REPOSITORY https://github.com/ebiggers/libdeflate.git
@@ -72,7 +51,7 @@ set(LIBDEFLATE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(LIBDEFLATE_BUILD_GZIP OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
-# 5. Intel oneAPI TBB
+# 3. Intel oneAPI TBB (Core)
 FetchContent_Declare(
     oneTBB
     GIT_REPOSITORY https://github.com/oneapi-src/oneTBB.git
@@ -81,7 +60,30 @@ FetchContent_Declare(
 set(TBB_TEST OFF CACHE BOOL "" FORCE)
 set(TBB_EXAMPLES OFF CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(googlebenchmark hwy googletest libdeflate oneTBB)
+# Download and make available core dependencies
+FetchContent_MakeAvailable(hwy libdeflate oneTBB)
+
+# 4. Google Test (Test only)
+if(FASTSCHEMA_BUILD_TESTS)
+    FetchContent_Declare(
+        googletest
+        GIT_REPOSITORY https://github.com/google/googletest.git
+        GIT_TAG        v1.18.0
+    )
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(googletest)
+endif()
+
+# 5. Google Benchmark (Benchmark only)
+if(FASTSCHEMA_BUILD_BENCHMARKS)
+    FetchContent_Declare(
+        googlebenchmark
+        GIT_REPOSITORY https://github.com/google/benchmark.git
+        GIT_TAG        v1.9.5
+    )
+    set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(googlebenchmark)
+endif()
 
 # Library Target
 add_library(FastSchema STATIC
@@ -105,6 +107,7 @@ add_library(FastSchema STATIC
     src/parser/litematic/detail/root.cc
     src/parser/litematic/detail/simd_block_states.cc
     src/parser/litematic/detail/tile_entity.cc
+    src/parser/litematic/parse.cc
 
     # Common Headers
     include/parser/error.h
@@ -136,6 +139,7 @@ add_library(FastSchema STATIC
     include/parser/litematic/detail/tile_entity.h
 )
 
+# Compiler Options
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     if(MSVC)
         # Clang-CL on Windows
@@ -166,7 +170,7 @@ elseif(MSVC)
     )
 endif()
 
-# Header include directories
+# Include Directories
 target_include_directories(FastSchema
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -175,6 +179,7 @@ target_include_directories(FastSchema
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
+# Link Libraries
 target_link_libraries(FastSchema
     PUBLIC
         hwy
@@ -189,9 +194,9 @@ if(FASTSCHEMA_BUILD_TESTS)
     include(GoogleTest)
 
     add_executable(fastschema_test
-        test/nbt_parse.cc
+        test/litematic_parse.cc
     )
-    
+
     target_compile_definitions(fastschema_test PRIVATE
         FASTSCHEMA_SAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/samples"
     )
@@ -199,11 +204,13 @@ if(FASTSCHEMA_BUILD_TESTS)
     if(MSVC)
         target_link_options(fastschema_test PRIVATE /DEBUG:FULL)
     endif()
+
     target_link_libraries(fastschema_test
         PRIVATE
             FastSchema
             GTest::gtest_main
     )
+
     gtest_discover_tests(fastschema_test)
 endif()
 
@@ -222,6 +229,7 @@ if(FASTSCHEMA_BUILD_BENCHMARKS)
             /DEBUG:FULL
         )
     endif()
+
     target_link_libraries(fastschema_bench
         PRIVATE
             FastSchema

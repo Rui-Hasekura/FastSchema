@@ -31,44 +31,48 @@
 namespace fschema::parser {
 
   [[nodiscard]] std::expected<std::vector<std::byte>, DecompressError>
-    UnpackLitematicFrom(const std::filesystem::path& path) {
+    DecompressGzipFile(const std::filesystem::path& path) {
     std::error_code ec;
     const auto file_size = std::filesystem::file_size(path, ec);
     if (ec) [[unlikely]] {
-      return std::unexpected(DecompressError::FileNotFound);
+      return std::unexpected(DecompressError::kFileNotFound);
     }
 
-    if (file_size < 18 || file_size > std::numeric_limits<uint32_t>::max()) [[unlikely]] {
-      return std::unexpected(DecompressError::InvalidGzipHeader);
+    if (file_size < 18 ||
+      file_size > std::numeric_limits<std::uint32_t>::max()) [[unlikely]] {
+      return std::unexpected(DecompressError::kInvalidGzipHeader);
     }
 
     std::ifstream file(path, std::ios::binary);
     if (!file) [[unlikely]] {
-      return std::unexpected(DecompressError::FileNotFound);
+      return std::unexpected(DecompressError::kFileNotFound);
     }
 
     std::vector<std::byte> compressed(file_size);
     if (!file.read(reinterpret_cast<char*>(compressed.data()),
       static_cast<std::streamsize>(file_size))) [[unlikely]] {
-      return std::unexpected(DecompressError::FileReadFailed);
+      return std::unexpected(DecompressError::kFileReadFailed);
     }
     file.close();
 
-    if (compressed[0] != std::byte{ 0x1F } || compressed[1] != std::byte{ 0x8B }) [[unlikely]] {
-      return std::unexpected(DecompressError::InvalidGzipHeader);
+    if (compressed[0] != std::byte{ 0x1F } ||
+      compressed[1] != std::byte{ 0x8B }) [[unlikely]] {
+      return std::unexpected(DecompressError::kInvalidGzipHeader);
     }
 
     libdeflate_decompressor* d = libdeflate_alloc_decompressor();
-    if (!d) [[unlikely]] {
-      return std::unexpected(DecompressError::ZlibInitFailed);
+    if (d == nullptr) [[unlikely]] {
+      return std::unexpected(DecompressError::kLibdeflateInitFailed);
     }
 
     struct DeflateGuard {
       libdeflate_decompressor* d;
-      ~DeflateGuard() noexcept { if (d) libdeflate_free_decompressor(d); }
+      ~DeflateGuard() noexcept {
+        if (d != nullptr) libdeflate_free_decompressor(d);
+      }
     } guard{ d };
 
-    uint32_t isize = 0;
+    std::uint32_t isize = 0;
     std::memcpy(&isize, compressed.data() + file_size - 4, 4);
 
     std::size_t out_cap = isize > 0
@@ -79,9 +83,9 @@ namespace fschema::parser {
       out_cap = file_size * 2;
     }
 
-    constexpr std::size_t kHardCap = 1ULL << 30; // 1 GiB LIMIT
+    constexpr std::size_t kHardCap = 1ULL << 30;  // 1 GiB LIMIT
     if (out_cap > kHardCap) [[unlikely]] {
-      return std::unexpected(DecompressError::DecompressFailed);
+      return std::unexpected(DecompressError::kDecompressFailed);
     }
 
     std::vector<std::byte> output(out_cap);
@@ -100,15 +104,15 @@ namespace fschema::parser {
 
       if (res == LIBDEFLATE_INSUFFICIENT_SPACE) [[unlikely]] {
         if (output.size() >= kHardCap) [[unlikely]] {
-          return std::unexpected(DecompressError::DecompressFailed);
+          return std::unexpected(DecompressError::kDecompressFailed);
         }
         out_cap = std::min(output.size() * 2, kHardCap);
         output.resize(out_cap);
         continue;
       }
 
-      return std::unexpected(DecompressError::DecompressFailed);
+      return std::unexpected(DecompressError::kDecompressFailed);
     }
   }
 
-} // namespace fschema::parser
+}  // namespace fschema::parser

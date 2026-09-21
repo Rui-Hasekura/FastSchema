@@ -1,19 +1,17 @@
-/*
- * Copyright (C) 2026 Rui-Hasekura <ruihasekura@gmail.com>
- * SPDX-License-Identifier: Apache-2.0
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright (C) 2026 Rui-Hasekura <ruihasekura@gmail.com>
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #ifndef FSCHEMA_PARSER_LITEMATIC_DETAIL_BLOCK_STATES_H_
 #define FSCHEMA_PARSER_LITEMATIC_DETAIL_BLOCK_STATES_H_
@@ -56,28 +54,25 @@ namespace fschema::parser::litematic::detail {
     return static_cast<std::uint32_t>(std::bit_width(palette_size - 1));
   }
 
-  // Main path: fused (BE byteswap + bit unpack, single pass, zero intermediate array)
-  // raw_longs points directly to the LongArray payload inside the input buffer.
-  [[nodiscard]] ParseResult<NoInitVector<std::uint32_t>> UnpackIndicesFused(
+  [[nodiscard]] ParseResult<NoInitVector<std::uint16_t>> UnpackIndicesFused(
     std::span<const std::byte> raw_longs,
     std::uint32_t bits_per_block, std::uint64_t volume,
-    std::size_t palette_size);
+    std::size_t palette_size,
+    Arena& arena);
 
-  // Baseline: two-stage (materialize host-order longs first, then unpack)
-  [[nodiscard]] ParseResult<NoInitVector<std::uint32_t>> UnpackIndicesHwy(
+  [[nodiscard]] ParseResult<NoInitVector<std::uint16_t>> UnpackIndicesHwy(
     std::span<const std::uint64_t> longs,
     std::uint32_t bits_per_block, std::uint64_t volume,
     std::size_t palette_size);
 
-  // Two-stage support (implemented in block_states.cc, used by baseline and unit tests)
+  [[nodiscard]] ParseResult<NoInitVector<std::uint16_t>> UnpackIndicesScalar(
+    std::span<const std::uint64_t> longs,
+    std::uint32_t bits_per_block, std::uint64_t volume,
+    std::size_t palette_size);
+
   [[nodiscard]] ParseResult<NoInitVector<std::uint64_t>> ReadLongArrayBe(
     nbt::ByteReader& reader, std::uint64_t expected_longs);
 
-  [[nodiscard]] ParseResult<NoInitVector<std::uint32_t>> UnpackIndicesScalar(
-    std::span<const std::uint64_t> longs,
-    std::uint32_t bits_per_block, std::uint64_t volume,
-    std::size_t palette_size);
+}  // namespace fschema::parser::litematic::detail
 
-} // namespace fschema::parser::litematic::detail
-
-#endif // FSCHEMA_PARSER_LITEMATIC_DETAIL_BLOCK_STATES_H_
+#endif  // FSCHEMA_PARSER_LITEMATIC_DETAIL_BLOCK_STATES_H_

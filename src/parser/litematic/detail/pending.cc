@@ -53,8 +53,8 @@ namespace fschema::parser::litematic::detail {
       bool have_block = false;
 
       for (;;) {
-        std::string field_name;
-        auto tag_result = reader.ReadCompoundEntryHeader(field_name);
+        std::string_view field_name;
+        auto tag_result = reader.ReadCompoundEntryHeaderView(field_name);
         if (!tag_result) {
           reader.pop_depth();
           return std::unexpected(tag_result.error());
@@ -64,12 +64,12 @@ namespace fschema::parser::litematic::detail {
         }
 
         if (field_name == "Block" && *tag_result == nbt::TagType::String) {
-          auto value = reader.ReadString();
+          auto value = reader.ReadStringView();
           if (!value) {
             reader.pop_depth();
             return std::unexpected(value.error());
           }
-          tick.block = std::move(*value);
+          tick.block = *value;
           have_block = true;
         }
         else if (field_name == "SubTick" && *tag_result == nbt::TagType::Long) {
@@ -139,4 +139,4 @@ namespace fschema::parser::litematic::detail {
     return {};
   }
 
-} // namespace fschema::parser::litematic::detail
+}  // namespace fschema::parser::litematic::detail

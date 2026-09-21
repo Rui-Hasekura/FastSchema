@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@rules_cc//cc:defs.bzl", "cc_library", "cc_binary")
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_binary", "cc_test")
 
 cc_library(
     name = "FastSchema",
@@ -24,7 +24,9 @@ cc_library(
         "src/parser/nbt/parse.cc",
         "src/parser/nbt/reader.cc",
         "src/parser/nbt/skip.cc",
+        "src/parser/nbt/simd_bswap.cc",
         # Litematic Sources
+        "src/parser/litematic/parse.cc",
         "src/parser/litematic/detail/block_states.cc",
         "src/parser/litematic/detail/entity.cc",
         "src/parser/litematic/detail/metadata.cc",
@@ -75,16 +77,7 @@ cc_library(
     ],
 )
 
-cc_binary(
-    name = "test",
-    srcs = ["bench/litematic_parse_with_output.cc"],
-    defines = ["NOMINMAX"],
-    linkopts = select({
-        "@platforms//os:windows": ["ws2_32.lib"],
-        "//conditions:default": [],
-    }),
-    deps = [
-        ":FastSchema",
-        "@google_benchmark//:benchmark",
-    ],
-)
+cc_test(
+    name = "fastschema_test",
+    srcs = ["test/nbt_parse.cc"],
+    defines = [

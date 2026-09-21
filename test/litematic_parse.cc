@@ -16,6 +16,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -36,23 +37,20 @@ namespace fs = std::filesystem;
 namespace fp = fschema::parser;
 namespace fl = fschema::parser::litematic;
 
-// Helpers
-
 [[nodiscard]] bool IsAirVariant(std::string_view name) noexcept {
-  return name == "minecraft:air"
-      || name == "minecraft:void_air"
-      || name == "minecraft:cave_air";
+  return name == "minecraft:air" ||
+    name == "minecraft:void_air" ||
+    name == "minecraft:cave_air";
 }
 
-[[nodiscard]] uint64_t ExpectedVolume(
+[[nodiscard]] std::uint64_t ExpectedVolume(
   const std::array<std::int32_t, 3>& size) noexcept {
-  const auto abs = [](int32_t v) -> uint64_t {
-    return v < 0 ? uint64_t(-int64_t(v)) : uint64_t(v);
+  const auto abs = [](std::int32_t v) -> std::uint64_t {
+    return v < 0 ? static_cast<std::uint64_t>(-static_cast<std::int64_t>(v))
+      : static_cast<std::uint64_t>(v);
     };
   return abs(size[0]) * abs(size[1]) * abs(size[2]);
 }
-
-// Parameterized Test Fixture for Sample Files
 
 class LitematicParseTest : public ::testing::TestWithParam<fs::path> {
 public:
@@ -73,20 +71,15 @@ public:
   }
 };
 
-// E2E Test:
-// Unpack + Parse + Structural Validation
-
 TEST_P(LitematicParseTest, ParsesSuccessfullyAndValidatesStructure) {
   const auto& file_path = GetParam();
 
-  // STEP 1: Decompression
-  auto unpacked_bytes = fp::UnpackLitematicFrom(file_path);
+  auto unpacked_bytes = fp::DecompressGzipFile(file_path);
   ASSERT_TRUE(unpacked_bytes.has_value())
     << "Decompress failed for " << file_path
     << ": " << fp::ToString(unpacked_bytes.error());
   ASSERT_FALSE(unpacked_bytes->empty());
 
-  // STEP 2: Parse Litematic
   auto owner = std::make_unique<std::vector<std::byte>>(std::move(*unpacked_bytes));
   auto result = fl::ParseLitematic(std::move(owner));
 
@@ -96,46 +89,41 @@ TEST_P(LitematicParseTest, ParsesSuccessfullyAndValidatesStructure) {
 
   const auto& litematic = result.value();
 
-  // Version must be supported (5, 6, 7)
   EXPECT_TRUE(litematic.version == fl::Version::kV5 ||
     litematic.version == fl::Version::kV6 ||
     litematic.version == fl::Version::kV7)
     << "Unsupported version: " << static_cast<int>(litematic.version);
 
-  // Metadata consistency
   EXPECT_EQ(litematic.metadata.region_count, litematic.regions.size())
     << "Metadata region_count mismatch";
 
-  uint64_t total_non_air_blocks = 0;
+  std::uint64_t total_non_air_blocks = 0;
 
-  // Region structural integrity
-  for (size_t i = 0; i < litematic.regions.size(); ++i) {
+  for (std::size_t i = 0; i < litematic.regions.size(); ++i) {
     const auto& region = litematic.regions[i];
 
-    // Volume check
-    const uint64_t expected_vol = ExpectedVolume(region.size);
+    const std::uint64_t expected_vol = ExpectedVolume(region.size);
     EXPECT_EQ(region.block_indices.size(), expected_vol)
       << "Region [" << i << "] block_indices size mismatch with volume";
 
-    // Palette check
     EXPECT_FALSE(region.palette.empty())
       << "Region [" << i << "] has empty palette";
 
-    // Index bounds check (sampled for performance)
-    const uint64_t n = region.block_indices.size();
-    constexpr uint64_t stride = 4096;
-    for (uint64_t j = 0; j < n; j += stride) {
+    const std::uint64_t n = region.block_indices.size();
+    constexpr std::uint64_t stride = 4096;
+    for (std::uint64_t j = 0; j < n; j += stride) {
       EXPECT_LT(region.block_indices[j], region.palette.size())
         << "Region [" << i << "] PaletteIndexOutOfRange at block " << j;
     }
 
-    // Conservation check (Count non-air blocks)
     if (!region.palette.empty() && !region.block_indices.empty()) {
-      std::vector<uint64_t> counts(region.palette.size(), 0);
-      for (uint32_t idx : region.block_indices) ++counts[idx];
+      std::vector<std::uint64_t> counts(region.palette.size(), 0);
+      for (std::uint32_t idx : region.block_indices) {
+        ++counts[idx];
+      }
 
-      uint64_t non_air = 0;
-      for (size_t k = 0; k < region.palette.size(); ++k) {
+      std::uint64_t non_air = 0;
+      for (std::size_t k = 0; k < region.palette.size(); ++k) {
         if (counts[k] > 0 && !IsAirVariant(region.palette[k].name)) {
           non_air += counts[k];
         }
@@ -144,18 +132,15 @@ TEST_P(LitematicParseTest, ParsesSuccessfullyAndValidatesStructure) {
     }
   }
 
-  // Global block conservation
-  EXPECT_EQ(total_non_air_blocks, static_cast<uint64_t>(litematic.metadata.total_blocks))
+  EXPECT_EQ(total_non_air_blocks,
+    static_cast<std::uint64_t>(litematic.metadata.total_blocks))
     << "Total non-air blocks do not match metadata.total_blocks";
 }
 
 INSTANTIATE_TEST_SUITE_P(
   Samples,
   LitematicParseTest,
-  ::testing::ValuesIn(LitematicParseTest::GetSampleFiles())
-);
-
-// Negative Tests
+  ::testing::ValuesIn(LitematicParseTest::GetSampleFiles()));
 
 TEST(LitematicParseNegativeTest, NullBytesInput) {
   std::unique_ptr<std::vector<std::byte>> null_owner = nullptr;
@@ -174,8 +159,8 @@ TEST(LitematicParseNegativeTest, EmptyBytesInput) {
 }
 
 TEST(LitematicUnpackNegativeTest, FileNotFound) {
-  auto result = fp::UnpackLitematicFrom("nonexistent_file.litematic");
+  auto result = fp::DecompressGzipFile("nonexistent_file.litematic");
 
   EXPECT_FALSE(result.has_value());
-  EXPECT_EQ(result.error(), fp::DecompressError::FileNotFound);
+  EXPECT_EQ(result.error(), fp::DecompressError::kFileNotFound);
 }

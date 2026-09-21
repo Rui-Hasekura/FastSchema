@@ -24,4 +24,4 @@ namespace fschema::parser {
     return ParseError{ code, std::move(path), offset };
   }
 
-} // namespace fschema::parser
+}  // namespace fschema::parser

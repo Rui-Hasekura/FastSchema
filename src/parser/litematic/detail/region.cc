@@ -19,11 +19,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <format>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
+#include "parser/arena.h"
 #include "parser/error.h"
 #include "parser/litematic/detail/block_states.h"
 #include "parser/litematic/detail/entity.h"
@@ -57,8 +60,8 @@ namespace fschema::parser::litematic::detail {
     std::array<std::int32_t, 3> result = { 0, 0, 0 };
     reader.push_depth();
     for (;;) {
-      std::string name;
-      auto tag_result = reader.ReadCompoundEntryHeader(name);
+      std::string_view name;
+      auto tag_result = reader.ReadCompoundEntryHeaderView(name);
       if (!tag_result) {
         reader.pop_depth();
         return std::unexpected(tag_result.error());
@@ -104,10 +107,10 @@ namespace fschema::parser::litematic::detail {
   }
 
   [[nodiscard]] ParseResult<Region> ParseRegion(
-    nbt::ByteReader& reader, std::string region_name,
-    std::unique_ptr<std::vector<std::byte>>& owner) {
+    nbt::ByteReader& reader, std::string_view region_name,
+    Arena& arena) {
     Region region;
-    region.name = std::move(region_name);
+    region.name = region_name;
 
     reader.push_depth();
     bool have_size = false;
@@ -117,8 +120,8 @@ namespace fschema::parser::litematic::detail {
     std::span<const std::byte> block_states_raw;
 
     for (;;) {
-      std::string name;
-      auto tag_result = reader.ReadCompoundEntryHeader(name);
+      std::string_view name;
+      auto tag_result = reader.ReadCompoundEntryHeaderView(name);
       if (!tag_result) {
         reader.pop_depth();
         return std::unexpected(tag_result.error());
@@ -126,8 +129,6 @@ namespace fschema::parser::litematic::detail {
       if (*tag_result == nbt::TagType::End) {
         break;
       }
-
-      reader.set_path("Regions/" + region.name + "/" + name);
 
       if (name == "Position" && *tag_result == nbt::TagType::Compound) {
         auto pos_result = ParseVec3Int(reader);
@@ -167,7 +168,8 @@ namespace fschema::parser::litematic::detail {
           return std::unexpected(
             reader.Error(ParseError::Code::NegativeLength));
         }
-        if (static_cast<std::uint64_t>(length) > reader.limits().max_array_elements) {
+        if (static_cast<std::uint64_t>(length) >
+          reader.limits().max_array_elements) {
           reader.pop_depth();
           return std::unexpected(
             reader.Error(ParseError::Code::OversizedPayload));
@@ -178,7 +180,8 @@ namespace fschema::parser::litematic::detail {
           return std::unexpected(
             reader.Error(ParseError::Code::Truncated));
         }
-        auto span_result = reader.PeekRaw(static_cast<std::size_t>(payload_bytes));
+        auto span_result = reader.PeekRaw(
+          static_cast<std::size_t>(payload_bytes));
         if (!span_result) {
           reader.pop_depth();
           return std::unexpected(span_result.error());
@@ -188,34 +191,37 @@ namespace fschema::parser::litematic::detail {
         have_states = true;
       }
       else if (name == "TileEntities" && *tag_result == nbt::TagType::List) {
-        auto tiles_result = ParseTileEntities(reader, region.tile_entities, owner);
+        auto tiles_result = ParseTileEntities(reader, region.tile_entities);
         if (!tiles_result) {
           reader.pop_depth();
           return std::unexpected(tiles_result.error());
         }
       }
       else if (name == "Entities" && *tag_result == nbt::TagType::List) {
-        auto ents_result = ParseEntities(reader, region.entities, owner);
+        auto ents_result = ParseEntities(reader, region.entities);
         if (!ents_result) {
           reader.pop_depth();
           return std::unexpected(ents_result.error());
         }
       }
-      else if (name == "PendingBlockTicks" && *tag_result == nbt::TagType::List) {
+      else if (name == "PendingBlockTicks" &&
+        *tag_result == nbt::TagType::List) {
         auto res_result = ParsePendingTicks(reader, region.pending_block_ticks);
         if (!res_result) {
           reader.pop_depth();
           return std::unexpected(res_result.error());
         }
       }
-      else if (name == "PendingFluidTicks" && *tag_result == nbt::TagType::List) {
+      else if (name == "PendingFluidTicks" &&
+        *tag_result == nbt::TagType::List) {
         auto res_result = ParsePendingTicks(reader, region.pending_fluid_ticks);
         if (!res_result) {
           reader.pop_depth();
           return std::unexpected(res_result.error());
         }
       }
-      else if (name == "PendingBlockEntities" && *tag_result == nbt::TagType::List) {
+      else if (name == "PendingBlockEntities" &&
+        *tag_result == nbt::TagType::List) {
         const auto start = reader.pos();
         auto skip_result = nbt::SkipPayload(reader, nbt::TagType::List);
         if (!skip_result) {
@@ -224,7 +230,8 @@ namespace fschema::parser::litematic::detail {
         }
         region.pending_block_entities = reader.SpanFrom(start);
       }
-      else if (name == "PendingEntities" && *tag_result == nbt::TagType::List) {
+      else if (name == "PendingEntities" &&
+        *tag_result == nbt::TagType::List) {
         const auto start = reader.pos();
         auto skip_result = nbt::SkipPayload(reader, nbt::TagType::List);
         if (!skip_result) {
@@ -248,17 +255,20 @@ namespace fschema::parser::litematic::detail {
     if (!have_size) {
       return std::unexpected(ParseError::At(
         ParseError::Code::MissingField,
-        "Regions/" + region.name + "/Size", reader.pos()));
+        std::format("Regions/{}/Size", region.name),
+        reader.pos()));
     }
     if (!have_palette) {
       return std::unexpected(ParseError::At(
         ParseError::Code::MissingField,
-        "Regions/" + region.name + "/BlockStatePalette", reader.pos()));
+        std::format("Regions/{}/BlockStatePalette", region.name),
+        reader.pos()));
     }
     if (!have_states) {
       return std::unexpected(ParseError::At(
         ParseError::Code::MissingField,
-        "Regions/" + region.name + "/BlockStates", reader.pos()));
+        std::format("Regions/{}/BlockStates", region.name),
+        reader.pos()));
     }
 
     // Overflow-safe volume calculation + limit check
@@ -280,19 +290,20 @@ namespace fschema::parser::litematic::detail {
         reader.Error(ParseError::Code::OversizedPayload));
     }
     else {
-      const std::uint64_t v2 = ax * ay; // <= limit^2, no overflow
+      const std::uint64_t v2 = ax * ay;  // <= limit^2, no overflow
       if (v2 > limit / az) {
         return std::unexpected(
           reader.Error(ParseError::Code::OversizedPayload));
       }
-      volume = v2 * az; // <= limit
+      volume = v2 * az;  // <= limit
     }
 
     // Delayed fused unpacking (dispatch + allocation + kernel)
     const std::uint32_t bits_per_block = BitsPerBlock(region.palette.size());
     {
       auto indices_result = UnpackIndicesFused(
-        block_states_raw, bits_per_block, volume, region.palette.size());
+        block_states_raw, bits_per_block, volume,
+        region.palette.size(), arena);
       if (!indices_result) {
         return std::unexpected(indices_result.error());
       }
@@ -309,8 +320,8 @@ namespace fschema::parser::litematic::detail {
     std::size_t region_count = 0;
 
     for (;;) {
-      std::string name;
-      auto tag_result = reader.ReadCompoundEntryHeader(name);
+      std::string_view name;
+      auto tag_result = reader.ReadCompoundEntryHeaderView(name);
       if (!tag_result) {
         reader.pop_depth();
         return std::unexpected(tag_result.error());
@@ -325,10 +336,8 @@ namespace fschema::parser::litematic::detail {
           reader.Error(ParseError::Code::OversizedPayload));
       }
 
-      reader.set_path("Regions/" + name);
-
       if (*tag_result == nbt::TagType::Compound) {
-        auto region_result = ParseRegion(reader, name, out.owner);
+        auto region_result = ParseRegion(reader, name, *out.arena);
         if (!region_result) {
           reader.pop_depth();
           return std::unexpected(region_result.error());
@@ -349,4 +358,4 @@ namespace fschema::parser::litematic::detail {
     return {};
   }
 
-} // namespace fschema::parser::litematic::detail
+}  // namespace fschema::parser::litematic::detail

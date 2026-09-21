@@ -42,8 +42,8 @@ namespace fschema::parser::litematic::detail {
     auto& meta = out.metadata;
 
     for (;;) {
-      std::string name;
-      auto tag_result = reader.ReadCompoundEntryHeader(name);
+      std::string_view name;
+      auto tag_result = reader.ReadCompoundEntryHeaderView(name);
       if (!tag_result) {
         reader.pop_depth();
         return std::unexpected(tag_result.error());
@@ -52,31 +52,29 @@ namespace fschema::parser::litematic::detail {
         break;
       }
 
-      reader.set_path("Metadata/" + name);
-
       if (name == "Name" && *tag_result == nbt::TagType::String) {
-        auto value = reader.ReadString();
+        auto value = reader.ReadStringView();
         if (!value) {
           reader.pop_depth();
           return std::unexpected(value.error());
         }
-        meta.name = std::move(*value);
+        meta.name = *value;
       }
       else if (name == "Author" && *tag_result == nbt::TagType::String) {
-        auto value = reader.ReadString();
+        auto value = reader.ReadStringView();
         if (!value) {
           reader.pop_depth();
           return std::unexpected(value.error());
         }
-        meta.author = std::move(*value);
+        meta.author = *value;
       }
       else if (name == "Description" && *tag_result == nbt::TagType::String) {
-        auto value = reader.ReadString();
+        auto value = reader.ReadStringView();
         if (!value) {
           reader.pop_depth();
           return std::unexpected(value.error());
         }
-        meta.description = std::move(*value);
+        meta.description = *value;
       }
       else if (name == "RegionCount" && *tag_result == nbt::TagType::Int) {
         auto value = reader.Read<std::int32_t>();
@@ -106,8 +104,8 @@ namespace fschema::parser::litematic::detail {
         // Sub Compound: { x: Int, y: Int, z: Int }
         reader.push_depth();
         for (;;) {
-          std::string axis_name;
-          auto axis_tag = reader.ReadCompoundEntryHeader(axis_name);
+          std::string_view axis_name;
+          auto axis_tag = reader.ReadCompoundEntryHeaderView(axis_name);
           if (!axis_tag) {
             reader.pop_depth();
             reader.pop_depth();
@@ -200,4 +198,4 @@ namespace fschema::parser::litematic::detail {
     return {};
   }
 
-} // namespace fschema::parser::litematic::detail
+}  // namespace fschema::parser::litematic::detail

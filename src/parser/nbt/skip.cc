@@ -18,7 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
-#include <string>
+#include <string_view>
 
 #include "parser/error.h"
 #include "parser/nbt/reader.h"
@@ -33,8 +33,8 @@ namespace fschema::parser::nbt {
       return std::unexpected(reader.Error(ParseError::Code::DepthLimitExceeded));
     }
     for (;;) {
-      std::string name;
-      auto tag = reader.ReadCompoundEntryHeader(name);
+      std::string_view name;
+      auto tag = reader.ReadCompoundEntryHeaderView(name);
       if (!tag) {
         reader.pop_depth();
         return std::unexpected(tag.error());
@@ -78,7 +78,8 @@ namespace fschema::parser::nbt {
     return {};
   }
 
-  [[nodiscard]] ParseResult<void> SkipScalar(ByteReader& reader, TagType tag_type) {
+  [[nodiscard]] ParseResult<void> SkipScalar(ByteReader& reader,
+    TagType tag_type) {
     const auto size = FixedPayloadSize(tag_type);
     if (reader.remaining() < size) [[unlikely]] {
       return std::unexpected(reader.Error(ParseError::Code::Truncated));
@@ -88,7 +89,7 @@ namespace fschema::parser::nbt {
   }
 
   [[nodiscard]] ParseResult<void> SkipString(ByteReader& reader) {
-    auto len_raw = reader.Read<uint16_t>();
+    auto len_raw = reader.Read<std::uint16_t>();
     if (!len_raw) {
       return std::unexpected(len_raw.error());
     }
@@ -100,7 +101,8 @@ namespace fschema::parser::nbt {
     return {};
   }
 
-  [[nodiscard]] ParseResult<void> SkipArray(ByteReader& reader, TagType tag_type) {
+  [[nodiscard]] ParseResult<void> SkipArray(ByteReader& reader,
+    TagType tag_type) {
     const auto elem_size = ElementSize(tag_type);
     auto len = reader.ReadLength(reader.limits().max_array_elements);
     if (!len) {
@@ -114,7 +116,8 @@ namespace fschema::parser::nbt {
     return {};
   }
 
-  [[nodiscard]] ParseResult<void> SkipPayload(ByteReader& reader, TagType tag_type) {
+  [[nodiscard]] ParseResult<void> SkipPayload(ByteReader& reader,
+    TagType tag_type) {
     switch (tag_type) {
     case TagType::End:
       return {};
@@ -136,9 +139,10 @@ namespace fschema::parser::nbt {
     case TagType::Compound:
       return SkipCompound(reader);
     default: {
-      [[unlikely]] return std::unexpected(reader.Error(ParseError::Code::InvalidTagId));
+      [[unlikely]] return std::unexpected(
+        reader.Error(ParseError::Code::InvalidTagId));
     }
     }
   }
 
-} // namespace fschema::parser::nbt
+}  // namespace fschema::parser::nbt

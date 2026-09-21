@@ -1,5 +1,17 @@
 // Copyright (C) 2026 Rui-Hasekura <ruihasekura@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #include <gtest/gtest.h>
 
@@ -23,11 +35,6 @@
 namespace nbt = fschema::parser::nbt;
 namespace fp = fschema::parser;
 
-// ============================================================================
-// Helper: Construct NBT binary data in memory (Big-Endian)
-// ============================================================================
-
-// Helper to push a big-endian integer into a byte vector
 template <typename T>
 void PushBE(std::vector<std::byte>& buf, T val) {
   for (int i = sizeof(T) - 1; i >= 0; --i) {
@@ -42,49 +49,38 @@ void PushString(std::vector<std::byte>& buf, const std::string& str) {
   }
 }
 
-// Constructs a valid simple NBT compound:
-// TAG_Compound("Root") { "byte_val": 42, "name": "Hello", "list": [10, -20] }
 [[nodiscard]] std::vector<std::byte> MakeValidSimpleNbt() {
   std::vector<std::byte> buf;
 
-  // Root Tag Header: Compound (10), Name "Root"
   buf.push_back(static_cast<std::byte>(nbt::TagType::Compound));
   PushString(buf, "Root");
 
-  // Child 1: Byte (1), Name "byte_val", Value 42
   buf.push_back(static_cast<std::byte>(nbt::TagType::Byte));
   PushString(buf, "byte_val");
   buf.push_back(static_cast<std::byte>(42));
 
-  // Child 2: String (8), Name "name", Value "Hello"
   buf.push_back(static_cast<std::byte>(nbt::TagType::String));
   PushString(buf, "name");
   PushString(buf, "Hello");
 
-  // Child 3: List (9), Name "list", Element Type Int (3), Length 2, Vals 10, -20
   buf.push_back(static_cast<std::byte>(nbt::TagType::List));
   PushString(buf, "list");
-  buf.push_back(static_cast<std::byte>(nbt::TagType::Int)); // Element type
-  PushBE<std::int32_t>(buf, 2); // List length
+  buf.push_back(static_cast<std::byte>(nbt::TagType::Int));
+  PushBE<std::int32_t>(buf, 2);
   PushBE<std::int32_t>(buf, 10);
   PushBE<std::int32_t>(buf, -20);
 
-  // End Tag
   buf.push_back(static_cast<std::byte>(nbt::TagType::End));
 
   return buf;
 }
 
-// ============================================================================
-// Positive Tests
-// ============================================================================
-
 TEST(NbtParseTest, ParsesValidSimpleNbt) {
   auto bytes = MakeValidSimpleNbt();
-  std::span<const std::byte> span(bytes);
+  std::span<const std::byte> byte_span(bytes);
   fp::DecodeLimits limits;
 
-  nbt::ByteReader reader(span, limits);
+  nbt::ByteReader reader(byte_span, limits);
   auto result = nbt::ParseNbt(reader);
 
   ASSERT_TRUE(result.has_value()) << "Parse failed unexpectedly";
@@ -93,7 +89,6 @@ TEST(NbtParseTest, ParsesValidSimpleNbt) {
   EXPECT_EQ(root_tag.type, nbt::TagType::Compound);
   EXPECT_EQ(root_tag.name, "Root");
 
-  // Check if payload is a Compound
   const auto* comp_ptr = std::get_if<std::unique_ptr<nbt::NbtCompound>>(&root_tag.payload);
   ASSERT_NE(comp_ptr, nullptr);
   ASSERT_NE(comp_ptr->get(), nullptr);
@@ -101,21 +96,18 @@ TEST(NbtParseTest, ParsesValidSimpleNbt) {
   const auto& comp = *comp_ptr->get();
   ASSERT_EQ(comp.children.size(), 3);
 
-  // Validate Child 1 (Byte)
   EXPECT_EQ(comp.children[0].type, nbt::TagType::Byte);
   EXPECT_EQ(comp.children[0].name, "byte_val");
   const auto* byte_val = std::get_if<std::int8_t>(&comp.children[0].payload);
   ASSERT_NE(byte_val, nullptr);
   EXPECT_EQ(*byte_val, 42);
 
-  // Validate Child 2 (String)
   EXPECT_EQ(comp.children[1].type, nbt::TagType::String);
   EXPECT_EQ(comp.children[1].name, "name");
   const auto* str_val = std::get_if<std::string>(&comp.children[1].payload);
   ASSERT_NE(str_val, nullptr);
   EXPECT_EQ(*str_val, "Hello");
 
-  // Validate Child 3 (List)
   EXPECT_EQ(comp.children[2].type, nbt::TagType::List);
   EXPECT_EQ(comp.children[2].name, "list");
   const auto* list_ptr = std::get_if<std::unique_ptr<nbt::NbtList>>(&comp.children[2].payload);
@@ -135,16 +127,12 @@ TEST(NbtParseTest, ParsesValidSimpleNbt) {
   EXPECT_EQ(*item2, -20);
 }
 
-// ============================================================================
-// Negative Tests (Robustness)
-// ============================================================================
-
 TEST(NbtParseTest, EmptyBytesInput) {
   std::vector<std::byte> bytes;
-  std::span<const std::byte> span(bytes);
+  std::span<const std::byte> byte_span(bytes);
   fp::DecodeLimits limits;
 
-  nbt::ByteReader reader(span, limits);
+  nbt::ByteReader reader(byte_span, limits);
   auto result = nbt::ParseNbt(reader);
 
   EXPECT_FALSE(result.has_value());
@@ -152,11 +140,11 @@ TEST(NbtParseTest, EmptyBytesInput) {
 }
 
 TEST(NbtParseTest, InvalidRootTagId) {
-  std::vector<std::byte> bytes = { static_cast<std::byte>(13) }; // 13 is invalid
-  std::span<const std::byte> span(bytes);
+  std::vector<std::byte> bytes = { static_cast<std::byte>(13) };  // 13 is invalid
+  std::span<const std::byte> byte_span(bytes);
   fp::DecodeLimits limits;
 
-  nbt::ByteReader reader(span, limits);
+  nbt::ByteReader reader(byte_span, limits);
   auto result = nbt::ParseNbt(reader);
 
   EXPECT_FALSE(result.has_value());
@@ -165,12 +153,11 @@ TEST(NbtParseTest, InvalidRootTagId) {
 
 TEST(NbtParseTest, TruncatedDuringString) {
   auto bytes = MakeValidSimpleNbt();
-  // Truncate right in the middle of the first string's length
   bytes.resize(15);
-  std::span<const std::byte> span(bytes);
+  std::span<const std::byte> byte_span(bytes);
   fp::DecodeLimits limits;
 
-  nbt::ByteReader reader(span, limits);
+  nbt::ByteReader reader(byte_span, limits);
   auto result = nbt::ParseNbt(reader);
 
   EXPECT_FALSE(result.has_value());
@@ -178,14 +165,13 @@ TEST(NbtParseTest, TruncatedDuringString) {
 }
 
 TEST(NbtParseTest, DepthLimitExceeded) {
-  // Set a very strict depth limit
   fp::DecodeLimits limits;
   limits.max_nbt_depth = 0;
 
   auto bytes = MakeValidSimpleNbt();
-  std::span<const std::byte> span(bytes);
+  std::span<const std::byte> byte_span(bytes);
 
-  nbt::ByteReader reader(span, limits);
+  nbt::ByteReader reader(byte_span, limits);
   auto result = nbt::ParseNbt(reader);
 
   EXPECT_FALSE(result.has_value());

@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "parser/litematic/detail/block_states.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -21,7 +23,6 @@
 #include <utility>
 
 #include "parser/error.h"
-#include "parser/litematic/detail/block_states.h"
 #include "parser/litematic/types.h"
 #include "parser/nbt/reader.h"
 
@@ -82,13 +83,12 @@ namespace fschema::parser::litematic::detail {
     return result;
   }
 
-  ParseResult<NoInitVector<std::uint32_t>> UnpackIndicesScalar(
+  ParseResult<NoInitVector<std::uint16_t>> UnpackIndicesScalar(
     std::span<const std::uint64_t> longs,
     std::uint32_t bits_per_block, std::uint64_t volume,
     std::size_t palette_size) {
-
     const std::uint64_t bit_mask = (1ULL << bits_per_block) - 1;
-    NoInitVector<std::uint32_t> indices(static_cast<std::size_t>(volume));
+    NoInitVector<std::uint16_t> indices(static_cast<std::size_t>(volume));
 
     for (std::uint64_t block_idx = 0; block_idx < volume; ++block_idx) {
       const std::uint64_t bit_offset = block_idx * bits_per_block;
@@ -106,9 +106,9 @@ namespace fschema::parser::litematic::detail {
             ParseError::Code::PaletteIndexOutOfRange,
             "BlockStates", 0 });
       }
-      indices[static_cast<std::size_t>(block_idx)] = index;
+      indices[static_cast<std::size_t>(block_idx)] = static_cast<std::uint16_t>(index);
     }
     return indices;
   }
 
-} // namespace fschema::parser::litematic::detail
+}  // namespace fschema::parser::litematic::detail
