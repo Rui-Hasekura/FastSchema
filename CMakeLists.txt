@@ -109,6 +109,15 @@ add_library(FastSchema STATIC
     src/parser/litematic/detail/tile_entity.cc
     src/parser/litematic/parse.cc
 
+    # Schem Sources
+    src/parser/schem/detail/block_data.cc
+    src/parser/schem/detail/block_entities.cc
+    src/parser/schem/detail/entities.cc
+    src/parser/schem/detail/palette.cc
+    src/parser/schem/detail/root.cc
+    src/parser/schem/detail/simd_block_data.cc
+    src/parser/schem/parse.cc
+
     # Common Headers
     include/parser/error.h
     include/parser/limits.h
@@ -137,6 +146,16 @@ add_library(FastSchema STATIC
     include/parser/litematic/detail/region.h
     include/parser/litematic/detail/root.h
     include/parser/litematic/detail/tile_entity.h
+
+    # Schem Parser Headers
+    include/parser/schem/parse.h
+    include/parser/schem/block_state_string.h
+    include/parser/schem/types.h
+    include/parser/schem/detail/block_data.h
+    include/parser/schem/detail/block_entities.h
+    include/parser/schem/detail/entities.h
+    include/parser/schem/detail/palette.h
+    include/parser/schem/detail/root.h
 )
 
 # Compiler Options
@@ -217,7 +236,7 @@ endif()
 # Benchmark Executable
 if(FASTSCHEMA_BUILD_BENCHMARKS)
     add_executable(fastschema_bench
-        bench/litematic_parse.cc
+        bench/schem_parse.cc
     )
 
     target_compile_definitions(fastschema_bench PRIVATE

@@ -36,11 +36,19 @@ Building the generic NBT tree from the decompressed memory buffer.
 
 > **Note on NBT Throughput:** The extraordinarily high throughput (164.96 GiB/s) in the Pure NBT benchmark is not a raw byte-level processing speed. In the current NBT parser implementation, large payloads like `ByteArray`, `IntArray`, and `LongArray` are handled via **zero-copy** `std::span`. The parser simply reads the length prefix and uses `ByteReader::advance()` to skip over the data block, retaining it as a raw byte span in the `NbtPayload`. For files like `.litematic` where the vast majority of the volume is a single `LongArray` (BlockStates), `ParseNbt` performs minimal actual byte-level work and tree construction, spending most of its time just advancing pointers. The heavy computation is deferred to the Litematic parsing stage, where the `LongArray` is actually unpacked into `uint16_t` indices via SIMD.*
 
+#### Schem Parsing
+
+Full extraction of Sponge Schematic structure, including delayed varint decoding of `BlockData` into `uint16_t` block indices.
+
+| Metric   | Wall Time | CPU Time | Iterations | Throughput    | Input Size  | Total Blocks |
+| -------- | --------- | -------- | ---------- | ------------- | ----------- | ------------ |
+| **Mean** | 61.9 ms   | 40.0 ms  | 66         | 6.07224 GiB/s | 248.778 MiB | 260.297M     |
+
 ### How to use
 
 This library is still under development...
 
-But you can use it to parse `.litematic` and NBT files now.
+But you can use it to parse `.litematic` , `.schem` and NBT files now.
 
 #### 1. Parse Litematic File
 
@@ -155,6 +163,68 @@ int main() {
 }
 ```
 
+#### 3. Parse Schem File
+
+Parsing `.schem` files involves decompressing the data, setting up a reader, and calling the root parser. An example based on the benchmark code:
+
+```cpp
+#include <iostream>
+#include <memory>
+#include <vector>
+
+#include "parser/arena.h"
+#include "parser/error.h"
+#include "parser/limits.h"
+#include "parser/nbt/reader.h"
+#include "parser/schem/detail/root.h"
+#include "parser/schem/types.h"
+#include "parser/unpacker.h"
+
+namespace fp = fschema::parser;
+namespace fsc = fschema::parser::schem;
+
+int main() {
+    // STEP 1: Decompression
+    auto unpacked_bytes = fp::DecompressGzipFile("path/to/file.schem");
+    if (!unpacked_bytes) {
+        std::cerr << "Decompress failed: " 
+                  << fp::ToString(unpacked_bytes.error()) << "\n";
+        return 1;
+    }
+
+    // STEP 2: Initialize Schematic and ByteReader
+    fsc::Schematic schematic;
+    schematic.arena = std::make_unique<fp::Arena>();
+    // Transfer ownership of the decompressed buffer
+    schematic.owner = std::make_unique<std::vector<std::byte>>(std::move(*unpacked_bytes));
+
+    fp::DecodeLimits limits; // Default limits
+    fp::nbt::ByteReader reader(
+        std::span<const std::byte>(
+            schematic.owner->data(),
+            schematic.owner->size()),
+        limits);
+
+    // STEP 3: Parse schematic from reader
+    auto result = fsc::detail::ParseRoot(reader, schematic);
+    if (!result) {
+        const fp::ParseError& err = result.error();
+        std::cerr << "Parse failed: " << static_cast<int>(err.code) 
+                  << " at \"" << err.path << "\" (offset: " << err.offset << ")\n";
+        return 1;
+    }
+
+    // Success
+    // Access parsed schematic data
+    std::cout << "Schematic Version: " << static_cast<int>(schematic.version) << "\n";
+    std::cout << "Dimensions: " << schematic.width << " x " 
+              << schematic.height << " x " << schematic.length << "\n";
+    std::cout << "Volume: " << fsc::VolumeOf(schematic) << "\n";
+    std::cout << "Palette size: " << schematic.palette.size() << "\n";
+    std::cout << "Block Entities: " << schematic.block_entities.size() << "\n";
+}
+```
+
 ### License
 
 Distributed under the **Apache License 2.0**. See [LICENSE](https://github.com/Rui-Hasekura/FastSchema/blob/main/LICENSE) for details.
@@ -171,4 +241,4 @@ This project also includes a [NOTICE](https://github.com/Rui-Hasekura/FastSchema
 
 - [Google Test](https://github.com/google/googletest)
 
-- [Intel oneAPI TBB](https://github.com/oneapi-src/oneTBB)
+- [Intel oneTBB](https://github.com/oneapi-src/oneTBB)

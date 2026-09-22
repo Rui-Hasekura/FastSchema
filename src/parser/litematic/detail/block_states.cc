@@ -47,8 +47,6 @@ namespace fschema::parser::litematic::detail {
       return std::unexpected(indices_result.error());
     }
 
-    // Eliminated redundant allocation and memcpy.
-    // UnpackIndicesHwy now returns NoInitVector directly, so we can move it.
     region.block_indices = std::move(*indices_result);
     return {};
   }

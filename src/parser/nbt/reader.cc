@@ -71,7 +71,6 @@ namespace fschema::parser::nbt {
   }
 
   // String read
-  // THERE ARE COPYING
   [[nodiscard]] ParseResult<std::string> ByteReader::ReadString() {
     auto raw_len = Read<std::uint16_t>();
     if (!raw_len) {
@@ -118,8 +117,7 @@ namespace fschema::parser::nbt {
     return buffer_.subspan(pos_, length);
   }
 
-  // Compound / List 's entry read
-  // THERE ARE COPYING
+  // Compound / List entry read
   [[nodiscard]] ParseResult<TagType> ByteReader::ReadCompoundEntryHeader(
     std::string& name_out) {
     auto raw_tag = Read<std::uint8_t>();

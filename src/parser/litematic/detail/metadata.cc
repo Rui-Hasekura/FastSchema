@@ -25,17 +25,6 @@
 
 namespace fschema::parser::litematic::detail {
 
-  // Metadata Compound:
-  //   Name: String
-  //   Author: String
-  //   Description: String
-  //   RegionCount: Int
-  //   TotalBlocks: Int
-  //   TotalVolume: Int
-  //   EnclosingSize: Compound { x,y,z: Int }
-  //   TimeCreated: Long
-  //   TimeModified: Long
-  //   PreviewData: IntArray (Optional, 1.13+)
   [[nodiscard]] ParseResult<void> ParseMetadata(
     nbt::ByteReader& reader, Litematic& out) {
     reader.push_depth();
@@ -101,7 +90,6 @@ namespace fschema::parser::litematic::detail {
         meta.total_volume = *value;
       }
       else if (name == "EnclosingSize" && *tag_result == nbt::TagType::Compound) {
-        // Sub Compound: { x: Int, y: Int, z: Int }
         reader.push_depth();
         for (;;) {
           std::string_view axis_name;
@@ -170,7 +158,6 @@ namespace fschema::parser::litematic::detail {
         meta.time_modified = *value;
       }
       else if (name == "PreviewData" && *tag_result == nbt::TagType::IntArray) {
-        // Reserved raw span, it might be too large, don't materialize it
         auto length = reader.ReadLength(reader.limits().max_array_elements);
         if (!length) {
           reader.pop_depth();

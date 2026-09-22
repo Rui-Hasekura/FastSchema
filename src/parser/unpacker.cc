@@ -83,7 +83,7 @@ namespace fschema::parser {
       out_cap = file_size * 2;
     }
 
-    constexpr std::size_t kHardCap = 1ULL << 30;  // 1 GiB LIMIT
+    constexpr std::size_t kHardCap = 1ULL << 30;  // 1 GiB limit
     if (out_cap > kHardCap) [[unlikely]] {
       return std::unexpected(DecompressError::kDecompressFailed);
     }
@@ -98,7 +98,6 @@ namespace fschema::parser {
 
       if (res == LIBDEFLATE_SUCCESS) [[likely]] {
         output.resize(actual_out);
-        output.shrink_to_fit();
         return output;
       }
 

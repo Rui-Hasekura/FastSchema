@@ -25,18 +25,24 @@ namespace fschema::parser {
 
   struct ParseError {
     enum class Code : std::uint8_t {
+
       // NBT
       Truncated,             // Too short to parse
       InvalidTagId,          // TagID > 12
       NegativeLength,
       DepthLimitExceeded,    // Nested depth too deep
       OversizedPayload,      // Over DecodeLimits
+
       // Litematic schema
       UnsupportedVersion,    // Version < 5 or > 7
       MissingField,          // Necessary field not found in NBT tree
       BlockStatesTooSmall,   // LongArray is too small for volume * bpb
       PaletteIndexOutOfRange,// idx >= palette.size()
       VolumeOverflow,        // x * y * z overflow
+
+      // Schem schema
+      VarintOverflow,
+      BlockDataTooSmall,
     };
 
     Code code;

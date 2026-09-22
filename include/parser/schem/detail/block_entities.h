@@ -13,21 +13,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef FSCHEMA_PARSER_NBT_SIMD_BSWAP_H_
-#define FSCHEMA_PARSER_NBT_SIMD_BSWAP_H_
+#ifndef FSCHEMA_PARSER_SCHEM_DETAIL_BLOCK_ENTITIES_H_
+#define FSCHEMA_PARSER_SCHEM_DETAIL_BLOCK_ENTITIES_H_
 
-#include <cstddef>
-#include <cstdint>
+#include <expected>
+#include <vector>
 
-namespace fschema::parser::nbt {
+#include "parser/error.h"
+#include "parser/nbt/reader.h"
+#include "parser/schem/types.h"
 
-  void CopyAndBswap32(const std::byte* src,
-    std::int32_t* dst,
-    std::size_t count) noexcept;
-  void CopyAndBswap64(const std::byte* src,
-    std::int64_t* dst,
-    std::size_t count) noexcept;
+namespace fschema::parser::schem::detail {
 
-}  // namespace fschema::parser::nbt
+  [[nodiscard]] ParseResult<void> ParseBlockEntities(
+    nbt::ByteReader& reader,
+    std::vector<BlockEntity>& out,
+    bool is_v3);
 
-#endif  // FSCHEMA_PARSER_NBT_SIMD_BSWAP_H_
+}  // namespace fschema::parser::schem::detail
+
+#endif  // FSCHEMA_PARSER_SCHEM_DETAIL_BLOCK_ENTITIES_H_

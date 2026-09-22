@@ -100,7 +100,6 @@ namespace fschema::parser::litematic::detail {
   }
 
   // Parse single Entity Compound
-  // raw_start: cursor position before entering Compound payload (for raw span slicing)
   [[nodiscard]] ParseResult<Entity> ParseEntityCompound(
     nbt::ByteReader& reader) {
     Entity entity;
@@ -151,7 +150,6 @@ namespace fschema::parser::litematic::detail {
         entity.rotation = *rot_result;
       }
       else {
-        // Special fields: skip (raw span will be sliced by outer layer)
         auto skip_result = nbt::SkipPayload(reader, *tag_result);
         if (!skip_result) {
           reader.pop_depth();

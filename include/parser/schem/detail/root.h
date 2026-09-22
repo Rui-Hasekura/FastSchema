@@ -13,11 +13,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef FSCHEMA_PARSER_SCHEM_DETAIL_PALETTE_H_
-#define FSCHEMA_PARSER_SCHEM_DETAIL_PALETTE_H_
+#ifndef FSCHEMA_PARSER_SCHEM_DETAIL_ROOT_H_
+#define FSCHEMA_PARSER_SCHEM_DETAIL_ROOT_H_
 
 #include <expected>
-#include <vector>
 
 #include "parser/error.h"
 #include "parser/nbt/reader.h"
@@ -25,21 +24,21 @@
 
 namespace fschema::parser::schem::detail {
 
-  // Parses a block palette Compound.
-  // Keys are blockstate strings, values are Int indices.
-  //   { "minecraft:air": 0, "minecraft:stone_button[face=floor]": 1, ... }
-  // Indices may be non-contiguous; gaps are left as default BlockState.
-  // Blockstate strings are parsed into name + properties.
-  [[nodiscard]] ParseResult<void> ParseBlockPalette(
-    nbt::ByteReader& reader,
-    std::vector<BlockState>& palette);
-
-  // Parses a biome palette Compound.
-  // Keys are biome resource location strings, values are Int indices.
-  [[nodiscard]] ParseResult<void> ParseBiomePalette(
-    nbt::ByteReader& reader,
-    std::vector<std::string_view>& palette);
+  // Root parser entry point.
+  //
+  // v2: root NBT tag is TAG_Compound("Schematic"),
+  //     fields are directly in the root compound.
+  // v3: root NBT tag is TAG_Compound(""),
+  //     contains a TAG_Compound("Schematic") child.
+  //
+  // Detection:
+  //   1. Read root tag byte (must be 0x0A).
+  //   2. Read root name.
+  //   3. If root name == "Schematic" -> v2 path.
+  //   4. Otherwise -> v3 path (scan for "Schematic" child).
+  [[nodiscard]] ParseResult<void> ParseRoot(
+    nbt::ByteReader& reader, Schematic& out);
 
 }  // namespace fschema::parser::schem::detail
 
-#endif  // FSCHEMA_PARSER_SCHEM_DETAIL_PALETTE_H_
+#endif  // FSCHEMA_PARSER_SCHEM_DETAIL_ROOT_H_

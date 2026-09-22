@@ -40,10 +40,10 @@ namespace fschema::parser {
   class Arena {
   public:
     static constexpr std::size_t kAlign = 64;
-    static constexpr std::size_t kDefaultSlab = 1ULL << 26;   // 64 MiB
-    static constexpr std::size_t kMaxSlab = 1ULL << 32;       // 4 GiB
+    static constexpr std::size_t kDefaultSlab = 1ULL << 26;
+    static constexpr std::size_t kMaxSlab = 1ULL << 32;
     static constexpr std::size_t kPage = 4096;
-    static constexpr std::size_t kLargePage = 2ULL * 1024 * 1024;  // 2 MiB
+    static constexpr std::size_t kLargePage = 2ULL * 1024 * 1024;
 
     Arena() = default;
     explicit Arena(std::size_t) {}
@@ -132,8 +132,8 @@ namespace fschema::parser {
 
   private:
     enum class SlabSource : std::uint8_t {
-      kAligned,     // _aligned_malloc / aligned_alloc  (4K pages)
-      kLargePage,   // VirtualAlloc(MEM_LARGE_PAGES)    (2M pages, Windows)
+      kAligned,
+      kLargePage,
     };
 
     struct Slab {
@@ -172,7 +172,6 @@ namespace fschema::parser {
     }
 
     void NewSlab(std::size_t size) {
-      // Round up to page
       size = (size + kPage - 1) & ~(kPage - 1);
 
       SlabSource source = SlabSource::kAligned;
@@ -194,7 +193,6 @@ namespace fschema::parser {
         source = SlabSource::kAligned;
       }
 #else
-      // POSIX
       p = ::aligned_alloc(kPage, size);
       source = SlabSource::kAligned;
 #endif
@@ -218,8 +216,6 @@ namespace fschema::parser {
 #endif
     }
 
-    // NT Kernel (Windows)
-    // Large Page
 #if defined(_WIN32)
     [[nodiscard]] static bool EnableLockMemoryPrivilege() noexcept {
       static bool checked = false;
@@ -245,7 +241,7 @@ namespace fschema::parser {
       tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
       BOOL adj = ::AdjustTokenPrivileges(
-        hToken, FALSE, &tp, sizeof(tp), nullptr, nullptr);
+        hToken, FALSE, &tp, 0, nullptr, nullptr);
       DWORD err = ::GetLastError();
       ::CloseHandle(hToken);
 
@@ -259,7 +255,6 @@ namespace fschema::parser {
       std::size_t page_min = ::GetLargePageMinimum();
       if (page_min == 0) return nullptr;
 
-      // Round up to large page boundary
       std::size_t large_size = (size + page_min - 1) & ~(page_min - 1);
 
       void* p = ::VirtualAlloc(
@@ -268,13 +263,13 @@ namespace fschema::parser {
         MEM_RESERVE | MEM_COMMIT | MEM_LARGE_PAGES,
         PAGE_READWRITE);
 
-      return p;  // nullptr if failed (no privilege / insufficient resource)
+      return p;
     }
 #endif  // _WIN32
 
     static std::size_t NextPow2(std::size_t x) noexcept {
       --x;
-      for (int i = 1; i < int(sizeof(std::size_t) * 8); i <<= 1)
+      for (int i = 1; i < static_cast<int>(sizeof(std::size_t) * 8); i <<= 1)
         x |= x >> i;
       return x + 1;
     }
