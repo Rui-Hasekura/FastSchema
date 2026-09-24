@@ -1,0 +1,55 @@
+---
+HeaderFilterRegex: '.*'
+FormatStyle: 'file'
+
+ExtraArgs:
+  - "-std=c++23"
+
+Checks: >
+  -*,
+
+  readability-identifier-naming,
+
+  google-explicit-constructor,
+  google-build-using-namespace,
+
+  modernize-avoid-bind,
+  modernize-concat-nested-namespaces,
+  modernize-make-unique,
+  modernize-use-nullptr,
+  modernize-use-override,
+  modernize-use-using,
+
+  bugprone-copy-constructor-init,
+  bugprone-dangling-handle,
+  bugprone-infinite-loop,
+  bugprone-integer-division,
+  bugprone-sizeof-expression,
+  bugprone-unused-raii,
+  bugprone-use-after-move,
+
+  readability-redundant-smartptr-get,
+  readability-redundant-string-cstr
+
+CheckOptions:
+  - key:             readability-identifier-naming.ClassCase
+    value:           CamelCase
+  - key:             readability-identifier-naming.StructCase
+    value:           CamelCase
+  - key:             readability-identifier-naming.FunctionCase
+    value:           CamelCase
+  - key:             readability-identifier-naming.VariableCase
+    value:           lower_case
+  - key:             readability-identifier-naming.ClassMemberCase
+    value:           lower_case
+  - key:             readability-identifier-naming.ClassMemberSuffix
+    value:           '_'
+  - key:             readability-identifier-naming.EnumConstantCase
+    value:           kCamelCase
+  - key:             readability-identifier-naming.ConstexprVariableCase
+    value:           kCamelCase
+  - key:             readability-identifier-naming.GlobalConstantCase
+    value:           kCamelCase
+  - key:             readability-identifier-naming.NamespaceCase
+    value:           lower_case
+...

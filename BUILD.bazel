@@ -16,68 +16,131 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_binary", "cc_test")
 
 cc_library(
-    name = "FastSchema",
-    srcs = [
-        "src/parser/error.cc",
-        "src/parser/unpacker.cc",
-        # NBT Sources
-        "src/parser/nbt/parse.cc",
-        "src/parser/nbt/reader.cc",
-        "src/parser/nbt/skip.cc",
-        "src/parser/nbt/simd_bswap.cc",
-        # Litematic Sources
-        "src/parser/litematic/parse.cc",
-        "src/parser/litematic/detail/block_states.cc",
-        "src/parser/litematic/detail/entity.cc",
-        "src/parser/litematic/detail/metadata.cc",
-        "src/parser/litematic/detail/palette.cc",
-        "src/parser/litematic/detail/pending.cc",
-        "src/parser/litematic/detail/region.cc",
-        "src/parser/litematic/detail/root.cc",
-        "src/parser/litematic/detail/simd_block_states.cc",
-        "src/parser/litematic/detail/tile_entity.cc",
-    ],
-    hdrs = [
-        "include/parser/error.h",
-        "include/parser/limits.h",
-        "include/parser/nbt_tree.h",
-        "include/parser/unpacker.h",
-        # NBT Parser Headers
-        "include/parser/nbt/noinit_allocator.h",
-        "include/parser/nbt/noinit_allocator-inl.h",
-        "include/parser/nbt/parse.h",
-        "include/parser/nbt/reader.h",
-        "include/parser/nbt/reader-inl.h",
-        "include/parser/nbt/skip.h",
-        "include/parser/nbt/tag.h",
-        "include/parser/nbt/tag-inl.h",
-        # Litematic Parser Headers
-        "include/parser/litematic/parse.h",
-        "include/parser/litematic/properties.h",
-        "include/parser/litematic/types.h",
-        "include/parser/litematic/detail/block_states.h",
-        "include/parser/litematic/detail/entity.h",
-        "include/parser/litematic/detail/metadata.h",
-        "include/parser/litematic/detail/palette.h",
-        "include/parser/litematic/detail/pending.h",
-        "include/parser/litematic/detail/region.h",
-        "include/parser/litematic/detail/root.h",
-        "include/parser/litematic/detail/tile_entity.h",
-    ],
-    includes = ["include", "src"],
+    name = "fschema",
+    srcs = glob(["fschema/**/*.cc"]) + glob([
+        "fschema/**/internal/*.h",
+        "fschema/memory/*.h",
+    ]),
+    hdrs = glob([
+        "fschema/base/*.h",
+        "fschema/litematic/*.h",
+        "fschema/schem/*.h",
+    ]),
+    includes = ["."],
     copts = select({
-        "@platforms//os:windows": ["/O2", "/Z7", "/W4", "/WX-", "/utf-8"],
-        "//conditions:default": ["-O2", "-g3", "-Wall", "-Wextra", "-Wpedantic"],
+        "@platforms//os:windows": [
+            "/std:c++latest",
+            "/W4",
+            "/WX-",
+            "/utf-8",
+            "/Zc:__cplusplus",
+            "/permissive-",
+        ],
+        "//conditions:default": [
+            "-std=c++23",
+            "-Wall",
+            "-Wextra",
+            "-Wpedantic",
+        ],
     }),
     visibility = ["//visibility:public"],
     deps = [
         "@highway//:hwy",
-        "@libdeflate//:libdeflate_static",
-        "@tbb//:tbb",
+        "//third_party:libdeflate",
+        "//third_party:tbb",
     ],
 )
 
+#  Tests
+
 cc_test(
-    name = "fastschema_test",
-    srcs = ["test/nbt_parse.cc"],
-    defines = [
+    name = "fschema_litematic_parse_test",
+    srcs = [
+        "fschema/tests/litematic_parse_test.cc",
+        "fschema/tests/testdata_util.h",
+    ],
+    copts = select({
+        "@platforms//os:windows": ["/std:c++latest"],
+        "//conditions:default": ["-std=c++23"],
+    }),
+    defines = ["FASTSCHEMA_TESTDATA_DIR=\"fschema/testdata\""],
+    data = glob(["fschema/testdata/**"]),
+    deps = [":fschema", "@googletest//:gtest_main"],
+)
+
+cc_test(
+    name = "fschema_nbt_parse_test",
+    srcs = [
+        "fschema/tests/nbt_parse_test.cc",
+        "fschema/tests/testdata_util.h",
+    ],
+    copts = select({
+        "@platforms//os:windows": ["/std:c++latest"],
+        "//conditions:default": ["-std=c++23"],
+    }),
+    defines = ["FASTSCHEMA_TESTDATA_DIR=\"fschema/testdata\""],
+    data = glob(["fschema/testdata/**"]),
+    deps = [":fschema", "@googletest//:gtest_main"],
+)
+
+cc_test(
+    name = "fschema_schem_parse_test",
+    srcs = [
+        "fschema/tests/schem_parse_test.cc",
+        "fschema/tests/testdata_util.h",
+    ],
+    copts = select({
+        "@platforms//os:windows": ["/std:c++latest"],
+        "//conditions:default": ["-std=c++23"],
+    }),
+    defines = ["FASTSCHEMA_TESTDATA_DIR=\"fschema/testdata\""],
+    data = glob(["fschema/testdata/**"]),
+    deps = [":fschema", "@googletest//:gtest_main"],
+)
+
+#  Benchmarks
+
+cc_binary(
+    name = "fschema_schem_parse_benchmark",
+    srcs = [
+        "fschema/benchmarks/schem_parse_benchmark.cc",
+        "fschema/tests/testdata_util.h",
+    ],
+    copts = select({
+        "@platforms//os:windows": ["/std:c++latest"],
+        "//conditions:default": ["-std=c++23"],
+    }),
+    defines = ["FASTSCHEMA_TESTDATA_DIR=\"fschema/testdata\""],
+    data = glob(["fschema/testdata/**"]),
+    deps = [":fschema", "@google_benchmark//:benchmark"],
+)
+
+cc_binary(
+    name = "fschema_litematic_parse_benchmark",
+    srcs = [
+        "fschema/benchmarks/litematic_parse_benchmark.cc",
+        "fschema/tests/testdata_util.h",
+    ],
+    copts = select({
+        "@platforms//os:windows": ["/std:c++latest"],
+        "//conditions:default": ["-std=c++23"],
+    }),
+    defines = ["FASTSCHEMA_TESTDATA_DIR=\"fschema/testdata\""],
+    data = glob(["fschema/testdata/**"]),
+    deps = [":fschema", "@google_benchmark//:benchmark"],
+)
+
+cc_binary(
+    name = "fschema_nbt_parse_benchmark",
+    srcs = [
+        "fschema/benchmarks/nbt_parse_benchmark.cc",
+        "fschema/tests/testdata_util.h",
+    ],
+    copts = select({
+        "@platforms//os:windows": ["/std:c++latest"],
+        "//conditions:default": ["-std=c++23"],
+    }),
+    defines = ["FASTSCHEMA_TESTDATA_DIR=\"fschema/testdata\""],
+    data = glob(["fschema/testdata/**"]),
+    deps = [":fschema", "@google_benchmark//:benchmark"],
+)

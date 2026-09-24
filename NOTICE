@@ -2,9 +2,9 @@ FastSchema
 Copyright 2026 Rui-Hasekura <ruihasekura@gmail.com>
 
 This product includes schematic/test sample files designed by Linvin-1233.
-* Files under the `samples/linvin` directory are licensed under the MIT License.
+* Files under the `fschema/testdata/linvin` directory are licensed under the MIT License.
   Source: https://github.com/Linvin-1233/litematica-storage/
 
 This product includes NBT test sample files from na_nbt.
-* Files under the `samples/na_nbt` directory are licensed under the MIT License.
+* Files under the `fschema/testdata/na_nbt` directory are licensed under the MIT License.
   Source: https://github.com/zijinshanren/na_nbt/

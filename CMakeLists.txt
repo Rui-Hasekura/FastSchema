@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required(VERSION 4.4)
+cmake_minimum_required(VERSION 3.26...4.4)
 
 project(
     FastSchema
@@ -22,238 +22,238 @@ project(
     LANGUAGES CXX
 )
 
-set(CMAKE_CXX_STANDARD 23)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+include(GNUInstallDirs)
 
 # Options
-option(FASTSCHEMA_BUILD_BENCHMARKS "Build FastSchema benchmark executable" ${PROJECT_IS_TOP_LEVEL})
-option(FASTSCHEMA_BUILD_TESTS "Build FastSchema tests" ${PROJECT_IS_TOP_LEVEL})
+option(FASTSCHEMA_BUILD_BENCHMARKS "Build FastSchema benchmarks"
+       ${PROJECT_IS_TOP_LEVEL})
+option(FASTSCHEMA_BUILD_TESTS "Build FastSchema tests"
+       ${PROJECT_IS_TOP_LEVEL})
+option(FASTSCHEMA_INSTALL "Generate install target"
+       ${PROJECT_IS_TOP_LEVEL})
 
 # Dependencies
 include(FetchContent)
 
-# 1. Google Highway (Core)
-FetchContent_Declare(
-    hwy
+# Highway (static)
+FetchContent_Declare(hwy
     GIT_REPOSITORY https://github.com/google/highway.git
-    GIT_TAG        1.4.0
-)
-set(HWY_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
-set(HWY_ENABLE_EXAMPLES OFF CACHE BOOL "" FORCE)
+    GIT_TAG 1.4.0)
+block()
+    set(HWY_ENABLE_TESTS OFF)
+    set(HWY_ENABLE_EXAMPLES OFF)
+    FetchContent_MakeAvailable(hwy)
+endblock()
 
-# 2. libdeflate (Core)
-FetchContent_Declare(
-    libdeflate
+# libdeflate (static)
+FetchContent_Declare(libdeflate
     GIT_REPOSITORY https://github.com/ebiggers/libdeflate.git
-    GIT_TAG        v1.22
-)
-set(LIBDEFLATE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(LIBDEFLATE_BUILD_GZIP OFF CACHE BOOL "" FORCE)
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    GIT_TAG v1.22)
+block()
+    set(LIBDEFLATE_BUILD_TESTS OFF)
+    set(LIBDEFLATE_BUILD_SHARED_LIB OFF)
+    set(LIBDEFLATE_BUILD_STATIC_LIB ON)
+    FetchContent_MakeAvailable(libdeflate)
+endblock()
 
-# 3. Intel oneAPI TBB (Core)
-FetchContent_Declare(
-    oneTBB
+# Intel oneTBB (shared)
+FetchContent_Declare(oneTBB
     GIT_REPOSITORY https://github.com/oneapi-src/oneTBB.git
-    GIT_TAG        v2021.13.0
-)
-set(TBB_TEST OFF CACHE BOOL "" FORCE)
-set(TBB_EXAMPLES OFF CACHE BOOL "" FORCE)
+    GIT_TAG        v2021.13.0)
+block()
+    set(TBB_TEST OFF)
+    set(TBB_EXAMPLES OFF)
+    set(BUILD_SHARED_LIBS ON)
+    FetchContent_MakeAvailable(oneTBB)
+endblock()
 
-# Download and make available core dependencies
-FetchContent_MakeAvailable(hwy libdeflate oneTBB)
-
-# 4. Google Test (Test only)
 if(FASTSCHEMA_BUILD_TESTS)
-    FetchContent_Declare(
-        googletest
+    FetchContent_Declare(googletest
         GIT_REPOSITORY https://github.com/google/googletest.git
-        GIT_TAG        v1.18.0
-    )
-    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-    FetchContent_MakeAvailable(googletest)
+        GIT_TAG v1.18.0)
+    block()
+        set(gtest_force_shared_crt ON)
+        FetchContent_MakeAvailable(googletest)
+    endblock()
 endif()
 
-# 5. Google Benchmark (Benchmark only)
 if(FASTSCHEMA_BUILD_BENCHMARKS)
-    FetchContent_Declare(
-        googlebenchmark
+    FetchContent_Declare(googlebenchmark
         GIT_REPOSITORY https://github.com/google/benchmark.git
-        GIT_TAG        v1.9.5
-    )
-    set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
-    FetchContent_MakeAvailable(googlebenchmark)
+        GIT_TAG v1.9.5)
+    block()
+        set(BENCHMARK_ENABLE_TESTING OFF)
+        FetchContent_MakeAvailable(googlebenchmark)
+    endblock()
 endif()
 
-# Library Target
-add_library(FastSchema STATIC
-    # Sources
-    src/parser/error.cc
-    src/parser/unpacker.cc
+add_library(fschema STATIC)
+add_library(fschema::fschema ALIAS fschema)
 
-    # NBT Sources
-    src/parser/nbt/parse.cc
-    src/parser/nbt/reader.cc
-    src/parser/nbt/skip.cc
-    src/parser/nbt/simd_bswap.cc
+target_compile_features(fschema PUBLIC cxx_std_23)
+set_target_properties(fschema PROPERTIES CXX_EXTENSIONS OFF)
 
-    # Litematic Sources
-    src/parser/litematic/detail/block_states.cc
-    src/parser/litematic/detail/entity.cc
-    src/parser/litematic/detail/metadata.cc
-    src/parser/litematic/detail/palette.cc
-    src/parser/litematic/detail/pending.cc
-    src/parser/litematic/detail/region.cc
-    src/parser/litematic/detail/root.cc
-    src/parser/litematic/detail/simd_block_states.cc
-    src/parser/litematic/detail/tile_entity.cc
-    src/parser/litematic/parse.cc
-
-    # Schem Sources
-    src/parser/schem/detail/block_data.cc
-    src/parser/schem/detail/block_entities.cc
-    src/parser/schem/detail/entities.cc
-    src/parser/schem/detail/palette.cc
-    src/parser/schem/detail/root.cc
-    src/parser/schem/detail/simd_block_data.cc
-    src/parser/schem/parse.cc
-
-    # Common Headers
-    include/parser/error.h
-    include/parser/limits.h
-    include/parser/nbt_tree.h
-    include/parser/unpacker.h
-
-    # NBT Parser Headers
-    include/parser/nbt/noinit_allocator.h
-    include/parser/nbt/noinit_allocator-inl.h
-    include/parser/nbt/parse.h
-    include/parser/nbt/reader.h
-    include/parser/nbt/reader-inl.h
-    include/parser/nbt/skip.h
-    include/parser/nbt/tag.h
-    include/parser/nbt/tag-inl.h
-
-    # Litematic Parser Headers
-    include/parser/litematic/parse.h
-    include/parser/litematic/properties.h
-    include/parser/litematic/types.h
-    include/parser/litematic/detail/block_states.h
-    include/parser/litematic/detail/entity.h
-    include/parser/litematic/detail/metadata.h
-    include/parser/litematic/detail/palette.h
-    include/parser/litematic/detail/pending.h
-    include/parser/litematic/detail/region.h
-    include/parser/litematic/detail/root.h
-    include/parser/litematic/detail/tile_entity.h
-
-    # Schem Parser Headers
-    include/parser/schem/parse.h
-    include/parser/schem/block_state_string.h
-    include/parser/schem/types.h
-    include/parser/schem/detail/block_data.h
-    include/parser/schem/detail/block_entities.h
-    include/parser/schem/detail/entities.h
-    include/parser/schem/detail/palette.h
-    include/parser/schem/detail/root.h
+# Implementation sources
+target_sources(fschema
+  PRIVATE
+    fschema/base/byte_order.cc
+    fschema/base/decompression.cc
+    fschema/base/error.cc
+    fschema/base/nbt_parse.cc
+    fschema/base/nbt_reader.cc
+    fschema/base/nbt_skip.cc
+    fschema/memory/arena.cc
+    fschema/litematic/parse.cc
+    fschema/litematic/internal/block_states.cc
+    fschema/litematic/internal/entity.cc
+    fschema/litematic/internal/metadata.cc
+    fschema/litematic/internal/palette.cc
+    fschema/litematic/internal/pending.cc
+    fschema/litematic/internal/region.cc
+    fschema/litematic/internal/root.cc
+    fschema/litematic/internal/simd_block_states.cc
+    fschema/litematic/internal/tile_entity.cc
+    fschema/schem/parse.cc
+    fschema/schem/internal/block_data.cc
+    fschema/schem/internal/block_entities.cc
+    fschema/schem/internal/block_state_string.cc
+    fschema/schem/internal/entities.cc
+    fschema/schem/internal/palette.cc
+    fschema/schem/internal/root.cc
+    fschema/schem/internal/simd_block_data.cc
 )
 
-# Compiler Options
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    if(MSVC)
-        # Clang-CL on Windows
-        target_compile_options(FastSchema PRIVATE
-            /O2
-            /Z7
-            /W4
-            /utf-8
-        )
-    else()
-        # GCC / Clang
-        target_compile_options(FastSchema PRIVATE
-            -O2
-            -g3
-            -Wall
-            -Wextra
-            -Wpedantic
-        )
-    endif()
-elseif(MSVC)
-    # MSVC
-    target_compile_options(FastSchema PRIVATE
-        /O2
-        /Z7
+# Public headers FILE_SET
+file(GLOB_RECURSE FSCHEMA_ALL_HEADERS
+    CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/fschema/*.h"
+)
+
+# Public
+set(FSCHEMA_PUBLIC_HEADERS ${FSCHEMA_ALL_HEADERS})
+list(FILTER FSCHEMA_PUBLIC_HEADERS EXCLUDE REGEX "/(internal|memory)/")
+
+# Private
+set(FSCHEMA_PRIVATE_HEADERS ${FSCHEMA_ALL_HEADERS})
+list(FILTER FSCHEMA_PRIVATE_HEADERS INCLUDE REGEX "/(internal|memory)/")
+
+target_sources(fschema
+  PRIVATE
+    ${FSCHEMA_PRIVATE_HEADERS}
+)
+
+target_sources(fschema
+  PUBLIC
+    FILE_SET HEADERS
+    BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
+    FILES ${FSCHEMA_PUBLIC_HEADERS}
+)
+
+target_link_libraries(fschema
+  PRIVATE
+    hwy
+    libdeflate::libdeflate_static
+    TBB::tbb
+)
+
+# Compiler flags
+if(MSVC)
+    target_compile_options(fschema PRIVATE
         /W4
         /WX-
         /utf-8
+        /Zc:__cplusplus
+        /permissive-
+    )
+else()
+    target_compile_options(fschema PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
     )
 endif()
 
-# Include Directories
-target_include_directories(FastSchema
-    PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:include>
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-)
+#  Install / Export
+if(FASTSCHEMA_INSTALL)
+    include(CMakePackageConfigHelpers)
 
-# Link Libraries
-target_link_libraries(FastSchema
-    PUBLIC
-        hwy
-        libdeflate::libdeflate_static
-    PRIVATE
-        TBB::tbb
-)
+    install(TARGETS fschema
+        EXPORT fschemaTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        FILE_SET HEADERS
+    )
 
-# Test Executable
+    install(EXPORT fschemaTargets
+        FILE fschemaTargets.cmake
+        NAMESPACE fschema::
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fschema
+    )
+
+    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/fschemaConfig.cmake.in
+        "@PACKAGE_INIT@
+        include(CMakeFindDependencyMacro)
+        find_dependency(hwy)
+        find_dependency(TBB)
+        find_dependency(libdeflate)
+        include(\"\${CMAKE_CURRENT_LIST_DIR}/fschemaTargets.cmake\")
+        check_required_components(fschema)"
+    )
+
+    configure_package_config_file(
+        ${CMAKE_CURRENT_BINARY_DIR}/fschemaConfig.cmake.in
+        ${CMAKE_CURRENT_BINARY_DIR}/fschemaConfig.cmake
+        INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fschema
+    )
+
+    write_basic_package_version_file(
+        fschemaConfigVersion.cmake
+        VERSION ${PROJECT_VERSION}
+        COMPATIBILITY SameMajorVersion
+    )
+
+    install(FILES
+        ${CMAKE_CURRENT_BINARY_DIR}/fschemaConfig.cmake
+        ${CMAKE_CURRENT_BINARY_DIR}/fschemaConfigVersion.cmake
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fschema
+    )
+endif()
+
+# Tests (opt-in)
 if(FASTSCHEMA_BUILD_TESTS)
     include(CTest)
     include(GoogleTest)
 
-    add_executable(fastschema_test
-        test/litematic_parse.cc
-    )
+    function(fschema_add_test name src)
+        add_executable(${name}
+            ${src}
+            fschema/tests/testdata_util.h
+        )
+        target_compile_definitions(${name} PRIVATE
+            FASTSCHEMA_TESTDATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fschema/testdata")
+        target_link_libraries(${name} PRIVATE fschema hwy GTest::gtest_main)
+        gtest_discover_tests(${name})
+    endfunction()
 
-    target_compile_definitions(fastschema_test PRIVATE
-        FASTSCHEMA_SAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/samples"
-    )
-
-    if(MSVC)
-        target_link_options(fastschema_test PRIVATE /DEBUG:FULL)
-    endif()
-
-    target_link_libraries(fastschema_test
-        PRIVATE
-            FastSchema
-            GTest::gtest_main
-    )
-
-    gtest_discover_tests(fastschema_test)
+    fschema_add_test(fschema_litematic_parse_test fschema/tests/litematic_parse_test.cc)
+    fschema_add_test(fschema_nbt_parse_test    fschema/tests/nbt_parse_test.cc)
+    fschema_add_test(fschema_schem_parse_test  fschema/tests/schem_parse_test.cc)
 endif()
 
-# Benchmark Executable
+# Benchmarks (opt-in)
 if(FASTSCHEMA_BUILD_BENCHMARKS)
-    add_executable(fastschema_bench
-        bench/schem_parse.cc
-    )
-
-    target_compile_definitions(fastschema_bench PRIVATE
-        FASTSCHEMA_SAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/samples"
-    )
-
-    if(MSVC)
-        target_link_options(fastschema_bench PRIVATE
-            /DEBUG:FULL
+    function(fschema_add_bench name src)
+        add_executable(${name}
+            ${src}
+            fschema/tests/testdata_util.h
         )
-    endif()
+        target_compile_definitions(${name} PRIVATE
+            FASTSCHEMA_TESTDATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fschema/testdata")
+        target_link_libraries(${name} PRIVATE fschema hwy benchmark TBB::tbb)
+    endfunction()
 
-    target_link_libraries(fastschema_bench
-        PRIVATE
-            FastSchema
-            benchmark
-            wsock32
-            TBB::tbb
-    )
+    fschema_add_bench(fschema_schem_parse_benchmark      fschema/benchmarks/schem_parse_benchmark.cc)
+    fschema_add_bench(fschema_litematic_parse_benchmark  fschema/benchmarks/litematic_parse_benchmark.cc)
+    fschema_add_bench(fschema_nbt_parse_benchmark        fschema/benchmarks/nbt_parse_benchmark.cc)
 endif()

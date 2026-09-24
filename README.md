@@ -59,20 +59,19 @@ For example:
 #include <memory>
 #include <vector>
 
-#include "parser/error.h"
-#include "parser/unpacker.h"
-#include "parser/litematic/parse.h"
-#include "parser/litematic/types.h"
+#include "fschema/base/decompression.h"
+#include "fschema/base/error.h"
+#include "fschema/litematic/parse.h"
+#include "fschema/litematic/types.h"
 
-namespace fp = fschema::parser;
-namespace fl = fschema::parser::litematic;
+namespace fb = fschema::base;
+namespace fl = fschema::litematic;
 
 int main() {
     // STEP 1: Decompression
-    auto unpacked_bytes = fp::DecompressGzipFile("path/to/file.litematic");
+    auto unpacked_bytes = fb::DecompressGzipFile("path/to/file.litematic");
     if (!unpacked_bytes) {
-        std::cerr << "Decompress failed: " 
-                  << fp::ToString(unpacked_bytes.error()) << "\n";
+        std::cerr << "Decompress failed\n";
         return 1;
     }
 
@@ -81,22 +80,24 @@ int main() {
     auto result = fl::ParseLitematic(std::move(owner));
 
     if (!result) {
-        // Fail
-        const fp::ParseError& err = result.error();
-        std::cerr << "Parse failed: " << static_cast<int>(err.code) 
+        const fschema::ParseError& err = result.error();
+        std::cerr << "Parse failed: " << static_cast<int>(err.code)
                   << " at \"" << err.path << "\" (offset: " << err.offset << ")\n";
         return 1;
     }
 
-    // Success
-    // Now you got the fully parsed data.
-    fl::Litematic litematic = std::move(*result);
-
-    // Example: Access metadata
-    std::cout << "Litematic Name: " << litematic.metadata.name << "\n";
+    // Success — fully parsed litematic with zero-copy block indices
+    const auto& litematic = *result;
+    std::cout << "Name: " << litematic.metadata.name << "\n";
     std::cout << "Regions: " << litematic.regions.size() << "\n";
+    std::cout << "Total blocks: " << litematic.metadata.total_blocks << "\n";
 
-    return 0;
+    for (std::size_t i = 0; i < litematic.regions.size(); ++i) {
+        const auto& reg = litematic.regions[i];
+        std::cout << "  Region [" << i << "]: "
+                  << reg.block_indices.size() << " blocks, "
+                  << reg.palette.size() << " palette entries\n";
+    }
 }
 ```
 
@@ -107,57 +108,59 @@ The NBT parser builds a generic tree using zero-copy spans for large arrays.
 ```cpp
 #include <iostream>
 #include <memory>
+#include <span>
 #include <variant>
 #include <vector>
 
-#include "parser/error.h"
-#include "parser/limits.h"
-#include "parser/nbt/parse.h"
-#include "parser/nbt/reader.h"
-#include "parser/nbt/tag.h"
-#include "parser/nbt_tree.h"
-#include "parser/unpacker.h"
+#include "fschema/base/decompression.h"
+#include "fschema/base/error.h"
+#include "fschema/base/limits.h"
+#include "fschema/base/nbt_parse.h"
+#include "fschema/base/nbt_reader.h"
+#include "fschema/base/nbt_tag.h"
 
-namespace fp = fschema::parser;
-namespace nbt = fschema::parser::nbt;
+namespace fb = fschema::base;
 
 int main() {
-    // STEP 1: Decompression (Assuming a gzip-compressed NBT file)
-    auto unpacked_bytes = fp::DecompressGzipFile("path/to/file.nbt");
+    // STEP 1: Decompression (gzip-compressed NBT files)
+    auto unpacked_bytes = fb::DecompressGzipFile("path/to/file.nbt");
     if (!unpacked_bytes) {
-        std::cerr << "Decompress failed: " 
-                  << fp::ToString(unpacked_bytes.error()) << "\n";
+        std::cerr << "Decompress failed\n";
         return 1;
     }
 
     // STEP 2: Wrap into a span and initialize the reader
     std::span<const std::byte> byte_span(*unpacked_bytes);
-    fp::DecodeLimits limits; // Default limits
-    nbt::ByteReader reader(byte_span, limits);
+    fb::DecodeLimits limits;
+    fb::ByteReader reader(byte_span, limits);
 
     // STEP 3: Parse the NBT tree
-    auto result = nbt::ParseNbt(reader);
+    auto result = fb::ParseNbt(reader);
     if (!result) {
-        const fp::ParseError& err = result.error();
-        std::cerr << "Parse failed: " << static_cast<int>(err.code) 
+        const fschema::ParseError& err = result.error();
+        std::cerr << "Parse failed: " << static_cast<int>(err.code)
                   << " at \"" << err.path << "\" (offset: " << err.offset << ")\n";
         return 1;
     }
 
-    // Success
-    const nbt::NbtTag& root_tag = *result;
+    std::cout << "Bytes consumed: " << reader.pos()
+              << " / " << unpacked_bytes->size() << "\n";
+
+    // Success — access the parsed NBT tree
+    const auto& root_tag = *result;
     std::cout << "Root tag type: " << static_cast<int>(root_tag.type) << "\n";
     std::cout << "Root tag name: " << root_tag.name << "\n";
 
-    // Example: Access children if it's a Compound
-    if (root_tag.type == nbt::TagType::Compound) {
-        const auto& comp_ptr = std::get<std::unique_ptr<nbt::NbtCompound>>(root_tag.payload);
-        const auto& compound = *comp_ptr;
-        std::cout << "Children count: " << compound.children.size() << "\n";
-
-        for (const auto& child : compound.children) {
-            std::cout << " - " << child.name 
-                      << " (Type: " << static_cast<int>(child.type) << ")\n";
+    if (root_tag.type == fb::TagType::Compound) {
+        const auto* comp_ptr =
+            std::get_if<std::unique_ptr<fb::NbtCompound>>(&root_tag.payload);
+        if (comp_ptr && *comp_ptr) {
+            const auto& compound = **comp_ptr;
+            std::cout << "Children: " << compound.children.size() << "\n";
+            for (const auto& child : compound.children) {
+                std::cout << "  " << child.name
+                          << " (type: " << static_cast<int>(child.type) << ")\n";
+            }
         }
     }
 }
@@ -170,58 +173,63 @@ Parsing `.schem` files involves decompressing the data, setting up a reader, and
 ```cpp
 #include <iostream>
 #include <memory>
+#include <span>
 #include <vector>
 
-#include "parser/arena.h"
-#include "parser/error.h"
-#include "parser/limits.h"
-#include "parser/nbt/reader.h"
-#include "parser/schem/detail/root.h"
-#include "parser/schem/types.h"
-#include "parser/unpacker.h"
+#include "fschema/base/decompression.h"
+#include "fschema/base/error.h"
+#include "fschema/base/limits.h"
+#include "fschema/base/nbt_reader.h"
+#include "fschema/memory/arena.h"
+#include "fschema/schem/internal/root.h"
+#include "fschema/schem/types.h"
 
-namespace fp = fschema::parser;
-namespace fsc = fschema::parser::schem;
+namespace fb = fschema::base;
+namespace fm = fschema::memory;
+namespace fsc = fschema::schem;
 
 int main() {
     // STEP 1: Decompression
-    auto unpacked_bytes = fp::DecompressGzipFile("path/to/file.schem");
+    auto unpacked_bytes = fb::DecompressGzipFile("path/to/file.schem");
     if (!unpacked_bytes) {
-        std::cerr << "Decompress failed: " 
-                  << fp::ToString(unpacked_bytes.error()) << "\n";
+        std::cerr << "Decompress failed\n";
         return 1;
     }
 
     // STEP 2: Initialize Schematic and ByteReader
     fsc::Schematic schematic;
-    schematic.arena = std::make_unique<fp::Arena>();
-    // Transfer ownership of the decompressed buffer
+    schematic.arena = std::make_unique<fm::Arena>();
     schematic.owner = std::make_unique<std::vector<std::byte>>(std::move(*unpacked_bytes));
 
-    fp::DecodeLimits limits; // Default limits
-    fp::nbt::ByteReader reader(
+    fb::DecodeLimits limits;
+    fb::ByteReader reader(
         std::span<const std::byte>(
             schematic.owner->data(),
             schematic.owner->size()),
         limits);
 
     // STEP 3: Parse schematic from reader
-    auto result = fsc::detail::ParseRoot(reader, schematic);
+    auto result = fsc::internal::ParseRoot(reader, schematic);
     if (!result) {
-        const fp::ParseError& err = result.error();
-        std::cerr << "Parse failed: " << static_cast<int>(err.code) 
+        const fschema::ParseError& err = result.error();
+        std::cerr << "Parse failed: " << static_cast<int>(err.code)
                   << " at \"" << err.path << "\" (offset: " << err.offset << ")\n";
         return 1;
     }
 
-    // Success
-    // Access parsed schematic data
-    std::cout << "Schematic Version: " << static_cast<int>(schematic.version) << "\n";
-    std::cout << "Dimensions: " << schematic.width << " x " 
+    // Success — access parsed schematic data
+    std::cout << "Version: " << static_cast<int>(schematic.version) << "\n";
+    std::cout << "Dimensions: " << schematic.width << " x "
               << schematic.height << " x " << schematic.length << "\n";
     std::cout << "Volume: " << fsc::VolumeOf(schematic) << "\n";
-    std::cout << "Palette size: " << schematic.palette.size() << "\n";
+    std::cout << "Palette: " << schematic.palette.size() << "\n";
     std::cout << "Block Entities: " << schematic.block_entities.size() << "\n";
+    std::cout << "Entities: " << schematic.entities.size() << "\n";
+
+    if (!schematic.biome_indices.empty()) {
+        std::cout << "Biome Palette: " << schematic.biome_palette.size() << "\n";
+        std::cout << "Biome Volume: " << fsc::BiomeVolumeOf(schematic) << "\n";
+    }
 }
 ```
 

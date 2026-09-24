@@ -1,0 +1,39 @@
+BasedOnStyle: Google
+
+IndentWidth: 2
+ColumnLimit: 80
+
+BinPackParameters: false
+BinPackArguments: false
+AllowAllParametersOfDeclarationOnNextLine: false
+
+FixNamespaceComments: true
+
+PointerAlignment: Left
+
+MaxEmptyLinesToKeep: 1
+
+AccessModifierOffset: -1
+
+AlignConsecutiveAssignments: None
+AlignConsecutiveDeclarations: None
+
+IndentPPDirectives: AfterHash
+
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex:           '^<.*\.h>'
+    Priority:        1
+  - Regex:           '^<.*'
+    Priority:        2
+  - Regex:           '^"gtest/.*"'
+    Priority:        3
+  - Regex:           '^".*"'
+    Priority:        4
+  - Regex:           '.*'
+    Priority:        5
+
+BreakBeforeBraces: Attach
+SortIncludes: CaseInsensitive
+AllowShortLambdasOnASingleLine: Inline
+BreakAfterAttributes: Never
