@@ -54,23 +54,26 @@ namespace fschema::litematic::internal {
     return static_cast<std::uint32_t>(std::bit_width(palette_size - 1));
   }
 
-  [[nodiscard]] ParseResult<NoInitVector<std::uint16_t>> UnpackIndicesFused(
+  [[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>> UnpackIndicesFused(
     std::span<const std::byte> raw_longs,
     std::uint32_t bits_per_block, std::uint64_t volume,
     std::size_t palette_size,
     memory::Arena& arena);
 
-  [[nodiscard]] ParseResult<NoInitVector<std::uint16_t>> UnpackIndicesHwy(
+  [[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+  UnpackIndicesHwy(
     std::span<const std::uint64_t> longs,
     std::uint32_t bits_per_block, std::uint64_t volume,
     std::size_t palette_size);
 
-  [[nodiscard]] ParseResult<NoInitVector<std::uint16_t>> UnpackIndicesScalar(
+  [[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+  UnpackIndicesScalar(
     std::span<const std::uint64_t> longs,
     std::uint32_t bits_per_block, std::uint64_t volume,
     std::size_t palette_size);
 
-  [[nodiscard]] ParseResult<NoInitVector<std::uint64_t>> ReadLongArrayBe(
+  [[nodiscard]] ParseResult<memory::NoInitVector<std::uint64_t>>
+  ReadLongArrayBe(
     base::ByteReader& reader, std::uint64_t expected_longs);
 
 }  // namespace fschema::litematic::internal

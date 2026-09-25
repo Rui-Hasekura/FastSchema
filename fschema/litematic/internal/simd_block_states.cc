@@ -409,7 +409,7 @@ namespace fschema::litematic::internal {
       return {};
     }
 
-    ParseResult<NoInitVector<std::uint16_t>> UnpackIndicesFusedImpl(
+    ParseResult<memory::NoInitVector<std::uint16_t>> UnpackIndicesFusedImpl(
       std::span<const std::byte> raw_longs,
       std::uint32_t bits_per_block, std::uint64_t volume,
       std::size_t palette_size,
@@ -419,7 +419,7 @@ namespace fschema::litematic::internal {
         return ParseError{ code, "BlockStates", 0 };
         };
 
-      if (volume == 0) return NoInitVector<std::uint16_t>{};
+      if (volume == 0) return memory::NoInitVector<std::uint16_t>{};
 
       if (palette_size < 2 || bits_per_block < 2) {
         return std::unexpected(
@@ -436,9 +436,7 @@ namespace fschema::litematic::internal {
           make_error(ParseError::Code::PaletteIndexOutOfRange));
       }
 
-      NoInitVector<std::uint16_t> out(
-        static_cast<std::size_t>(volume),
-        memory::NoInitAllocator<std::uint16_t>{&arena});
+      memory::NoInitVector<std::uint16_t> out(static_cast<std::size_t>(volume), &arena);
       const std::byte* raw_data = raw_longs.data();
       ParseResult<void> kernel_result{};
 
@@ -464,11 +462,11 @@ namespace fschema::litematic::internal {
     }
 
     // Golden baseline two-stage entry point. Do not modify.
-    ParseResult<NoInitVector<std::uint16_t>> UnpackIndicesHwyImpl(
+    ParseResult<memory::NoInitVector<std::uint16_t>> UnpackIndicesHwyImpl(
       std::span<const std::uint64_t> longs,
       std::uint32_t bits_per_block, std::uint64_t volume,
       std::size_t palette_size) {
-      NoInitVector<std::uint16_t> out(static_cast<std::size_t>(volume));
+      memory::NoInitVector<std::uint16_t> out(static_cast<std::size_t>(volume));
       auto make_error = [](ParseError::Code code) {
         return ParseError{ code, "BlockStates", 0 };
         };
@@ -502,7 +500,7 @@ namespace fschema::litematic::internal {
   HWY_EXPORT(UnpackIndicesFusedImpl);
   HWY_EXPORT(UnpackIndicesHwyImpl);
 
-  [[nodiscard]] ParseResult<NoInitVector<std::uint16_t>> UnpackIndicesFused(
+  [[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>> UnpackIndicesFused(
     std::span<const std::byte> raw_longs,
     std::uint32_t bits_per_block, std::uint64_t volume,
     std::size_t palette_size,
@@ -511,7 +509,7 @@ namespace fschema::litematic::internal {
       raw_longs, bits_per_block, volume, palette_size, arena);
   }
 
-  [[nodiscard]] ParseResult<NoInitVector<std::uint16_t>> UnpackIndicesHwy(
+  [[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>> UnpackIndicesHwy(
     std::span<const std::uint64_t> longs,
     std::uint32_t bits_per_block, std::uint64_t volume,
     std::size_t palette_size) {

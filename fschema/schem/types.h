@@ -26,9 +26,6 @@
 #include "fschema/memory/arena.h"
 #include "fschema/memory/noinit_allocator.h"
 
-template <typename T>
-using NoInitVector = std::vector<T, fschema::memory::NoInitAllocator<T>>;
-
 namespace fschema::schem {
 
   enum class Version : std::int32_t {
@@ -79,13 +76,13 @@ namespace fschema::schem {
     std::array<std::int32_t, 3> offset{ 0, 0, 0 };
 
     std::vector<BlockState> palette;
-    NoInitVector<std::uint16_t> block_indices;
+    memory::NoInitVector<std::uint16_t> block_indices;
 
     std::vector<BlockEntity> block_entities;
     std::vector<Entity> entities;
 
     std::vector<std::string_view> biome_palette;
-    NoInitVector<std::uint16_t> biome_indices;
+    memory::NoInitVector<std::uint16_t> biome_indices;
 
     std::unique_ptr<memory::Arena> arena;
     std::unique_ptr<std::vector<std::byte>> owner;

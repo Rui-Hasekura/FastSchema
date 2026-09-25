@@ -234,6 +234,14 @@ if(FASTSCHEMA_BUILD_TESTS)
             FASTSCHEMA_TESTDATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fschema/testdata")
         target_link_libraries(${name} PRIVATE fschema hwy GTest::gtest_main)
         gtest_discover_tests(${name})
+        # Copy TBB DLL next to the executable (Windows, shared TBB)
+        if(WIN32 AND TARGET TBB::tbb)
+            add_custom_command(TARGET ${name} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    $<TARGET_FILE:TBB::tbb>
+                    $<TARGET_FILE_DIR:${name}>
+            )
+        endif()
     endfunction()
 
     fschema_add_test(fschema_litematic_parse_test fschema/tests/litematic_parse_test.cc)
@@ -251,6 +259,14 @@ if(FASTSCHEMA_BUILD_BENCHMARKS)
         target_compile_definitions(${name} PRIVATE
             FASTSCHEMA_TESTDATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fschema/testdata")
         target_link_libraries(${name} PRIVATE fschema hwy benchmark TBB::tbb)
+        # Copy TBB DLL next to the executable (Windows, shared TBB)
+        if(WIN32 AND TARGET TBB::tbb)
+            add_custom_command(TARGET ${name} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    $<TARGET_FILE:TBB::tbb>
+                    $<TARGET_FILE_DIR:${name}>
+            )
+        endif()
     endfunction()
 
     fschema_add_bench(fschema_schem_parse_benchmark      fschema/benchmarks/schem_parse_benchmark.cc)

@@ -39,4 +39,6 @@ Thumbs.db
 # Logs
 *.log
 
-*.vtune
+vtune/
+# inside samples
+vss.*

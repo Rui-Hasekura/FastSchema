@@ -31,9 +31,6 @@ namespace fschema::base {
   struct NbtCompound;
   struct NbtList;
 
-  template <typename T>
-  using NbtVector = std::vector<T, memory::NoInitAllocator<T>>;
-
   using NbtPayload = std::variant<
     std::monostate,
     std::int8_t,

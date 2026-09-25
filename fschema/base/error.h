@@ -57,4 +57,4 @@ namespace fschema {
 
 }  // namespace fschema
 
-#endif  // FSCHEMA_COMMON_ERROR_H_
+#endif  // FSCHEMA_BASE_ERROR_H_

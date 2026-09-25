@@ -50,7 +50,7 @@ namespace fschema::litematic::internal {
   }
 
   // Scalar impl of Two step ver
-  ParseResult<NoInitVector<std::uint64_t>> ReadLongArrayBe(
+  ParseResult<memory::NoInitVector<std::uint64_t>> ReadLongArrayBe(
     base::ByteReader& reader, std::uint64_t expected_longs) {
     // Read int32 length(elements)
     auto raw_len = reader.Read<std::int32_t>();
@@ -69,7 +69,7 @@ namespace fschema::litematic::internal {
       return std::unexpected(reader.Error(ParseError::Code::OversizedPayload));
     }
 
-    NoInitVector<std::uint64_t> result(static_cast<std::size_t>(length));
+    memory::NoInitVector<std::uint64_t> result(static_cast<std::size_t>(length));
     auto bulk_result = reader.ReadBulk<std::uint64_t>(
       static_cast<std::size_t>(length),
       std::span<std::uint64_t>(result.data(), result.size()));
@@ -79,12 +79,12 @@ namespace fschema::litematic::internal {
     return result;
   }
 
-  ParseResult<NoInitVector<std::uint16_t>> UnpackIndicesScalar(
+  ParseResult<memory::NoInitVector<std::uint16_t>> UnpackIndicesScalar(
     std::span<const std::uint64_t> longs,
     std::uint32_t bits_per_block, std::uint64_t volume,
     std::size_t palette_size) {
     const std::uint64_t bit_mask = (1ULL << bits_per_block) - 1;
-    NoInitVector<std::uint16_t> indices(static_cast<std::size_t>(volume));
+    memory::NoInitVector<std::uint16_t> indices(static_cast<std::size_t>(volume));
 
     for (std::uint64_t block_idx = 0; block_idx < volume; ++block_idx) {
       const std::uint64_t bit_offset = block_idx * bits_per_block;

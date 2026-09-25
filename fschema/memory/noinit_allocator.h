@@ -16,84 +16,120 @@
 #ifndef FSCHEMA_MEMORY_NOINIT_ALLOCATOR_H_
 #define FSCHEMA_MEMORY_NOINIT_ALLOCATOR_H_
 
+#include <cstddef>
+#include <cstdint>
 #include <new>
 #include <type_traits>
+#include <utility>
 
 #include "fschema/memory/arena.h"
 
 namespace fschema::memory {
-class Arena;
-}  // namespace fschema::memory
-
-namespace fschema::memory {
 
 template <typename T>
-struct NoInitAllocator {
+class NoInitVector {
+ public:
   using value_type = T;
-  using propagate_on_container_move_assignment = std::true_type;
-  using propagate_on_container_swap = std::true_type;
-  using is_always_equal = std::false_type;
+  using size_type = std::size_t;
+  using difference_type = std::ptrdiff_t;
+  using reference = T&;
+  using const_reference = const T&;
+  using pointer = T*;
+  using const_pointer = const T*;
+  using iterator = T*;
+  using const_iterator = const T*;
 
-  static constexpr std::size_t kAllocAlign =
-      (alignof(T) < 64) ? std::size_t{64} : alignof(T);
+  NoInitVector() noexcept = default;
 
-  Arena* arena = nullptr;
+  explicit NoInitVector(size_type count) { allocate_direct(count); }
 
-  NoInitAllocator() noexcept = default;
-  explicit NoInitAllocator(Arena* a) noexcept : arena(a) {}
-
-  template <typename U>
-  NoInitAllocator(const NoInitAllocator<U>& o) noexcept : arena(o.arena) {}
-
-  template <typename U>
-  struct rebind {
-    using other = NoInitAllocator<U>;
-  };
-
-  [[nodiscard]] T* allocate(std::size_t n) {
-    if (n == 0) return nullptr;
-    if (n > static_cast<std::size_t>(-1) / sizeof(T)) {
-      throw std::bad_alloc{};
-    }
+  NoInitVector(size_type count, Arena* arena) {
     if (arena) {
-      return arena->AllocateArray<T>(n, kAllocAlign);
+      allocate_from_arena(count, arena);
+    } else {
+      allocate_direct(count);
     }
-    return static_cast<T*>(
-        ::operator new(n * sizeof(T), std::align_val_t(kAllocAlign)));
   }
 
-  void deallocate(T* p, std::size_t /*n*/) noexcept {
-    if (p == nullptr) return;
+  NoInitVector(size_type count, Arena& arena) : NoInitVector(count, &arena) {}
+
+  NoInitVector(NoInitVector&& o) noexcept
+      : data_(o.data_), size_(o.size_), arena_(o.arena_) {
+    o.data_ = nullptr;
+    o.size_ = 0;
+    o.arena_ = nullptr;
+  }
+
+  NoInitVector& operator=(NoInitVector&& o) noexcept {
+    if (this != &o) {
+      release();
+      data_ = o.data_;
+      size_ = o.size_;
+      arena_ = o.arena_;
+      o.data_ = nullptr;
+      o.size_ = 0;
+      o.arena_ = nullptr;
+    }
+    return *this;
+  }
+
+  NoInitVector(const NoInitVector&) = delete;
+  NoInitVector& operator=(const NoInitVector&) = delete;
+
+  ~NoInitVector() { release(); }
+
+  void resize_uninitialized(size_type count, Arena* arena) {
+    release();
     if (arena) {
-      return;
+      allocate_from_arena(count, arena);
+    } else {
+      allocate_direct(count);
     }
-    ::operator delete(p, std::align_val_t(kAllocAlign));
   }
 
-  template <typename U>
-  void construct(U*) noexcept {
-    static_assert(std::is_trivially_default_constructible_v<U>,
-                  "NoInitAllocator: only for trivially constructible types");
+  [[nodiscard]] pointer data() noexcept { return data_; }
+  [[nodiscard]] const_pointer data() const noexcept { return data_; }
+  [[nodiscard]] size_type size() const noexcept { return size_; }
+  [[nodiscard]] bool empty() const noexcept { return size_ == 0; }
+
+  reference operator[](size_type i) { return data_[i]; }
+  const_reference operator[](size_type i) const { return data_[i]; }
+
+  iterator begin() noexcept { return data_; }
+  iterator end() noexcept { return data_ + size_; }
+  const_iterator begin() const noexcept { return data_; }
+  const_iterator end() const noexcept { return data_ + size_; }
+
+ private:
+  static constexpr std::size_t kAlign = (alignof(T) < 64) ? 64 : alignof(T);
+
+  void allocate_from_arena(size_type count, Arena* arena) {
+    if (count == 0) return;
+    arena_ = arena;
+    size_ = count;
+    data_ = arena_->AllocateArray<T>(count);
   }
 
-  template <typename U, typename... Args>
-  void construct(U*, Args&&...) noexcept {
-    static_assert(std::is_trivially_default_constructible_v<U>,
-                  "NoInitAllocator: only for trivially constructible types");
+  void allocate_direct(size_type count) {
+    if (count == 0) return;
+    size_ = count;
+    data_ = static_cast<T*>(
+        ::operator new(count * sizeof(T), std::align_val_t(kAlign)));
   }
 
-  template <typename U>
-  void destroy(U*) noexcept {
-    static_assert(std::is_trivially_destructible_v<U>,
-                  "NoInitAllocator: only for trivially destructible types");
+  void release() noexcept {
+    if (!arena_ && data_) {
+      ::operator delete(data_, std::align_val_t(kAlign));
+    }
+    data_ = nullptr;
+    size_ = 0;
+    arena_ = nullptr;
   }
+
+  T* data_ = nullptr;
+  size_type size_ = 0;
+  Arena* arena_ = nullptr;
 };
-
-template <typename T, typename U>
-[[nodiscard]] bool operator==(const NoInitAllocator<T>& a,
-                              const NoInitAllocator<U>& b) noexcept {
-  return a.arena == b.arena;
-}
 
 }  // namespace fschema::memory
 

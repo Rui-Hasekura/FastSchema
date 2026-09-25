@@ -20,7 +20,7 @@
 
 #include "fschema/base/error.h"
 #include "fschema/base/nbt_reader.h"
-#include "fschema/schem/types.h"
+#include "fschema/litematic/types.h"
 
 namespace fschema::litematic::internal {
 

@@ -27,9 +27,6 @@
 #include "fschema/memory/arena.h"
 #include "fschema/memory/noinit_allocator.h"
 
-template <typename T>
-using NoInitVector = std::vector<T, fschema::memory::NoInitAllocator<T>>;
-
 namespace fschema::litematic {
 
   // Minecraft Java Edition Version
@@ -95,7 +92,7 @@ namespace fschema::litematic {
     std::vector<BlockState> palette;
     // Unpacked block indices for each block in the region.
     // Length = |x| * |y| * |z|; values in [0, palette.size())
-    NoInitVector<std::uint16_t> block_indices;
+    memory::NoInitVector<std::uint16_t> block_indices;
     std::vector<Entity> entities;
     std::vector<TileEntity> tile_entities;
 

@@ -23,57 +23,66 @@
 #include <utility>
 #include <vector>
 
-#include "fschema/memory/arena.h"
 #include "fschema/base/error.h"
+#include "fschema/memory/arena.h"
 #include "fschema/schem/types.h"
 
 namespace fschema::schem::internal {
 
-  // Varint decoders
-  [[nodiscard]] ParseResult<NoInitVector<std::uint16_t>>
-    DecodeVarintArray(
-      std::span<const std::byte> data,
-      std::uint64_t volume,
-      std::size_t palette_size,
-      memory::Arena& arena);
+struct ChunkBoundary {
+  std::vector<const std::uint8_t*> ptrs;
+  std::vector<std::size_t> offsets;
+  std::vector<std::size_t> counts;
+};
 
-  [[nodiscard]] ParseResult<NoInitVector<std::uint16_t>>
-    DecodeVarintScalar(
-      std::span<const std::byte> data,
-      std::uint64_t volume,
-      std::size_t palette_size,
-      memory::Arena& arena);
+[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+DecodeVarintArray(
+    std::span<const std::byte> data,
+    std::uint64_t volume,
+    std::size_t palette_size,
+    memory::Arena& arena);
 
-  [[nodiscard]] ParseResult<NoInitVector<std::uint16_t>>
-    DecodeSingleByteFast(
-      std::span<const std::byte> data,
-      std::uint64_t volume,
-      std::size_t palette_size,
-      memory::Arena& arena);
+[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+DecodeVarintScalar(
+    std::span<const std::byte> data,
+    std::uint64_t volume,
+    std::size_t palette_size,
+    memory::Arena& arena);
 
-  // SIMD varint boundary counter (Phase 1 of parallel decode)
-  [[nodiscard]] std::pair<std::vector<std::uint64_t>, std::size_t>
-    BuildVarintCumulativeCount(std::span<const std::byte> data);
+[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+DecodeSingleByteFast(
+    std::span<const std::byte> data,
+    std::uint64_t volume,
+    std::size_t palette_size,
+    memory::Arena& arena);
 
-  // Parallel varint decoder (Phase 1 + 2 + 3)
-  [[nodiscard]] ParseResult<NoInitVector<std::uint16_t>>
-    DecodeVarintParallel(
-      std::span<const std::byte> data,
-      std::uint64_t volume,
-      std::size_t palette_size,
-      memory::Arena& arena);
+[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+Decode2ByteUniformFast(
+    std::span<const std::byte> data,
+    std::uint64_t volume,
+    std::size_t palette_size,
+    memory::Arena& arena);
 
-  // Dispatched chunk-decode kernel wrapper (impl in simd_block_data.cc).
-  // Decodes all varints across pre-computed chunks using the best available
-  // SIMD target. Thread-safe: internal TBB parallel_for.
-  void DecodeVarintChunks(const std::uint8_t* const* chunk_ptrs,
-                          const std::size_t* chunk_offsets,
-                          const std::size_t* chunk_counts,
-                          std::size_t num_chunks,
-                          std::uint16_t* out,
-                          const std::uint8_t* data_end,
-                          std::size_t palette_size,
-                          std::atomic<std::uint32_t>& error_flag);
+[[nodiscard]] ChunkBoundary BuildChunkBoundaries(
+    std::span<const std::byte> data,
+    std::uint64_t volume,
+    std::size_t num_chunks);
+
+[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+DecodeVarintParallel(
+    std::span<const std::byte> data,
+    std::uint64_t volume,
+    std::size_t palette_size,
+    memory::Arena& arena);
+
+void DecodeVarintChunks(const std::uint8_t* const* chunk_ptrs,
+                        const std::size_t* chunk_offsets,
+                        const std::size_t* chunk_counts,
+                        std::size_t num_chunks,
+                        std::uint16_t* out,
+                        const std::uint8_t* data_end,
+                        std::size_t palette_size,
+                        std::atomic<std::uint32_t>& error_flag);
 
 }  // namespace fschema::schem::internal
 
