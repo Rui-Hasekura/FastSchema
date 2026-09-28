@@ -79,6 +79,8 @@ This project also includes a [NOTICE](https://github.com/Rui-Hasekura/FastSchema
 
 - [Google Abseil](https://github.com/abseil/abseil-cpp)
 
+- [xxHash](https://github.com/cyan4973/xxhash)
+
 #### Testing & Benchmarking
 
 - [Google Test](https://github.com/google/googletest)
