@@ -35,7 +35,21 @@ option(FASTSCHEMA_INSTALL "Generate install target"
 # Dependencies
 include(FetchContent)
 
-# Highway (static)
+# Google Abseil
+FetchContent_Declare(abseil
+    GIT_REPOSITORY https://github.com/abseil/abseil-cpp.git
+    GIT_TAG        20260817.0)
+block()
+    set(ABSL_BUILD_TESTING OFF)
+    set(ABSL_ENABLE_INSTALL ON)
+    set(ABSL_PROPAGATE_CXX_STD ON)
+    set(CMAKE_CXX_STANDARD 23)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    set(CMAKE_CXX_EXTENSIONS OFF)
+    FetchContent_MakeAvailable(abseil)
+endblock()
+
+# Google Highway (static)
 FetchContent_Declare(hwy
     GIT_REPOSITORY https://github.com/google/highway.git
     GIT_TAG 1.4.0)
@@ -67,6 +81,7 @@ block()
     FetchContent_MakeAvailable(oneTBB)
 endblock()
 
+# Google Test
 if(FASTSCHEMA_BUILD_TESTS)
     FetchContent_Declare(googletest
         GIT_REPOSITORY https://github.com/google/googletest.git
@@ -77,6 +92,7 @@ if(FASTSCHEMA_BUILD_TESTS)
     endblock()
 endif()
 
+# Google Benchmark
 if(FASTSCHEMA_BUILD_BENCHMARKS)
     FetchContent_Declare(googlebenchmark
         GIT_REPOSITORY https://github.com/google/benchmark.git
@@ -97,14 +113,15 @@ set_target_properties(fschema PROPERTIES CXX_EXTENSIONS OFF)
 target_sources(fschema
   PRIVATE
     fschema/base/byte_order.cc
-    fschema/base/decompression.cc
+    fschema/base/compressor.cc
     fschema/base/error.cc
     fschema/base/nbt_parse.cc
+    fschema/base/nbt_primitives.cc
     fschema/base/nbt_reader.cc
     fschema/base/nbt_skip.cc
+    fschema/base/nbt_writer.cc
     fschema/memory/arena.cc
     fschema/litematic/parse.cc
-    fschema/litematic/internal/block_states.cc
     fschema/litematic/internal/entity.cc
     fschema/litematic/internal/metadata.cc
     fschema/litematic/internal/palette.cc
@@ -121,6 +138,13 @@ target_sources(fschema
     fschema/schem/internal/palette.cc
     fschema/schem/internal/root.cc
     fschema/schem/internal/simd_block_data.cc
+    fschema/ir/format_handler.cc
+    fschema/ir/litematic_handler.cc
+    fschema/ir/manipulate.cc
+    fschema/ir/schem_handler.cc
+    fschema/ir/internal/bit_pack.cc
+    fschema/ir/internal/codec_utils.cc
+    fschema/ir/internal/varint_pack.cc
 )
 
 # Public headers FILE_SET
@@ -150,6 +174,11 @@ target_sources(fschema
 )
 
 target_link_libraries(fschema
+  PUBLIC
+    absl::base
+    absl::flat_hash_map
+    absl::synchronization
+    absl::time
   PRIVATE
     hwy
     libdeflate::libdeflate_static
@@ -259,6 +288,13 @@ if(FASTSCHEMA_BUILD_BENCHMARKS)
         target_compile_definitions(${name} PRIVATE
             FASTSCHEMA_TESTDATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fschema/testdata")
         target_link_libraries(${name} PRIVATE fschema hwy benchmark TBB::tbb)
+        # 在 target_link_libraries(...) 之后加入
+target_compile_options(${name} PRIVATE
+  $<$<AND:$<CONFIG:Release>,$<CXX_COMPILER_ID:MSVC>>:/Zi>
+)
+target_link_options(${name} PRIVATE
+  $<$<AND:$<CONFIG:Release>,$<CXX_COMPILER_ID:MSVC>>:/DEBUG>
+)
         # Copy TBB DLL next to the executable (Windows, shared TBB)
         if(WIN32 AND TARGET TBB::tbb)
             add_custom_command(TARGET ${name} POST_BUILD
@@ -272,4 +308,5 @@ if(FASTSCHEMA_BUILD_BENCHMARKS)
     fschema_add_bench(fschema_schem_parse_benchmark      fschema/benchmarks/schem_parse_benchmark.cc)
     fschema_add_bench(fschema_litematic_parse_benchmark  fschema/benchmarks/litematic_parse_benchmark.cc)
     fschema_add_bench(fschema_nbt_parse_benchmark        fschema/benchmarks/nbt_parse_benchmark.cc)
+    fschema_add_bench(fschema_convert_benchmark fschema/benchmarks/convert_benchmark.cc)
 endif()

@@ -24,19 +24,20 @@
 
 namespace fschema::litematic::internal {
 
-  // TileEntities: List<Compound>
-  //
-  // Per TileEntity Compound's common fields:
-  //   Id: String         <- TileEntity id, e.g. "minecraft:chest"
-  //   x: Int             <- Block position x (Java NBT naming convention)
-  //   y: Int
-  //   z: Int
-  //   ...remaining fields -> raw_nbt (e.g., Items, Lock, CustomName, ...)
-  [[nodiscard]] ParseResult<TileEntity> ParseTileEntityCompound(
+// TileEntities: List<Compound>
+//
+// Per TileEntity Compound's common fields:
+//   Id: String         <- TileEntity id, e.g. "minecraft:chest"
+//   x: Int             <- Block position x (Java NBT naming convention)
+//   y: Int
+//   z: Int
+//   ...remaining fields -> raw_nbt (e.g., Items, Lock, CustomName, ...)
+[[nodiscard]] ParseResult<TileEntity> ParseTileEntityCompound(
     base::ByteReader& reader);
 
-  [[nodiscard]] ParseResult<void> ParseTileEntities(
-    base::ByteReader& reader, std::vector<TileEntity>& tile_entities);
+[[nodiscard]] ParseResult<void> ParseTileEntities(
+    base::ByteReader& reader,
+    std::vector<TileEntity>& tile_entities);
 
 }  // namespace fschema::litematic::internal
 

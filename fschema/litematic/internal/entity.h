@@ -16,7 +16,6 @@
 #ifndef FSCHEMA_LITEMATIC_INTERNAL_ENTITY_H_
 #define FSCHEMA_LITEMATIC_INTERNAL_ENTITY_H_
 
-#include <array>
 #include <vector>
 
 #include "fschema/base/error.h"
@@ -25,35 +24,14 @@
 
 namespace fschema::litematic::internal {
 
-  // Entities: List<Compound>
-  //
-  // Per Entity Compound's Common Fields
-  // (Java written, different entity types have additional fields):
-  //   Id: String               <- Entity type ID
-  //   Pos: List<Double>(3)     <- World coordinates
-  //   Motion: List<Double>(3)  <- Velocity
-  //   Rotation: List<Float>(2) <- yaw, pitch
-  //   ...remaining fields -> raw_nbt (e.g., Items, Invulnerable, Tags, ...)
-  //
-  // Common fields are eagerly parsed (high-frequency analysis/rendering needs),
-  // Type-specific fields are lazily parsed as raw spans (secondary parsing on demand).
+// Parse single Entity Compound
+// raw_start: cursor position before entering Compound payload (for raw span
+// slicing)
+[[nodiscard]] ParseResult<Entity> ParseEntityCompound(base::ByteReader& reader);
 
-  // Read 3 doubles from List<Double> (Pos/Motion)
-  [[nodiscard]] ParseResult<std::array<double, 3>>
-    ReadVec3Double(base::ByteReader& reader);
-
-  // Read 2 floats from List<Float> (Rotation: yaw, pitch)
-  [[nodiscard]] ParseResult<std::array<float, 2>>
-    ReadVec2Float(base::ByteReader& reader);
-
-  // Parse single Entity Compound
-  // raw_start: cursor position before entering Compound payload (for raw span slicing)
-  [[nodiscard]] ParseResult<Entity> ParseEntityCompound(
-    base::ByteReader& reader);
-
-  // Parse Entities List
-  [[nodiscard]] ParseResult<void> ParseEntities(
-    base::ByteReader& reader, std::vector<Entity>& entities);
+// Parse Entities List
+[[nodiscard]] ParseResult<void> ParseEntities(base::ByteReader& reader,
+                                              std::vector<Entity>& entities);
 
 }  // namespace fschema::litematic::internal
 

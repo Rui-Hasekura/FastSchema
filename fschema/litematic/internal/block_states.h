@@ -23,58 +23,24 @@
 
 #include "fschema/base/error.h"
 #include "fschema/base/nbt_reader.h"
-#include "fschema/litematic/types.h"
+#include "fschema/memory/noinit_allocator.h"
 
 namespace fschema::litematic::internal {
 
-  // BlockStates: LongArray -> BitUnpack -> block_indices
-  //
-  //   bit_offset = i * bits_per_block
-  //   word_idx   = bit_offset >> 6
-  //   shift      = bit_offset & 63
-  //   value      = (longs[word_idx] >> shift) | (longs[word_idx+1] << (64-shift))
-  //   palette_idx = value & ((1 << bits_per_block) - 1)
-  //
-  // Fused kernel v4 (main path, simd_block_states.cc):
-  //   bits_per_block in [2, 8]   -> 8 blocks/iter, double VPSRLVQ
-  //   bits_per_block in [9, 16]  -> 4 blocks/iter, single VPSRLVQ
-  //   (BitsPerBlock actual range is [2,16], scalar branch is purely defensive)
-  // Structure: v2 sliding window (exactly one load+BSWAP per long)
-  //            + branchless funnel + vmax range check outside loop.
-  // Historical lesson (do not revert):
-  //   v3 unconditional double load -> BSWAP x3.55 -> 350ms slower than v2.
-
-  // palette -> bits_per_block
-  // Litematica special case: palette <= 4 uses fixed 2 bits
-  [[nodiscard]] constexpr std::uint32_t BitsPerBlock(
+[[nodiscard]] constexpr std::uint32_t BitsPerBlock(
     std::size_t palette_size) noexcept {
-    if (palette_size <= 4) {
-      return 2;
-    }
-    return static_cast<std::uint32_t>(std::bit_width(palette_size - 1));
+  if (palette_size <= 4) {
+    return 2;
   }
+  return static_cast<std::uint32_t>(std::bit_width(palette_size - 1));
+}
 
-  [[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>> UnpackIndicesFused(
-    std::span<const std::byte> raw_longs,
-    std::uint32_t bits_per_block, std::uint64_t volume,
-    std::size_t palette_size,
-    memory::Arena& arena);
-
-  [[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
-  UnpackIndicesHwy(
-    std::span<const std::uint64_t> longs,
-    std::uint32_t bits_per_block, std::uint64_t volume,
-    std::size_t palette_size);
-
-  [[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
-  UnpackIndicesScalar(
-    std::span<const std::uint64_t> longs,
-    std::uint32_t bits_per_block, std::uint64_t volume,
-    std::size_t palette_size);
-
-  [[nodiscard]] ParseResult<memory::NoInitVector<std::uint64_t>>
-  ReadLongArrayBe(
-    base::ByteReader& reader, std::uint64_t expected_longs);
+[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+UnpackIndicesFused(std::span<const std::byte> raw_longs,
+                   std::uint32_t bits_per_block,
+                   std::uint64_t volume,
+                   std::size_t palette_size,
+                   memory::Arena& arena);
 
 }  // namespace fschema::litematic::internal
 

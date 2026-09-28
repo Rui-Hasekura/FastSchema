@@ -19,17 +19,17 @@
 #include <expected>
 
 #include "fschema/base/error.h"
-#include "fschema/base/nbt_tree.h"
 #include "fschema/base/nbt_reader.h"
 #include "fschema/base/nbt_tag.h"
+#include "fschema/base/nbt_tree.h"
 
 namespace fschema::base {
 
-  [[nodiscard]] ParseResult<NbtPayload> ParsePayload(ByteReader& reader,
-                                                     TagType tag_type);
-  [[nodiscard]] ParseResult<NbtCompound> ParseCompound(ByteReader& reader);
-  [[nodiscard]] ParseResult<NbtList> ParseList(ByteReader& reader);
-  [[nodiscard]] ParseResult<NbtTag> ParseNbt(ByteReader& reader);
+[[nodiscard]] ParseResult<NbtPayload> ParsePayload(ByteReader& reader,
+                                                   TagType tag_type);
+[[nodiscard]] ParseResult<NbtCompound> ParseCompound(ByteReader& reader);
+[[nodiscard]] ParseResult<NbtList> ParseList(ByteReader& reader);
+[[nodiscard]] ParseResult<NbtTag> ParseNbt(ByteReader& reader);
 
 }  // namespace fschema::base
 

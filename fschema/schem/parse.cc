@@ -22,7 +22,7 @@
 #include <utility>
 #include <vector>
 
-#include "fschema/base/decompression.h"
+#include "fschema/base/compressor.h"
 #include "fschema/base/error.h"
 #include "fschema/base/limits.h"
 #include "fschema/base/nbt_reader.h"
@@ -32,60 +32,47 @@
 
 namespace fschema::schem {
 
-  namespace {
+namespace {
 
-    // Core parser entry: takes ownership of `owner_bytes` and parses NBT
-    // directly from it.
-    // All subsequent string_views / spans in the parsed Schematic point into
-    // this buffer; lifetime is tied to Schematic::owner.
-    [[nodiscard]] std::expected<Schematic, ParseError>
-      ParseSchematicFromOwnedBuffer(std::vector<std::byte> owner_bytes) {
-      Schematic schematic;
-      schematic.arena = std::make_unique<memory::Arena>();
+[[nodiscard]] std::expected<Schematic, ParseError>
+ParseSchematicFromOwnedBuffer(
+    std::unique_ptr<std::vector<std::byte>> owner_bytes,
+    const base::DecodeLimits& limits) {
+  Schematic schematic;
+  schematic.arena = std::make_unique<memory::Arena>();
+  schematic.owner = std::move(owner_bytes);
 
-      // Move-construct owner. This is the ONLY assignment to owner;
-      schematic.owner = std::make_unique<std::vector<std::byte>>(
-        std::move(owner_bytes));
+  base::ByteReader reader(std::span<const std::byte>(schematic.owner->data(),
+                                                     schematic.owner->size()),
+                          limits);
 
-      base::DecodeLimits limits;
-      base::ByteReader reader(
-        std::span<const std::byte>(
-          schematic.owner->data(),
-          schematic.owner->size()),
-        limits);
-
-      auto result = internal::ParseRoot(reader, schematic);
-      if (!result) {
-        return std::unexpected(result.error());
-      }
-
-      return schematic;
-    }
-
-  }  // namespace
-
-  [[nodiscard]] std::expected<Schematic, ParseError>
-    ParseSchematic(const std::filesystem::path& path) {
-    auto decompressed = base::DecompressGzipFile(path);
-    if (!decompressed) {
-      return std::unexpected(ParseError{
-          ParseError::Code::Truncated, path.string(), 0 });
-    }
-
-    // Move the decompressed buffer straight into the parser core.
-    return ParseSchematicFromOwnedBuffer(std::move(*decompressed));
+  auto result = internal::ParseRoot(reader, schematic);
+  if (!result) {
+    return std::unexpected(result.error());
   }
 
-  [[nodiscard]] std::expected<Schematic, ParseError>
-    ParseSchematicFromBytes(std::vector<std::byte> data) {
-    return ParseSchematicFromOwnedBuffer(std::move(data));
+  return schematic;
+}
+
+}  // namespace
+
+[[nodiscard]] std::expected<Schematic, ParseError> ParseSchematic(
+    const std::filesystem::path& path) {
+  auto decompressed = base::DecompressGzipFile(path);
+  if (!decompressed) {
+    return std::unexpected(
+        ParseError{ParseError::Code::Truncated, path.string(), 0});
   }
 
-  // Copy overload for non-owning callers.
-  [[nodiscard]] std::expected<Schematic, ParseError>
-    ParseSchematicFromBytes(std::span<const std::byte> data) {
-    std::vector<std::byte> copy(data.begin(), data.end());
-    return ParseSchematicFromOwnedBuffer(std::move(copy));
-  }
+  auto owner =
+      std::make_unique<std::vector<std::byte>>(std::move(*decompressed));
+  return ParseSchematicFromOwnedBuffer(std::move(owner), base::DecodeLimits{});
+}
+
+[[nodiscard]] std::expected<Schematic, ParseError> ParseSchematicFromBytes(
+    std::unique_ptr<std::vector<std::byte>> bytes,
+    const base::DecodeLimits& limits) {
+  return ParseSchematicFromOwnedBuffer(std::move(bytes), limits);
+}
 
 }  // namespace fschema::schem

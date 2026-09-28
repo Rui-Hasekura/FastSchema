@@ -25,7 +25,8 @@
 #include <string_view>
 #include <vector>
 
-#include "fschema/base/decompression.h"
+#include "fschema/base/block_utils.h"
+#include "fschema/base/compressor.h"
 #include "fschema/base/error.h"
 #include "fschema/base/limits.h"
 #include "fschema/base/nbt_reader.h"
@@ -48,43 +49,6 @@ namespace fsc = fschema::schem;
 #  endif
 #  include <windows.h>
 #endif
-
-[[nodiscard]] std::string ToString(fschema::ParseError::Code code) {
-  using C = fschema::ParseError::Code;
-  switch (code) {
-    case C::Truncated:
-      return "Truncated";
-    case C::InvalidTagId:
-      return "InvalidTagId";
-    case C::NegativeLength:
-      return "NegativeLength";
-    case C::DepthLimitExceeded:
-      return "DepthLimitExceeded";
-    case C::OversizedPayload:
-      return "OversizedPayload";
-    case C::UnsupportedVersion:
-      return "UnsupportedVersion";
-    case C::MissingField:
-      return "MissingField";
-    case C::BlockStatesTooSmall:
-      return "BlockStatesTooSmall";
-    case C::PaletteIndexOutOfRange:
-      return "PaletteIndexOutOfRange";
-    case C::VolumeOverflow:
-      return "VolumeOverflow";
-    case C::VarintOverflow:
-      return "VarintOverflow";
-    case C::BlockDataTooSmall:
-      return "BlockDataTooSmall";
-    default:
-      return "Unknown";
-  }
-}
-
-[[nodiscard]] bool IsAirVariant(std::string_view name) noexcept {
-  return name == "minecraft:air" || name == "minecraft:void_air" ||
-         name == "minecraft:cave_air";
-}
 
 struct TestFile {
   std::string filename;
@@ -167,7 +131,7 @@ void PrintErrorFn(const fschema::ParseError& e) {
   }
   std::uint64_t non_air = 0;
   for (std::size_t i = 0; i < s.palette.size(); ++i) {
-    if (counts[i] > 0 && !IsAirVariant(s.palette[i].name)) {
+    if (counts[i] > 0 && !fschema::base::IsAirVariant(s.palette[i].name)) {
       non_air += counts[i];
     }
   }
@@ -229,8 +193,10 @@ static void BM_ParseSchem(benchmark::State& st) {
 }
 
 int main(int argc, char* argv[]) {
+#if defined(_WIN32) || defined(_WIN64)
   SetConsoleOutputCP(CP_UTF8);
   SetConsoleCP(CP_UTF8);
+#endif
 
   std::cout << "Highway supported: 0x" << std::hex << hwy::SupportedTargets()
             << std::dec << "\n";

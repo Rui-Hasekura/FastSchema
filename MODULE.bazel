@@ -22,11 +22,17 @@ bazel_dep(name = "rules_cc", version = "0.0.9")
 bazel_dep(name = "platforms", version = "0.0.8")
 bazel_dep(name = "rules_foreign_cc", version = "0.10.1")
 
+bazel_dep(
+    name = "abseil-cpp",
+    version = "20260817.0",
+    repo_name = "abseil",
+)
+
 bazel_dep(name = "highway", version = "1.4.0")
 bazel_dep(name = "google_benchmark", version = "1.9.5")
 bazel_dep(name = "googletest", version = "1.18.0")
 
-# libdeflate — not on BCR, build from source via cmake_external
+# libdeflate — not on BCR
 new_git_repository = use_repo_rule(
     "@bazel_tools//tools/build_defs/repo:git.bzl", "new_git_repository")
 
@@ -43,7 +49,7 @@ filegroup(
 """,
 )
 
-# oneTBB — not on BCR, build from source via cmake_external
+# oneTBB — static and not on BCR
 new_git_repository(
     name = "onetbb_src",
     remote = "https://github.com/oneapi-src/oneTBB.git",

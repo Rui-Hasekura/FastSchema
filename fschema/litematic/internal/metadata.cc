@@ -18,169 +18,85 @@
 #include <cstdint>
 #include <expected>
 
+#include "fschema/base/nbt_scope.h"
 #include "fschema/base/nbt_skip.h"
 #include "fschema/base/nbt_tag.h"
 
 namespace fschema::litematic::internal {
 
-  [[nodiscard]] ParseResult<void> ParseMetadata(
-    base::ByteReader& reader, Litematic& out) {
-    reader.push_depth();
-    auto& meta = out.metadata;
+[[nodiscard]] ParseResult<void> ParseMetadata(base::ByteReader& reader,
+                                              Litematic& out) {
+  auto& meta = out.metadata;
 
-    for (;;) {
-      std::string_view name;
-      auto tag_result = reader.ReadCompoundEntryHeaderView(name);
-      if (!tag_result) {
-        reader.pop_depth();
-        return std::unexpected(tag_result.error());
-      }
-      if (*tag_result == base::TagType::End) {
-        break;
-      }
-
-      if (name == "Name" && *tag_result == base::TagType::String) {
-        auto value = reader.ReadStringView();
-        if (!value) {
-          reader.pop_depth();
-          return std::unexpected(value.error());
+  return ForEachCompoundField(
+      reader, [&](std::string_view name, base::TagType t) -> ParseResult<void> {
+        if (name == "Name" && t == base::TagType::String) {
+          auto v = reader.ReadStringView();
+          if (!v) return std::unexpected(v.error());
+          meta.name = *v;
+        } else if (name == "Author" && t == base::TagType::String) {
+          auto v = reader.ReadStringView();
+          if (!v) return std::unexpected(v.error());
+          meta.author = *v;
+        } else if (name == "Description" && t == base::TagType::String) {
+          auto v = reader.ReadStringView();
+          if (!v) return std::unexpected(v.error());
+          meta.description = *v;
+        } else if (name == "RegionCount" && t == base::TagType::Int) {
+          auto v = reader.Read<std::int32_t>();
+          if (!v) return std::unexpected(v.error());
+          meta.region_count = *v;
+        } else if (name == "TotalBlocks" && t == base::TagType::Int) {
+          auto v = reader.Read<std::int32_t>();
+          if (!v) return std::unexpected(v.error());
+          meta.total_blocks = *v;
+        } else if (name == "TotalVolume" && t == base::TagType::Int) {
+          auto v = reader.Read<std::int32_t>();
+          if (!v) return std::unexpected(v.error());
+          meta.total_volume = *v;
+        } else if (name == "EnclosingSize" && t == base::TagType::Compound) {
+          return ForEachCompoundField(
+              reader,
+              [&](std::string_view axis,
+                  base::TagType at) -> ParseResult<void> {
+                if (axis == "x" && at == base::TagType::Int) {
+                  auto v = reader.Read<std::int32_t>();
+                  if (!v) return std::unexpected(v.error());
+                  meta.enclosing_size[0] = *v;
+                } else if (axis == "y" && at == base::TagType::Int) {
+                  auto v = reader.Read<std::int32_t>();
+                  if (!v) return std::unexpected(v.error());
+                  meta.enclosing_size[1] = *v;
+                } else if (axis == "z" && at == base::TagType::Int) {
+                  auto v = reader.Read<std::int32_t>();
+                  if (!v) return std::unexpected(v.error());
+                  meta.enclosing_size[2] = *v;
+                } else {
+                  return base::SkipPayload(reader, at);
+                }
+                return {};
+              });
+        } else if (name == "TimeCreated" && t == base::TagType::Long) {
+          auto v = reader.Read<std::int64_t>();
+          if (!v) return std::unexpected(v.error());
+          meta.time_created = *v;
+        } else if (name == "TimeModified" && t == base::TagType::Long) {
+          auto v = reader.Read<std::int64_t>();
+          if (!v) return std::unexpected(v.error());
+          meta.time_modified = *v;
+        } else if (name == "PreviewData" && t == base::TagType::IntArray) {
+          auto length = reader.ReadLength(reader.limits().max_array_elements);
+          if (!length) return std::unexpected(length.error());
+          const auto total = (*length) * 4;
+          auto span = reader.PeekRaw(total);
+          if (!span) return std::unexpected(span.error());
+          meta.preview_data = *span;
+          reader.advance(total);
+        } else {
+          return base::SkipPayload(reader, t);
         }
-        meta.name = *value;
-      }
-      else if (name == "Author" && *tag_result == base::TagType::String) {
-        auto value = reader.ReadStringView();
-        if (!value) {
-          reader.pop_depth();
-          return std::unexpected(value.error());
-        }
-        meta.author = *value;
-      }
-      else if (name == "Description" && *tag_result == base::TagType::String) {
-        auto value = reader.ReadStringView();
-        if (!value) {
-          reader.pop_depth();
-          return std::unexpected(value.error());
-        }
-        meta.description = *value;
-      }
-      else if (name == "RegionCount" && *tag_result == base::TagType::Int) {
-        auto value = reader.Read<std::int32_t>();
-        if (!value) {
-          reader.pop_depth();
-          return std::unexpected(value.error());
-        }
-        meta.region_count = *value;
-      }
-      else if (name == "TotalBlocks" && *tag_result == base::TagType::Int) {
-        auto value = reader.Read<std::int32_t>();
-        if (!value) {
-          reader.pop_depth();
-          return std::unexpected(value.error());
-        }
-        meta.total_blocks = *value;
-      }
-      else if (name == "TotalVolume" && *tag_result == base::TagType::Int) {
-        auto value = reader.Read<std::int32_t>();
-        if (!value) {
-          reader.pop_depth();
-          return std::unexpected(value.error());
-        }
-        meta.total_volume = *value;
-      }
-      else if (name == "EnclosingSize" && *tag_result == base::TagType::Compound) {
-        reader.push_depth();
-        for (;;) {
-          std::string_view axis_name;
-          auto axis_tag = reader.ReadCompoundEntryHeaderView(axis_name);
-          if (!axis_tag) {
-            reader.pop_depth();
-            reader.pop_depth();
-            return std::unexpected(axis_tag.error());
-          }
-          if (*axis_tag == base::TagType::End) {
-            break;
-          }
-
-          if (axis_name == "x" && *axis_tag == base::TagType::Int) {
-            auto value = reader.Read<std::int32_t>();
-            if (!value) {
-              reader.pop_depth();
-              reader.pop_depth();
-              return std::unexpected(value.error());
-            }
-            meta.enclosing_size[0] = *value;
-          }
-          else if (axis_name == "y" && *axis_tag == base::TagType::Int) {
-            auto value = reader.Read<std::int32_t>();
-            if (!value) {
-              reader.pop_depth();
-              reader.pop_depth();
-              return std::unexpected(value.error());
-            }
-            meta.enclosing_size[1] = *value;
-          }
-          else if (axis_name == "z" && *axis_tag == base::TagType::Int) {
-            auto value = reader.Read<std::int32_t>();
-            if (!value) {
-              reader.pop_depth();
-              reader.pop_depth();
-              return std::unexpected(value.error());
-            }
-            meta.enclosing_size[2] = *value;
-          }
-          else {
-            auto skip_result = base::SkipPayload(reader, *axis_tag);
-            if (!skip_result) {
-              reader.pop_depth();
-              reader.pop_depth();
-              return std::unexpected(skip_result.error());
-            }
-          }
-        }
-        reader.pop_depth();
-      }
-      else if (name == "TimeCreated" && *tag_result == base::TagType::Long) {
-        auto value = reader.Read<std::int64_t>();
-        if (!value) {
-          reader.pop_depth();
-          return std::unexpected(value.error());
-        }
-        meta.time_created = *value;
-      }
-      else if (name == "TimeModified" && *tag_result == base::TagType::Long) {
-        auto value = reader.Read<std::int64_t>();
-        if (!value) {
-          reader.pop_depth();
-          return std::unexpected(value.error());
-        }
-        meta.time_modified = *value;
-      }
-      else if (name == "PreviewData" && *tag_result == base::TagType::IntArray) {
-        auto length = reader.ReadLength(reader.limits().max_array_elements);
-        if (!length) {
-          reader.pop_depth();
-          return std::unexpected(length.error());
-        }
-        const auto total = (*length) * 4;
-        auto span_result = reader.PeekRaw(total);
-        if (!span_result) {
-          reader.pop_depth();
-          return std::unexpected(span_result.error());
-        }
-        meta.preview_data = *span_result;
-        reader.advance(total);
-      }
-      else {
-        auto skip_result = base::SkipPayload(reader, *tag_result);
-        if (!skip_result) {
-          reader.pop_depth();
-          return std::unexpected(skip_result.error());
-        }
-      }
-    }
-
-    reader.pop_depth();
-    return {};
-  }
+        return {};
+      });
+}
 
 }  // namespace fschema::litematic::internal

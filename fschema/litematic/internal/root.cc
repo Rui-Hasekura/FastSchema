@@ -17,134 +17,86 @@
 
 #include <cstdint>
 #include <expected>
-#include <string>
+#include <string_view>
+#include <utility>
 
-#include "fschema/litematic/internal/metadata.h"
-#include "fschema/litematic/internal/region.h"
+#include "fschema/base/nbt_scope.h"
 #include "fschema/base/nbt_skip.h"
 #include "fschema/base/nbt_tag.h"
+#include "fschema/litematic/internal/metadata.h"
+#include "fschema/litematic/internal/region.h"
 
 namespace fschema::litematic::internal {
 
-// Litematica root Compound fields (Java write order is fixed):
-//   Version: Int          <- Necessary
-//   SubVersion: Int       <- v6+ Optional, Skip
-//   DataVersion: Int      <- v5+ Necessary
-//   Metadata: Compound    <- Necessary
-//   Regions: Compound     <- Necessary
-//
-// Unknown field -> SkipPayload
 [[nodiscard]] ParseResult<void> ParseRoot(base::ByteReader& reader,
                                           Litematic& out) {
-  // NBT root: TagID(1) + name + Compound payload
-  // The first byte must be TAG_Compound(10)
   {
     auto root_tag = reader.Read<std::uint8_t>();
-    if (!root_tag) {
-      return std::unexpected(root_tag.error());
-    }
+    if (!root_tag) return std::unexpected(root_tag.error());
     if (*root_tag != static_cast<std::uint8_t>(base::TagType::Compound)) {
       return std::unexpected(reader.Error(ParseError::Code::InvalidTagId));
     }
     auto root_name = reader.ReadStringView();
-    if (!root_name) {
-      return std::unexpected(root_name.error());
-    }
+    if (!root_name) return std::unexpected(root_name.error());
     (void)root_name;
   }
 
-  reader.push_depth();
-
-  // Parse root Compound's entries
   bool have_version = false;
   bool have_metadata = false;
   bool have_regions = false;
   bool have_data_version = false;
 
-  for (;;) {
-    std::string_view name;
-    auto tag_result = reader.ReadCompoundEntryHeaderView(name);
-    if (!tag_result) {
-      reader.pop_depth();
-      return std::unexpected(tag_result.error());
-    }
-    if (*tag_result == base::TagType::End) {
-      break;
-    }
+  auto result = ForEachCompoundField(
+      reader, [&](std::string_view name, base::TagType t) -> ParseResult<void> {
+        if (name == "Version" && t == base::TagType::Int) {
+          auto v = reader.Read<std::int32_t>();
+          if (!v) return std::unexpected(v.error());
+          if (*v < 5 || *v > 7) {
+            return std::unexpected(
+                reader.Error(ParseError::Code::UnsupportedVersion));
+          }
+          out.version = static_cast<Version>(*v);
+          have_version = true;
+        } else if ((name == "DataVersion" || name == "MinecraftDataVersion") &&
+                   t == base::TagType::Int) {
+          auto v = reader.Read<std::int32_t>();
+          if (!v) return std::unexpected(v.error());
+          out.data_version = *v;
+          have_data_version = true;
+        } else if (name == "SubVersion" && t == base::TagType::Int) {
+          auto v = reader.Read<std::int32_t>();
+          if (!v) return std::unexpected(v.error());
+        } else if (name == "Metadata" && t == base::TagType::Compound) {
+          auto r = ParseMetadata(reader, out);
+          if (!r) return std::unexpected(r.error());
+          have_metadata = true;
+        } else if (name == "Regions" && t == base::TagType::Compound) {
+          auto r = ParseRegions(reader, out);
+          if (!r) return std::unexpected(r.error());
+          have_regions = true;
+        } else {
+          return base::SkipPayload(reader, t);
+        }
+        return {};
+      });
+  if (!result) return std::unexpected(result.error());
 
-    if (name == "Version" && *tag_result == base::TagType::Int) {
-      auto value = reader.Read<std::int32_t>();
-      if (!value) {
-        reader.pop_depth();
-        return std::unexpected(value.error());
-      }
-      if (*value < 5 || *value > 7) {
-        reader.pop_depth();
-        return std::unexpected(
-            reader.Error(ParseError::Code::UnsupportedVersion));
-      }
-      out.version = static_cast<Version>(*value);
-      have_version = true;
-    } else if ((name == "DataVersion" || name == "MinecraftDataVersion") &&
-               *tag_result == base::TagType::Int) {
-      auto value = reader.Read<std::int32_t>();
-      if (!value) {
-        reader.pop_depth();
-        return std::unexpected(value.error());
-      }
-      out.data_version = *value;
-      have_data_version = true;
-    } else if (name == "SubVersion" && *tag_result == base::TagType::Int) {
-      // Decorative field, read and discard
-      auto value = reader.Read<std::int32_t>();
-      if (!value) {
-        reader.pop_depth();
-        return std::unexpected(value.error());
-      }
-    } else if (name == "Metadata" && *tag_result == base::TagType::Compound) {
-      auto meta_result = ParseMetadata(reader, out);
-      if (!meta_result) {
-        reader.pop_depth();
-        return std::unexpected(meta_result.error());
-      }
-      have_metadata = true;
-    } else if (name == "Regions" && *tag_result == base::TagType::Compound) {
-      auto regions_result = ParseRegions(reader, out);
-      if (!regions_result) {
-        reader.pop_depth();
-        return std::unexpected(regions_result.error());
-      }
-      have_regions = true;
-    } else {
-      // Unknown field -> SkipPayload
-      auto skip_result = base::SkipPayload(reader, *tag_result);
-      if (!skip_result) {
-        reader.pop_depth();
-        return std::unexpected(skip_result.error());
-      }
-    }
-  }
-
-  reader.pop_depth();
-
-  // Necessary fields check
-  if (!have_version) {
+  if (!have_version) [[unlikely]] {
     return std::unexpected(ParseError::At(
         ParseError::Code::MissingField, "Version", reader.pos()));
   }
-  if (!have_data_version) {
+  if (!have_data_version) [[unlikely]] {
     return std::unexpected(ParseError::At(
         ParseError::Code::MissingField, "DataVersion", reader.pos()));
   }
-  if (!have_metadata) {
+  if (!have_metadata) [[unlikely]] {
     return std::unexpected(ParseError::At(
         ParseError::Code::MissingField, "Metadata", reader.pos()));
   }
-  if (!have_regions) {
+  if (!have_regions) [[unlikely]] {
     return std::unexpected(ParseError::At(
         ParseError::Code::MissingField, "Regions", reader.pos()));
   }
-
   return {};
 }
 

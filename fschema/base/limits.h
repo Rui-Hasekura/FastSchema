@@ -21,24 +21,24 @@
 
 namespace fschema::base {
 
-  struct DecodeLimits {
-    // Input
-    std::size_t max_input_bytes = 1ULL << 30;       // 1 GiB After compression
-    std::size_t max_decompressed = 4ULL << 30;      // 4 GiB After decompression
+struct DecodeLimits {
+  // Input
+  std::size_t max_input_bytes = 1ULL << 30;   // 1 GiB After compression
+  std::size_t max_decompressed = 4ULL << 30;  // 4 GiB After decompression
 
-    // NBT Tree
-    std::size_t max_nbt_depth = 64;
-    std::size_t max_string_bytes = 1ULL << 16;      // 64 KiB per string
-    std::size_t max_array_elements = 1ULL << 28;    // 256M per array tag
+  // NBT Tree
+  std::size_t max_nbt_depth = 64;
+  std::size_t max_string_bytes = 1ULL << 16;    // 64 KiB per string
+  std::size_t max_array_elements = 1ULL << 28;  // 256M per array tag
 
-    // Litematic
-    std::size_t max_regions = 64;
-    std::uint64_t max_volume_per_region = 1ULL << 28;  // 256M blocks
-    std::size_t max_palette_size = 1ULL << 16;         // 65536 (2^16)
-    std::size_t max_entities = 1ULL << 18;             // 262144 (2^18)
-    std::size_t max_tile_entities = 1ULL << 20;        // 1048576 (2^20)
-    std::size_t max_pending_ticks = 1ULL << 16;        // 65536 (2^16)
-  };
+  // Litematic
+  std::size_t max_regions = 64;
+  std::uint64_t max_volume_per_region = 1ULL << 28;  // 256M blocks
+  std::size_t max_palette_size = 1ULL << 16;         // 65536 (2^16)
+  std::size_t max_entities = 1ULL << 18;             // 262144 (2^18)
+  std::size_t max_tile_entities = 1ULL << 20;        // 1048576 (2^20)
+  std::size_t max_pending_ticks = 1ULL << 16;        // 65536 (2^16)
+};
 
 }  // namespace fschema::base
 

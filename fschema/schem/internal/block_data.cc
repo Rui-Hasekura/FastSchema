@@ -1,3 +1,18 @@
+// Copyright (C) 2026 Rui-Hasekura <ruihasekura@gmail.com>
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #include "fschema/schem/internal/block_data.h"
 
 #include <tbb/blocked_range.h>
@@ -52,11 +67,11 @@ namespace {
 
 }  // anonymous namespace
 
-[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>> DecodeVarintParallel(
-    std::span<const std::byte> data,
-    std::uint64_t volume,
-    std::size_t palette_size,
-    memory::Arena& arena) {
+[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+DecodeVarintParallel(std::span<const std::byte> data,
+                     std::uint64_t volume,
+                     std::size_t palette_size,
+                     memory::Arena& arena) {
   const auto n = static_cast<std::size_t>(volume);
 
   constexpr std::size_t kMinVolumeForParallel = 1 << 14;
@@ -107,16 +122,17 @@ namespace {
   return out;
 }
 
-[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>> DecodeVarintScalar(
-    std::span<const std::byte> data,
-    std::uint64_t volume,
-    std::size_t palette_size,
-    memory::Arena& arena) {
+[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+DecodeVarintScalar(std::span<const std::byte> data,
+                   std::uint64_t volume,
+                   std::size_t palette_size,
+                   memory::Arena& arena) {
   if (palette_size == 0) [[unlikely]] {
     return std::unexpected(
         ParseError{ParseError::Code::PaletteIndexOutOfRange, "Palette", 0});
   }
-  memory::NoInitVector<std::uint16_t> out(static_cast<std::size_t>(volume), &arena);
+  memory::NoInitVector<std::uint16_t> out(static_cast<std::size_t>(volume),
+                                          &arena);
   const auto* p = reinterpret_cast<const std::uint8_t*>(data.data());
   const auto* end = p + data.size();
   for (std::uint64_t i = 0; i < volume; ++i) {
@@ -134,11 +150,11 @@ namespace {
   return out;
 }
 
-[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>> DecodeVarintArray(
-    std::span<const std::byte> data,
-    std::uint64_t volume,
-    std::size_t palette_size,
-    memory::Arena& arena) {
+[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+DecodeVarintArray(std::span<const std::byte> data,
+                  std::uint64_t volume,
+                  std::size_t palette_size,
+                  memory::Arena& arena) {
   if (volume == 0) [[unlikely]] {
     return memory::NoInitVector<std::uint16_t>{};
   }

@@ -16,20 +16,20 @@
 #ifndef FSCHEMA_BASE_NBT_TAG_INL_H_
 #define FSCHEMA_BASE_NBT_TAG_INL_H_
 
-#include "fschema/base/nbt_tag.h"
-
 #include <cstddef>
 #include <cstdint>
 
+#include "fschema/base/nbt_tag.h"
+
 namespace fschema::base {
 
-  [[nodiscard]] constexpr bool IsValidTagType(std::uint8_t id) noexcept {
-    return id <= kMaxTagId;
-  }
+[[nodiscard]] constexpr bool IsValidTagType(std::uint8_t id) noexcept {
+  return id <= kMaxTagId;
+}
 
-  [[nodiscard]] constexpr std::size_t FixedPayloadSize(
+[[nodiscard]] constexpr std::size_t FixedPayloadSize(
     TagType tag_type) noexcept {
-    switch (tag_type) {
+  switch (tag_type) {
     case TagType::Byte:
       return 1;
     case TagType::Short:
@@ -44,15 +44,15 @@ namespace fschema::base {
       return 8;
     default:
       return 0;
-    }
   }
+}
 
-  [[nodiscard]] constexpr bool IsScalar(TagType tag_type) noexcept {
-    return FixedPayloadSize(tag_type) > 0;
-  }
+[[nodiscard]] constexpr bool IsScalar(TagType tag_type) noexcept {
+  return FixedPayloadSize(tag_type) > 0;
+}
 
-  [[nodiscard]] constexpr std::size_t ElementSize(TagType tag_type) noexcept {
-    switch (tag_type) {
+[[nodiscard]] constexpr std::size_t ElementSize(TagType tag_type) noexcept {
+  switch (tag_type) {
     case TagType::ByteArray:
       return 1;
     case TagType::IntArray:
@@ -61,17 +61,15 @@ namespace fschema::base {
       return 8;
     default:
       return 0;
-    }
   }
+}
 
-  [[nodiscard]] constexpr bool IsArray(TagType tag_type) noexcept {
-    return ElementSize(tag_type) > 0;
-  }
+[[nodiscard]] constexpr bool IsArray(TagType tag_type) noexcept {
+  return ElementSize(tag_type) > 0;
+}
 
-  // Compound/List header size: TagID(1) + int32 len(4) = 5
-  [[nodiscard]] constexpr std::size_t ListHeaderSize() noexcept {
-    return 5;
-  }
+// Compound/List header size: TagID(1) + int32 len(4) = 5
+[[nodiscard]] constexpr std::size_t ListHeaderSize() noexcept { return 5; }
 
 }  // namespace fschema::base
 

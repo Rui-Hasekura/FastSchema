@@ -21,11 +21,13 @@ cc_library(
         "fschema/**/internal/*.h",
         "fschema/memory/*.h",
     ]),
-    hdrs = glob([
-        "fschema/base/*.h",
-        "fschema/litematic/*.h",
-        "fschema/schem/*.h",
-    ]),
+    hdrs = glob(
+        include = ["fschema/**/*.h"],
+        exclude = [
+            "fschema/**/internal/*.h",
+            "fschema/memory/*.h",
+        ],
+    ),
     includes = ["."],
     copts = select({
         "@platforms//os:windows": [
@@ -45,13 +47,15 @@ cc_library(
     }),
     visibility = ["//visibility:public"],
     deps = [
+        "@abseil//absl/container:flat_hash_map",
+        "@abseil//absl/time",
         "@highway//:hwy",
         "//third_party:libdeflate",
         "//third_party:tbb",
     ],
 )
 
-#  Tests
+# Tests
 
 cc_test(
     name = "fschema_litematic_parse_test",
@@ -65,7 +69,11 @@ cc_test(
     }),
     defines = ["FASTSCHEMA_TESTDATA_DIR=\"fschema/testdata\""],
     data = glob(["fschema/testdata/**"]),
-    deps = [":fschema", "@googletest//:gtest_main"],
+    deps = [
+        ":fschema",
+        "@highway//:hwy",
+        "@googletest//:gtest_main",
+    ],
 )
 
 cc_test(
@@ -80,7 +88,11 @@ cc_test(
     }),
     defines = ["FASTSCHEMA_TESTDATA_DIR=\"fschema/testdata\""],
     data = glob(["fschema/testdata/**"]),
-    deps = [":fschema", "@googletest//:gtest_main"],
+    deps = [
+        ":fschema",
+        "@highway//:hwy",
+        "@googletest//:gtest_main",
+    ],
 )
 
 cc_test(
@@ -95,10 +107,14 @@ cc_test(
     }),
     defines = ["FASTSCHEMA_TESTDATA_DIR=\"fschema/testdata\""],
     data = glob(["fschema/testdata/**"]),
-    deps = [":fschema", "@googletest//:gtest_main"],
+    deps = [
+        ":fschema",
+        "@highway//:hwy",
+        "@googletest//:gtest_main",
+    ],
 )
 
-#  Benchmarks
+# Benchmarks
 
 cc_binary(
     name = "fschema_schem_parse_benchmark",
@@ -112,7 +128,12 @@ cc_binary(
     }),
     defines = ["FASTSCHEMA_TESTDATA_DIR=\"fschema/testdata\""],
     data = glob(["fschema/testdata/**"]),
-    deps = [":fschema", "@google_benchmark//:benchmark"],
+    deps = [
+        ":fschema",
+        "@highway//:hwy",
+        "@google_benchmark//:benchmark",
+        "//third_party:tbb",
+    ],
 )
 
 cc_binary(
@@ -127,7 +148,12 @@ cc_binary(
     }),
     defines = ["FASTSCHEMA_TESTDATA_DIR=\"fschema/testdata\""],
     data = glob(["fschema/testdata/**"]),
-    deps = [":fschema", "@google_benchmark//:benchmark"],
+    deps = [
+        ":fschema",
+        "@highway//:hwy",
+        "@google_benchmark//:benchmark",
+        "//third_party:tbb",
+    ],
 )
 
 cc_binary(
@@ -142,5 +168,30 @@ cc_binary(
     }),
     defines = ["FASTSCHEMA_TESTDATA_DIR=\"fschema/testdata\""],
     data = glob(["fschema/testdata/**"]),
-    deps = [":fschema", "@google_benchmark//:benchmark"],
+    deps = [
+        ":fschema",
+        "@highway//:hwy",
+        "@google_benchmark//:benchmark",
+        "//third_party:tbb",
+    ],
+)
+
+cc_binary(
+    name = "fschema_convert_benchmark",
+    srcs = [
+        "fschema/benchmarks/convert_benchmark.cc",
+        "fschema/tests/testdata_util.h",
+    ],
+    copts = select({
+        "@platforms//os:windows": ["/std:c++latest"],
+        "//conditions:default": ["-std=c++23"],
+    }),
+    defines = ["FASTSCHEMA_TESTDATA_DIR=\"fschema/testdata\""],
+    data = glob(["fschema/testdata/**"]),
+    deps = [
+        ":fschema",
+        "@highway//:hwy",
+        "@google_benchmark//:benchmark",
+        "//third_party:tbb",
+    ],
 )

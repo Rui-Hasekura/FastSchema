@@ -15,114 +15,96 @@
 
 #include "fschema/litematic/internal/tile_entity.h"
 
-#include <cstdint>
-#include <expected>
-#include <utility>
-
+#include "fschema/base/nbt_scope.h"
 #include "fschema/base/nbt_skip.h"
 #include "fschema/base/nbt_tag.h"
 
 namespace fschema::litematic::internal {
 
-  // TileEntities: List<Compound>
-  //
-  // Per TileEntity Compound's common fields:
-  //   Id: String         <- TileEntity id, e.g. "minecraft:chest"
-  //   x: Int             <- Block position x (Java NBT naming convention)
-  //   y: Int
-  //   z: Int
-  //   ...remaining fields -> raw_nbt (e.g., Items, Lock, CustomName, ...)
-  [[nodiscard]] ParseResult<TileEntity> ParseTileEntityCompound(
+[[nodiscard]] ParseResult<TileEntity> ParseTileEntityCompound(
     base::ByteReader& reader) {
-    TileEntity tile_entity;
-    tile_entity.block_position = { 0, 0, 0 };
+  TileEntity te;
+  te.block_position = {0, 0, 0};
 
-    reader.push_depth();
+  const auto start = reader.pos();
 
-    for (;;) {
-      std::string_view name;
-      auto tag_result = reader.ReadCompoundEntryHeaderView(name);
-      if (!tag_result) {
-        reader.pop_depth();
-        return std::unexpected(tag_result.error());
-      }
-      if (*tag_result == base::TagType::End) {
-        break;
-      }
+  auto result = ForEachCompoundField(
+      reader, [&](std::string_view name, base::TagType t) -> ParseResult<void> {
+        if (name == "components" && t == base::TagType::Compound) {
+          return ForEachCompoundField(
+              reader,
+              [&](std::string_view cn, base::TagType ct) -> ParseResult<void> {
+                if ((cn == "id" || cn == "Id") && ct == base::TagType::String) {
+                  auto v = reader.ReadStringView();
+                  if (!v) return std::unexpected(v.error());
+                  te.id = *v;
+                } else if (cn == "x" && ct == base::TagType::Int) {
+                  auto v = reader.Read<std::int32_t>();
+                  if (!v) return std::unexpected(v.error());
+                  te.block_position[0] = *v;
+                } else if (cn == "y" && ct == base::TagType::Int) {
+                  auto v = reader.Read<std::int32_t>();
+                  if (!v) return std::unexpected(v.error());
+                  te.block_position[1] = *v;
+                } else if (cn == "z" && ct == base::TagType::Int) {
+                  auto v = reader.Read<std::int32_t>();
+                  if (!v) return std::unexpected(v.error());
+                  te.block_position[2] = *v;
+                } else {
+                  return base::SkipPayload(reader, ct);
+                }
+                return {};
+              });
+        } else if ((name == "id" || name == "Id") &&
+                   t == base::TagType::String) {
+          auto v = reader.ReadStringView();
+          if (!v) return std::unexpected(v.error());
+          te.id = *v;
+        } else if (name == "x" && t == base::TagType::Int) {
+          auto v = reader.Read<std::int32_t>();
+          if (!v) return std::unexpected(v.error());
+          te.block_position[0] = *v;
+        } else if (name == "y" && t == base::TagType::Int) {
+          auto v = reader.Read<std::int32_t>();
+          if (!v) return std::unexpected(v.error());
+          te.block_position[1] = *v;
+        } else if (name == "z" && t == base::TagType::Int) {
+          auto v = reader.Read<std::int32_t>();
+          if (!v) return std::unexpected(v.error());
+          te.block_position[2] = *v;
+        } else {
+          return base::SkipPayload(reader, t);
+        }
+        return {};
+      });
+  if (!result) return std::unexpected(result.error());
 
-      if ((name == "id" || name == "Id") &&
-        *tag_result == base::TagType::String) {
-        auto value = reader.ReadStringView();
-        if (!value) { reader.pop_depth(); return std::unexpected(value.error()); }
-        tile_entity.id = *value;
-      }
-      else if (name == "x" && *tag_result == base::TagType::Int) {
-        auto value = reader.Read<std::int32_t>();
-        if (!value) {
-          reader.pop_depth();
-          return std::unexpected(value.error());
-        }
-        tile_entity.block_position[0] = *value;
-      }
-      else if (name == "y" && *tag_result == base::TagType::Int) {
-        auto value = reader.Read<std::int32_t>();
-        if (!value) {
-          reader.pop_depth();
-          return std::unexpected(value.error());
-        }
-        tile_entity.block_position[1] = *value;
-      }
-      else if (name == "z" && *tag_result == base::TagType::Int) {
-        auto value = reader.Read<std::int32_t>();
-        if (!value) {
-          reader.pop_depth();
-          return std::unexpected(value.error());
-        }
-        tile_entity.block_position[2] = *value;
-      }
-      else {
-        auto skip_result = base::SkipPayload(reader, *tag_result);
-        if (!skip_result) {
-          reader.pop_depth();
-          return std::unexpected(skip_result.error());
-        }
-      }
-    }
+  te.raw_nbt = reader.SpanFrom(start);
+  return te;
+}
 
-    reader.pop_depth();
-    return tile_entity;
+[[nodiscard]] ParseResult<void> ParseTileEntities(
+    base::ByteReader& reader,
+    std::vector<TileEntity>& tile_entities) {
+  auto header = reader.ReadListHeader();
+  if (!header) return std::unexpected(header.error());
+  auto [elem_type, count] = *header;
+
+  if (elem_type == base::TagType::End || count == 0) return {};
+  if (elem_type != base::TagType::Compound)
+    return std::unexpected(reader.Error(ParseError::Code::InvalidTagId));
+  if (count > reader.limits().max_tile_entities)
+    return std::unexpected(reader.Error(ParseError::Code::OversizedPayload));
+
+  tile_entities.clear();
+  tile_entities.reserve(count);
+
+  for (std::size_t i = 0; i < count; ++i) {
+    auto te = ParseTileEntityCompound(reader);
+    if (!te) return std::unexpected(te.error());
+    tile_entities.push_back(std::move(*te));
   }
-
-  [[nodiscard]] ParseResult<void> ParseTileEntities(
-    base::ByteReader& reader, std::vector<TileEntity>& tile_entities) {
-    auto header = reader.ReadListHeader();
-    if (!header) {
-      return std::unexpected(header.error());
-    }
-    auto [elem_type, count] = *header;
-
-    if (elem_type == base::TagType::End || count == 0) {
-      return {};
-    }
-    if (elem_type != base::TagType::Compound) {
-      return std::unexpected(reader.Error(ParseError::Code::InvalidTagId));
-    }
-    if (count > reader.limits().max_tile_entities) {
-      return std::unexpected(reader.Error(ParseError::Code::OversizedPayload));
-    }
-
-    tile_entities.clear();
-    tile_entities.reserve(count);
-
-    for (std::size_t i = 0; i < count; ++i) {
-      auto tile_entity = ParseTileEntityCompound(reader);
-      if (!tile_entity) {
-        return std::unexpected(tile_entity.error());
-      }
-      tile_entities.push_back(std::move(*tile_entity));
-    }
-
-    return {};
-  }
+  return {};
+}
 
 }  // namespace fschema::litematic::internal

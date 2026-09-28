@@ -27,84 +27,60 @@
 
 #include "fschema/base/error.h"
 #include "fschema/base/nbt_reader.h"
+#include "fschema/base/nbt_scope.h"
 #include "fschema/base/nbt_tag.h"
 #include "fschema/base/nbt_tree.h"
 
 namespace fschema::base {
 
-  [[nodiscard]] ParseResult<NbtPayload> ParsePayload(ByteReader& reader,
-    TagType tag_type);
+[[nodiscard]] ParseResult<NbtPayload> ParsePayload(ByteReader& reader,
+                                                   TagType tag_type);
 
-  [[nodiscard]] ParseResult<NbtCompound> ParseCompound(ByteReader& reader) {
-    reader.push_depth();
-    if (reader.depth() > reader.limits().max_nbt_depth) [[unlikely]] {
-      reader.pop_depth();
-      return std::unexpected(reader.Error(ParseError::Code::DepthLimitExceeded));
-    }
+[[nodiscard]] ParseResult<NbtCompound> ParseCompound(ByteReader& reader) {
+  NbtCompound compound;
+  compound.children.reserve(16);
 
-    NbtCompound compound;
-    compound.children.reserve(16);
-    for (;;) {
-      std::string_view name;
-      auto tag_result = reader.ReadCompoundEntryHeaderView(name);
-      if (!tag_result) {
-        reader.pop_depth();
-        return std::unexpected(tag_result.error());
-      }
-      if (*tag_result == TagType::End) {
-        break;
-      }
+  auto result = ForEachCompoundField(
+      reader,
+      [&](std::string_view name, TagType tag_type) -> ParseResult<void> {
+        auto payload = ParsePayload(reader, tag_type);
+        if (!payload) return std::unexpected(payload.error());
+        compound.children.push_back(
+            NbtTag{tag_type, name, std::move(*payload)});
+        return {};
+      });
+  if (!result) return std::unexpected(result.error());
+  return compound;
+}
 
-      auto payload_result = ParsePayload(reader, *tag_result);
-      if (!payload_result) {
-        reader.pop_depth();
-        return std::unexpected(payload_result.error());
-      }
-
-      compound.children.push_back(NbtTag{
-          *tag_result, name, std::move(*payload_result) });
-    }
-
-    reader.pop_depth();
-    return compound;
+[[nodiscard]] ParseResult<NbtList> ParseList(ByteReader& reader) {
+  auto header = reader.ReadListHeader();
+  if (!header) return std::unexpected(header.error());
+  auto [elem_type, count] = *header;
+  if (elem_type == TagType::End || count == 0) {
+    return NbtList{elem_type, {}};
   }
 
-  [[nodiscard]] ParseResult<NbtList> ParseList(ByteReader& reader) {
-    auto header = reader.ReadListHeader();
-    if (!header) {
-      return std::unexpected(header.error());
-    }
-    auto [elem_type, count] = *header;
-    if (elem_type == TagType::End || count == 0) {
-      return NbtList{ elem_type, {} };
-    }
+  NbtList list;
+  list.element_type = elem_type;
+  list.children.reserve(count);
 
-    reader.push_depth();
-    if (reader.depth() > reader.limits().max_nbt_depth) [[unlikely]] {
-      reader.pop_depth();
-      return std::unexpected(reader.Error(ParseError::Code::DepthLimitExceeded));
-    }
-
-    NbtList list;
-    list.element_type = elem_type;
-    list.children.reserve(count);
-
-    for (std::size_t i = 0; i < count; ++i) {
-      auto payload_result = ParsePayload(reader, elem_type);
-      if (!payload_result) {
-        reader.pop_depth();
-        return std::unexpected(payload_result.error());
-      }
-      list.children.push_back(std::move(*payload_result));
-    }
-
-    reader.pop_depth();
-    return list;
+  DepthGuard guard(reader);
+  if (reader.depth() > reader.limits().max_nbt_depth) [[unlikely]] {
+    return std::unexpected(reader.Error(ParseError::Code::DepthLimitExceeded));
   }
 
-  [[nodiscard]] ParseResult<NbtPayload> ParsePayload(ByteReader& reader,
-    TagType tag_type) {
-    switch (tag_type) {
+  for (std::size_t i = 0; i < count; ++i) {
+    auto payload = ParsePayload(reader, elem_type);
+    if (!payload) return std::unexpected(payload.error());
+    list.children.push_back(std::move(*payload));
+  }
+  return list;
+}
+
+[[nodiscard]] ParseResult<NbtPayload> ParsePayload(ByteReader& reader,
+                                                   TagType tag_type) {
+  switch (tag_type) {
     case TagType::End:
       return std::monostate{};
     case TagType::Byte:
@@ -120,8 +96,8 @@ namespace fschema::base {
     case TagType::Double:
       return reader.Read<double>();
     case TagType::ByteArray: {
-      auto arr = reader.ReadArraySpan<std::int8_t>(
-        reader.limits().max_array_elements);
+      auto arr =
+          reader.ReadArraySpan<std::int8_t>(reader.limits().max_array_elements);
       if (!arr) return std::unexpected(arr.error());
       return *arr;
     }
@@ -160,25 +136,25 @@ namespace fschema::base {
     }
     default:
       [[unlikely]] return std::unexpected(
-        reader.Error(ParseError::Code::InvalidTagId));
-    }
+          reader.Error(ParseError::Code::InvalidTagId));
+  }
+}
+
+[[nodiscard]] ParseResult<NbtTag> ParseNbt(ByteReader& reader) {
+  auto tag_raw = reader.Read<std::uint8_t>();
+  if (!tag_raw) return std::unexpected(tag_raw.error());
+  if (!IsValidTagType(*tag_raw)) [[unlikely]] {
+    return std::unexpected(reader.Error(ParseError::Code::InvalidTagId));
   }
 
-  [[nodiscard]] ParseResult<NbtTag> ParseNbt(ByteReader& reader) {
-    auto tag_raw = reader.Read<std::uint8_t>();
-    if (!tag_raw) return std::unexpected(tag_raw.error());
-    if (!IsValidTagType(*tag_raw)) [[unlikely]] {
-      return std::unexpected(reader.Error(ParseError::Code::InvalidTagId));
-    }
+  auto tag_type = static_cast<TagType>(*tag_raw);
+  auto name = reader.ReadStringView();
+  if (!name) return std::unexpected(name.error());
 
-    auto tag_type = static_cast<TagType>(*tag_raw);
-    auto name = reader.ReadStringView();
-    if (!name) return std::unexpected(name.error());
+  auto payload_result = ParsePayload(reader, tag_type);
+  if (!payload_result) return std::unexpected(payload_result.error());
 
-    auto payload_result = ParsePayload(reader, tag_type);
-    if (!payload_result) return std::unexpected(payload_result.error());
-
-    return NbtTag{ tag_type, *name, std::move(*payload_result) };
-  }
+  return NbtTag{tag_type, *name, std::move(*payload_result)};
+}
 
 }  // namespace fschema::base

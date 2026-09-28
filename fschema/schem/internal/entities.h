@@ -20,17 +20,18 @@
 
 #include "fschema/base/error.h"
 #include "fschema/base/nbt_reader.h"
+#include "fschema/memory/arena.h"
 #include "fschema/schem/types.h"
 
 namespace fschema::schem::internal {
 
-  // Parses an Entities List<Compound>.
-  // v2: { Pos: List<Double>[3], Id: String, ...extra fields directly }
-  // v3: { Pos: List<Double>[3], Id: String, Data: Compound {extra} }
-  [[nodiscard]] ParseResult<void> ParseEntities(
-    base::ByteReader& reader,
-    std::vector<Entity>& out,
-    bool is_v3);
+// Parses an Entities List<Compound>.
+// v2: { Pos: List<Double>[3], Id: String, ...extra fields directly }
+// v3: { Pos: List<Double>[3], Id: String, Data: Compound {extra} }
+[[nodiscard]] ParseResult<void> ParseEntities(base::ByteReader& reader,
+                                              std::vector<Entity>& out,
+                                              bool is_v3,
+                                              memory::Arena& arena);
 
 }  // namespace fschema::schem::internal
 

@@ -26,13 +26,13 @@
 #include <string_view>
 #include <vector>
 
-#include "hwy/targets.h"
-
-#include "fschema/base/decompression.h"
+#include "fschema/base/block_utils.h"
+#include "fschema/base/compressor.h"
 #include "fschema/base/error.h"
 #include "fschema/litematic/parse.h"
 #include "fschema/litematic/types.h"
 #include "fschema/tests/testdata_util.h"
+#include "hwy/targets.h"
 
 #if defined(_WIN32) || defined(_WIN64)
 #  ifndef WIN32_LEAN_AND_MEAN
@@ -44,47 +44,13 @@
 #  include <windows.h>
 #endif
 
-[[nodiscard]] std::string ToString(fschema::ParseError::Code code) {
-  using C = fschema::ParseError::Code;
-  switch (code) {
-  case C::Truncated:
-    return "Truncated";
-  case C::InvalidTagId:
-    return "InvalidTagId";
-  case C::NegativeLength:
-    return "NegativeLength";
-  case C::DepthLimitExceeded:
-    return "DepthLimitExceeded";
-  case C::OversizedPayload:
-    return "OversizedPayload";
-  case C::UnsupportedVersion:
-    return "UnsupportedVersion";
-  case C::MissingField:
-    return "MissingField";
-  case C::BlockStatesTooSmall:
-    return "BlockStatesTooSmall";
-  case C::PaletteIndexOutOfRange:
-    return "PaletteIndexOutOfRange";
-  case C::VolumeOverflow:
-    return "VolumeOverflow";
-  default:
-    return "Unknown";
-  }
-}
-
 [[nodiscard]] std::uint64_t ExpectedVolume(
-  const std::array<std::int32_t, 3>& size) noexcept {
+    const std::array<std::int32_t, 3>& size) noexcept {
   const auto abs = [](std::int32_t v) -> std::uint64_t {
     return v < 0 ? static_cast<std::uint64_t>(-static_cast<std::int64_t>(v))
-      : static_cast<std::uint64_t>(v);
-    };
+                 : static_cast<std::uint64_t>(v);
+  };
   return abs(size[0]) * abs(size[1]) * abs(size[2]);
-}
-
-[[nodiscard]] bool IsAirVariant(std::string_view name) noexcept {
-  return name == "minecraft:air" ||
-    name == "minecraft:void_air" ||
-    name == "minecraft:cave_air";
 }
 
 struct TestFile {
@@ -113,10 +79,10 @@ struct TestFile {
       auto r = fschema::base::DecompressGzipFile(path);
       if (!r) {
         std::cerr << "  [warn] Decompress error or invalid litematic: "
-          << filename << "\n";
+                  << filename << "\n";
         continue;
       }
-      out.push_back({ filename, std::move(*r) });
+      out.push_back({filename, std::move(*r)});
     }
   }
   return out;
@@ -125,8 +91,8 @@ struct TestFile {
 static std::vector<TestFile> files = LoadTestFiles();
 
 void PrintErrorFn(const fschema::ParseError& e) {
-  std::cerr << "  [ParseError] " << ToString(e.code)
-    << " at path=\"" << e.path << "\" offset=" << e.offset << "\n";
+  std::cerr << "  [ParseError] " << ToString(e.code) << " at path=\"" << e.path
+            << "\" offset=" << e.offset << "\n";
 }
 
 static void BM_ParseLitematic(benchmark::State& st) {
@@ -141,7 +107,8 @@ static void BM_ParseLitematic(benchmark::State& st) {
   std::vector<std::byte> reusable_buffer = tf.bytes;
 
   for (auto _ : st) {
-    auto owner = std::make_unique<std::vector<std::byte>>(std::move(reusable_buffer));
+    auto owner =
+        std::make_unique<std::vector<std::byte>>(std::move(reusable_buffer));
     auto result = fschema::litematic::ParseLitematic(std::move(owner));
     if (!result) {
       PrintErrorFn(result.error());
@@ -152,7 +119,7 @@ static void BM_ParseLitematic(benchmark::State& st) {
     reusable_buffer = std::move(*result->owner);
   }
   st.SetBytesProcessed(static_cast<std::int64_t>(st.iterations()) *
-    static_cast<std::int64_t>(bytes_size));
+                       static_cast<std::int64_t>(bytes_size));
 
   {
     auto owner = std::make_unique<std::vector<std::byte>>(tf.bytes);
@@ -163,13 +130,14 @@ static void BM_ParseLitematic(benchmark::State& st) {
         total_blocks += reg.block_indices.size();
       }
       st.counters["blocks"] = benchmark::Counter(total_blocks);
-      st.counters["MiB_in"] =
-        benchmark::Counter(static_cast<double>(bytes_size) / (1024.0 * 1024.0));
+      st.counters["MiB_in"] = benchmark::Counter(
+          static_cast<double>(bytes_size) / (1024.0 * 1024.0));
     }
   }
 }
 
-[[nodiscard]] bool ValidateRegion(const fschema::litematic::Region& r, bool full) {
+[[nodiscard]] bool ValidateRegion(const fschema::litematic::Region& r,
+                                  bool full) {
   bool ok = true;
   const std::uint64_t expected = ExpectedVolume(r.size);
   if (r.block_indices.size() != expected) {
@@ -182,8 +150,7 @@ static void BM_ParseLitematic(benchmark::State& st) {
         break;
       }
     }
-  }
-  else {
+  } else {
     const std::uint64_t n = r.block_indices.size();
     constexpr std::uint64_t stride = 4096;
     for (std::uint64_t i = 0; i < n; i += stride) {
@@ -209,7 +176,7 @@ static void BM_ParseLitematic(benchmark::State& st) {
   }
   std::uint64_t non_air = 0;
   for (std::size_t i = 0; i < r.palette.size(); ++i) {
-    if (counts[i] > 0 && !IsAirVariant(r.palette[i].name)) {
+    if (counts[i] > 0 && !fschema::base::IsAirVariant(r.palette[i].name)) {
       non_air += counts[i];
     }
   }
@@ -217,11 +184,13 @@ static void BM_ParseLitematic(benchmark::State& st) {
 }
 
 int main(int argc, char* argv[]) {
+#if defined(_WIN32) || defined(_WIN64)
   SetConsoleOutputCP(CP_UTF8);
   SetConsoleCP(CP_UTF8);
+#endif
 
-  std::cout << "Highway supported: 0x" << std::hex
-    << hwy::SupportedTargets() << std::dec << "\n";
+  std::cout << "Highway supported: 0x" << std::hex << hwy::SupportedTargets()
+            << std::dec << "\n";
 
   bool all_ok = true;
   if (files.empty()) {
@@ -250,10 +219,10 @@ int main(int argc, char* argv[]) {
       non_air_total += NonAirCount(reg);
     }
     bool conserved =
-      (non_air_total == static_cast<std::uint64_t>(r->metadata.total_blocks));
+        (non_air_total == static_cast<std::uint64_t>(r->metadata.total_blocks));
     std::cout << "  Conservation: " << non_air_total
-      << (conserved ? " == " : " != ")
-      << r->metadata.total_blocks << "\n";
+              << (conserved ? " == " : " != ") << r->metadata.total_blocks
+              << "\n";
     if (!conserved) {
       all_ok = false;
     }
@@ -264,11 +233,10 @@ int main(int argc, char* argv[]) {
 
   for (std::size_t i = 0; i < files.size(); ++i) {
     benchmark::RegisterBenchmark(
-      ("LitematicParse/" + files[i].filename).c_str(),
-      BM_ParseLitematic)
-      ->Arg(i)
-      ->Unit(benchmark::kMillisecond)
-      ->MinTime(2.0);
+        ("LitematicParse/" + files[i].filename).c_str(), BM_ParseLitematic)
+        ->Arg(i)
+        ->Unit(benchmark::kMillisecond)
+        ->MinTime(2.0);
   }
 
   ::benchmark::RunSpecifiedBenchmarks();

@@ -21,12 +21,12 @@
 
 namespace fschema::base {
 
-  void CopyAndBswap32(const std::byte* src,
-    std::int32_t* dst,
-    std::size_t count) noexcept;
-  void CopyAndBswap64(const std::byte* src,
-    std::int64_t* dst,
-    std::size_t count) noexcept;
+void CopyAndBswap32(const std::byte* src,
+                    std::int32_t* dst,
+                    std::size_t count) noexcept;
+void CopyAndBswap64(const std::byte* src,
+                    std::int64_t* dst,
+                    std::size_t count) noexcept;
 
 }  // namespace fschema::base
 

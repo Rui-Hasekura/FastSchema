@@ -20,10 +20,10 @@
 #include <filesystem>
 #include <memory>
 #include <span>
-#include <string_view>
 #include <vector>
 
-#include "fschema/base/decompression.h"
+#include "fschema/base/block_utils.h"
+#include "fschema/base/compressor.h"
 #include "fschema/base/error.h"
 #include "fschema/base/limits.h"
 #include "fschema/base/nbt_reader.h"
@@ -36,11 +36,6 @@ namespace fs = std::filesystem;
 namespace fb = fschema::base;
 namespace fm = fschema::memory;
 namespace fsc = fschema::schem;
-
-[[nodiscard]] bool IsAirVariant(std::string_view name) noexcept {
-  return name == "minecraft:air" || name == "minecraft:void_air" ||
-         name == "minecraft:cave_air";
-}
 
 class SchemParseTest : public ::testing::TestWithParam<fs::path> {
  public:
@@ -118,7 +113,7 @@ TEST_P(SchemParseTest, ParsesSuccessfullyAndValidatesStructure) {
     }
     std::uint64_t non_air = 0;
     for (std::size_t k = 0; k < schematic.palette.size(); ++k) {
-      if (counts[k] > 0 && !IsAirVariant(schematic.palette[k].name)) {
+      if (counts[k] > 0 && !fschema::base::IsAirVariant(schematic.palette[k].name)) {
         non_air += counts[k];
       }
     }

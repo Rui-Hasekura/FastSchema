@@ -28,38 +28,36 @@
 
 namespace fschema::base {
 
-  struct NbtCompound;
-  struct NbtList;
+struct NbtCompound;
+struct NbtList;
 
-  using NbtPayload = std::variant<
-    std::monostate,
-    std::int8_t,
-    std::int16_t,
-    std::int32_t,
-    std::int64_t,
-    float,
-    double,
-    std::span<const std::int8_t>,
-    std::string_view,
-    std::span<const std::byte>,
-    std::unique_ptr<NbtCompound>,
-    std::unique_ptr<NbtList>
-  >;
+using NbtPayload = std::variant<std::monostate,
+                                std::int8_t,
+                                std::int16_t,
+                                std::int32_t,
+                                std::int64_t,
+                                float,
+                                double,
+                                std::span<const std::int8_t>,
+                                std::string_view,
+                                std::span<const std::byte>,
+                                std::unique_ptr<NbtCompound>,
+                                std::unique_ptr<NbtList> >;
 
-  struct NbtTag {
-    TagType type = TagType::End;
-    std::string_view name;
-    NbtPayload payload;
-  };
+struct NbtTag {
+  TagType type = TagType::End;
+  std::string_view name;
+  NbtPayload payload;
+};
 
-  struct NbtCompound {
-    std::vector<NbtTag> children;
-  };
+struct NbtCompound {
+  std::vector<NbtTag> children;
+};
 
-  struct NbtList {
-    TagType element_type = TagType::End;
-    std::vector<NbtPayload> children;
-  };
+struct NbtList {
+  TagType element_type = TagType::End;
+  std::vector<NbtPayload> children;
+};
 
 }  // namespace fschema::base
 

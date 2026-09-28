@@ -22,19 +22,19 @@
 
 namespace fschema::litematic::internal {
 
-  // Metadata Compound:
-  //   Name: String
-  //   Author: String
-  //   Description: String
-  //   RegionCount: Int
-  //   TotalBlocks: Int
-  //   TotalVolume: Int
-  //   EnclosingSize: Compound { x,y,z: Int }
-  //   TimeCreated: Long
-  //   TimeModified: Long
-  //   PreviewData: IntArray (Optional, 1.13+)
-  [[nodiscard]] ParseResult<void> ParseMetadata(
-    base::ByteReader& reader, Litematic& out);
+// Metadata Compound:
+//   Name: String
+//   Author: String
+//   Description: String
+//   RegionCount: Int
+//   TotalBlocks: Int
+//   TotalVolume: Int
+//   EnclosingSize: Compound { x,y,z: Int }
+//   TimeCreated: Long
+//   TimeModified: Long
+//   PreviewData: IntArray (Optional, 1.13+)
+[[nodiscard]] ParseResult<void> ParseMetadata(base::ByteReader& reader,
+                                              Litematic& out);
 
 }  // namespace fschema::litematic::internal
 

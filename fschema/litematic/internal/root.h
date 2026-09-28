@@ -17,21 +17,21 @@
 #define FSCHEMA_LITEMATIC_INTERNAL_ROOT_H_
 
 #include "fschema/base/error.h"
-#include "fschema/litematic/types.h"
 #include "fschema/base/nbt_reader.h"
+#include "fschema/litematic/types.h"
 
 namespace fschema::litematic::internal {
 
-  // Litematica root Compound fields (Java write order is fixed):
-  //   Version: Int          <- Necessary
-  //   SubVersion: Int       <- v6+ Optional, Skip
-  //   DataVersion: Int      <- v5+ Necessary
-  //   Metadata: Compound    <- Necessary
-  //   Regions: Compound     <- Necessary
-  //
-  // Unknown field -> SkipPayload
-  [[nodiscard]] ParseResult<void> ParseRoot(
-    base::ByteReader& reader, Litematic& out);
+// Litematica root Compound fields (Java write order is fixed):
+//   Version: Int          <- Necessary
+//   SubVersion: Int       <- v6+ Optional, Skip
+//   DataVersion: Int      <- v5+ Necessary
+//   Metadata: Compound    <- Necessary
+//   Regions: Compound     <- Necessary
+//
+// Unknown field -> SkipPayload
+[[nodiscard]] ParseResult<void> ParseRoot(base::ByteReader& reader,
+                                          Litematic& out);
 
 }  // namespace fschema::litematic::internal
 

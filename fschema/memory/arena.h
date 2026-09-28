@@ -35,7 +35,6 @@ class Arena {
   static constexpr std::size_t kLargePage = 2ULL * 1024 * 1024;
 
   Arena() = default;
-  explicit Arena(std::size_t) {}
   ~Arena() { Release(); }
 
   Arena(Arena&& o) noexcept;

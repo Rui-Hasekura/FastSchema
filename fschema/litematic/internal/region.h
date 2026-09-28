@@ -25,35 +25,35 @@
 #include "fschema/litematic/types.h"
 
 namespace fschema::memory {
-  class Arena;
+class Arena;
 }
 
 namespace fschema::litematic::internal {
 
-  // Regions Compound: every region is a Compound entry
-  //   <region_name>: Compound {
-  //     Position: Compound { x,y,z: Int }
-  //     Size: Compound { x,y,z: Int }
-  //     BlockStatePalette: List<Compound>
-  //     BlockStates: LongArray
-  //     TileEntities: List<Compound>
-  //     Entities: List<Compound>
-  //     PendingBlockTicks / PendingFluidTicks (v6+)
-  //     PendingBlockEntities / PendingEntities (v6+)
-  //   }
-  // Field order is not fixed (BlockStates can appear before Size/Palette),
-  // so BlockStates is zero-copied as a span, and unpacking is delayed until
-  // the end of the region.
+// Regions Compound: every region is a Compound entry
+//   <region_name>: Compound {
+//     Position: Compound { x,y,z: Int }
+//     Size: Compound { x,y,z: Int }
+//     BlockStatePalette: List<Compound>
+//     BlockStates: LongArray
+//     TileEntities: List<Compound>
+//     Entities: List<Compound>
+//     PendingBlockTicks / PendingFluidTicks (v6+)
+//     PendingBlockEntities / PendingEntities (v6+)
+//   }
+// Field order is not fixed (BlockStates can appear before Size/Palette),
+// so BlockStates is zero-copied as a span, and unpacking is delayed until
+// the end of the region.
 
-  [[nodiscard]] ParseResult<std::array<std::int32_t, 3>>
-    ParseVec3Int(base::ByteReader& reader);
+[[nodiscard]] ParseResult<std::array<std::int32_t, 3>> ParseVec3Int(
+    base::ByteReader& reader);
 
-  [[nodiscard]] ParseResult<Region> ParseRegion(base::ByteReader& reader,
-                                                std::string_view region_name,
-                                                memory::Arena& arena);
+[[nodiscard]] ParseResult<Region> ParseRegion(base::ByteReader& reader,
+                                              std::string_view region_name,
+                                              memory::Arena& arena);
 
-  [[nodiscard]] ParseResult<void> ParseRegions(base::ByteReader& reader,
-                                               Litematic& out);
+[[nodiscard]] ParseResult<void> ParseRegions(base::ByteReader& reader,
+                                             Litematic& out);
 
 }  // namespace fschema::litematic::internal
 

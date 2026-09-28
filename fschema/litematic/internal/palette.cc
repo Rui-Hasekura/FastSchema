@@ -19,99 +19,64 @@
 #include <string_view>
 #include <utility>
 
-#include "fschema/base/nbt_tag.h"
+#include "fschema/base/nbt_scope.h"
 #include "fschema/base/nbt_skip.h"
+#include "fschema/base/nbt_tag.h"
 #include "fschema/litematic/types.h"
 
 namespace fschema::litematic::internal {
 
-// BlockStatePalette: List<Compound>
-//   PER Compound: {
-//     Name: String          <- Necessary, e.g. "minecraft:oak_stairs"
-//     Properties: Compound  <- Optional, arbitrary key-value pairs
-//   }
-//
-// Properties reserves raw span (Open schema, it's impossible to enumerate all
-// keys).
 [[nodiscard]] ParseResult<void> ParsePalette(base::ByteReader& reader,
                                              std::vector<BlockState>& palette) {
   auto header = reader.ReadListHeader();
-  if (!header) {
-    return std::unexpected(header.error());
-  }
+  if (!header) return std::unexpected(header.error());
   auto [elem_type, count] = *header;
 
-  if (elem_type == base::TagType::End || count == 0) {
-    return {};
-  }
-  if (elem_type != base::TagType::Compound) {
+  if (elem_type == base::TagType::End || count == 0) return {};
+  if (elem_type != base::TagType::Compound)
     return std::unexpected(reader.Error(ParseError::Code::InvalidTagId));
-  }
-  if (count > reader.limits().max_palette_size) {
+  if (count > reader.limits().max_palette_size)
     return std::unexpected(reader.Error(ParseError::Code::OversizedPayload));
-  }
 
   palette.clear();
   palette.reserve(count);
 
-  reader.push_depth();
+  // List scope (counts toward NBT depth).
+  base::DepthGuard list_guard(reader);
+  if (reader.depth() > reader.limits().max_nbt_depth) [[unlikely]] {
+    return std::unexpected(reader.Error(ParseError::Code::DepthLimitExceeded));
+  }
 
   for (std::size_t i = 0; i < count; ++i) {
     BlockState entry;
     bool have_name = false;
 
-    reader.push_depth();
-    for (;;) {
-      std::string_view name;
-      auto tag_result = reader.ReadCompoundEntryHeaderView(name);
-      if (!tag_result) {
-        reader.pop_depth();
-        reader.pop_depth();
-        return std::unexpected(tag_result.error());
-      }
-      if (*tag_result == base::TagType::End) {
-        break;
-      }
+    auto result = ForEachCompoundField(
+        reader,
+        [&](std::string_view name, base::TagType t) -> ParseResult<void> {
+          if (name == "Name" && t == base::TagType::String) {
+            auto v = reader.ReadStringView();
+            if (!v) return std::unexpected(v.error());
+            entry.name = *v;
+            have_name = true;
+          } else if (name == "Properties" && t == base::TagType::Compound) {
+            const auto start = reader.pos();
+            auto s = base::SkipPayload(reader, base::TagType::Compound);
+            if (!s) return std::unexpected(s.error());
+            entry.properties = reader.SpanFrom(start);
+          } else {
+            return base::SkipPayload(reader, t);
+          }
+          return {};
+        });
+    if (!result) return std::unexpected(result.error());
 
-      if (name == "Name" && *tag_result == base::TagType::String) {
-        auto value = reader.ReadStringView();
-        if (!value) {
-          reader.pop_depth();
-          reader.pop_depth();
-          return std::unexpected(value.error());
-        }
-        entry.name = *value;
-        have_name = true;
-      } else if (name == "Properties" &&
-                 *tag_result == base::TagType::Compound) {
-        const auto start = reader.pos();
-        auto skip_result = base::SkipPayload(reader, base::TagType::Compound);
-        if (!skip_result) {
-          reader.pop_depth();
-          reader.pop_depth();
-          return std::unexpected(skip_result.error());
-        }
-        entry.properties = reader.SpanFrom(start);
-      } else {
-        auto skip_result = base::SkipPayload(reader, *tag_result);
-        if (!skip_result) {
-          reader.pop_depth();
-          reader.pop_depth();
-          return std::unexpected(skip_result.error());
-        }
-      }
-    }
-    reader.pop_depth();
-
-    if (!have_name) {
-      reader.pop_depth();
+    if (!have_name) [[unlikely]] {
       return std::unexpected(reader.Error(ParseError::Code::MissingField));
     }
     palette.push_back(std::move(entry));
   }
-
-  reader.pop_depth();
   return {};
 }
 
-}  // namespace fschema::parser::litematic::detail
+}  // namespace fschema::litematic::internal

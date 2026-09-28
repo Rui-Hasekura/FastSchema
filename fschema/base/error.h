@@ -22,38 +22,43 @@
 
 namespace fschema {
 
-  struct ParseError {
-    enum class Code : std::uint8_t {
+struct ParseError {
+  enum class Code : std::uint8_t {
 
-      // NBT
-      Truncated,             // Too short to parse
-      InvalidTagId,          // TagID > 12
-      NegativeLength,
-      DepthLimitExceeded,    // Nested depth too deep
-      OversizedPayload,      // Over DecodeLimits
+    // NBT
+    Truncated,     // Too short to parse
+    InvalidTagId,  // TagID > 12
+    NegativeLength,
+    DepthLimitExceeded,  // Nested depth too deep
+    OversizedPayload,    // Over DecodeLimits
 
-      // Litematic schema
-      UnsupportedVersion,    // Version < 5 or > 7
-      MissingField,          // Necessary field not found in NBT tree
-      BlockStatesTooSmall,   // LongArray is too small for volume * bpb
-      PaletteIndexOutOfRange,// idx >= palette.size()
-      VolumeOverflow,        // x * y * z overflow
+    // Litematic schema
+    UnsupportedVersion,      // Version < 5 or > 7
+    MissingField,            // Necessary field not found in NBT tree
+    BlockStatesTooSmall,     // LongArray is too small for volume * bpb
+    PaletteIndexOutOfRange,  // idx >= palette.size()
+    VolumeOverflow,          // x * y * z overflow
 
-      // Schem schema
-      VarintOverflow,
-      BlockDataTooSmall,
-    };
-
-    Code code;
-    std::string path;
-    std::size_t offset;   // offset after decompression
-
-    [[nodiscard]] static ParseError At(
-      Code code, std::string path, std::size_t offset);
+    // Schem schema
+    VarintOverflow,
+    BlockDataTooSmall,
+    NegativeIndex,
   };
 
-  template <typename T>
-  using ParseResult = std::expected<T, ParseError>;
+  Code code;
+  std::string path;
+  std::size_t offset;
+  [[nodiscard]] static ParseError At(Code, std::string, std::size_t);
+};
+
+template <typename T>
+using ParseResult = std::expected<T, ParseError>;
+
+[[nodiscard]] std::string_view ToString(ParseError::Code code) noexcept;
+
+[[nodiscard]] inline std::string_view ToString(const ParseError& e) noexcept {
+  return ToString(e.code);
+}
 
 }  // namespace fschema
 

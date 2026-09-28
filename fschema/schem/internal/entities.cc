@@ -16,155 +16,141 @@
 #include "fschema/schem/internal/entities.h"
 
 #include <array>
+#include <cstring>
 #include <expected>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "fschema/base/error.h"
+#include "fschema/base/nbt_primitives.h"
+#include "fschema/base/nbt_scope.h"
 #include "fschema/base/nbt_skip.h"
 #include "fschema/base/nbt_tag.h"
+#include "fschema/base/nbt_writer.h"
+#include "fschema/memory/arena.h"
 #include "fschema/schem/types.h"
 
 namespace fschema::schem::internal {
 
-  [[nodiscard]] static ParseResult<std::array<double, 3>>
-    ReadPos3Double(base::ByteReader& reader) {
-    auto header = reader.ReadListHeader();
-    if (!header) {
-      return std::unexpected(header.error());
-    }
-    auto [elem_type, count] = *header;
+[[nodiscard]] ParseResult<Entity> ParseEntityCompound(base::ByteReader& reader,
+                                                      bool is_v3,
+                                                      memory::Arena& arena) {
+  Entity ent;
+  ent.pos = {0, 0, 0};
+  ent.motion = {0, 0, 0};
+  ent.rotation = {0, 0};
+  std::string_view id;
+  std::span<const std::byte> data_payload;
 
-    std::array<double, 3> result = { 0, 0, 0 };
-    if (elem_type == base::TagType::End || count == 0) {
-      return result;
-    }
-    if (elem_type != base::TagType::Double) {
-      return std::unexpected(
-        reader.Error(ParseError::Code::InvalidTagId));
-    }
-    if (count != 3) {
-      for (std::size_t i = 0; i < count; ++i) {
-        auto skip_result =
-          base::SkipPayload(reader, base::TagType::Double);
-        if (!skip_result) {
-          return std::unexpected(skip_result.error());
+  const auto start = reader.pos();
+
+  auto result = ForEachCompoundField(
+      reader, [&](std::string_view name, base::TagType t) -> ParseResult<void> {
+        if (name == "Id" && t == base::TagType::String) {
+          auto v = reader.ReadStringView();
+          if (!v) return std::unexpected(v.error());
+          ent.id = *v;
+          id = *v;
+        } else if (name == "Pos" && t == base::TagType::List) {
+          auto r = base::ReadVec3DoubleList(reader);
+          if (!r) return std::unexpected(r.error());
+          ent.pos = *r;
+        } else if (name == "Motion" && t == base::TagType::List) {
+          auto r = base::ReadVec3DoubleList(reader);
+          if (!r) return std::unexpected(r.error());
+          ent.motion = *r;
+        } else if (name == "Rotation" && t == base::TagType::List) {
+          auto r = base::ReadVec2FloatList(reader);
+          if (!r) return std::unexpected(r.error());
+          ent.rotation = *r;
+        } else if (is_v3 && name == "Data" && t == base::TagType::Compound) {
+          const auto data_start = reader.pos();
+          auto s = base::SkipPayload(reader, base::TagType::Compound);
+          if (!s) return std::unexpected(s.error());
+          data_payload = reader.SpanFrom(data_start);
+
+          // Inner scan of Data compound to extract Motion/Rotation (if
+          // present).
+          if (!data_payload.empty()) {
+            base::ByteReader data_scan(data_payload, base::DecodeLimits{});
+            for (;;) {
+              std::string_view dname;
+              auto dtag = data_scan.ReadCompoundEntryHeaderView(dname);
+              if (!dtag || *dtag == base::TagType::End) break;
+
+              if (dname == "Motion" && *dtag == base::TagType::List) {
+                auto m = base::ReadVec3DoubleList(data_scan);
+                if (!m) return std::unexpected(m.error());
+                ent.motion = *m;
+              } else if (dname == "Rotation" && *dtag == base::TagType::List) {
+                auto r = base::ReadVec2FloatList(data_scan);
+                if (!r) return std::unexpected(r.error());
+                ent.rotation = *r;
+              } else {
+                auto s2 = base::SkipPayload(data_scan, *dtag);
+                if (!s2) return std::unexpected(s2.error());
+              }
+            }
+          }
+        } else {
+          return base::SkipPayload(reader, t);
         }
-      }
-      return result;
-    }
+        return {};
+      });
+  if (!result) return std::unexpected(result.error());
 
-    for (int i = 0; i < 3; ++i) {
-      auto v = reader.Read<double>();
-      if (!v) {
-        return std::unexpected(v.error());
-      }
-      result[i] = *v;
+  // Build ent.data
+  if (!is_v3) {
+    // v2: raw compound body (Id + Pos + extra fields + End).
+    ent.data = reader.SpanFrom(start);
+  } else {
+    // v3: re-serialize as Id + Pos + data_payload (no End tag at tail;
+    // the data_payload's own End tag terminates the compound body).
+    base::NbtWriter writer;
+    writer.BeginListElementCompound();
+    writer.WriteStringField("Id", id);
+    writer.BeginListField("Pos", base::TagType::Double, 3);
+    writer.WriteListElementDouble(ent.pos[0]);
+    writer.WriteListElementDouble(ent.pos[1]);
+    writer.WriteListElementDouble(ent.pos[2]);
+    writer.EndListField();
+    if (!data_payload.empty()) {
+      writer.WriteListElementRawPayload(data_payload);
     }
-    return result;
+    writer.EndListElementCompound();
+    std::vector<std::byte> full_payload = std::move(writer).Finalize();
+    if (!full_payload.empty() && full_payload.back() == std::byte{0})
+      full_payload.pop_back();
+    auto* mem = arena.Allocate(full_payload.size());
+    std::memcpy(mem, full_payload.data(), full_payload.size());
+    ent.data = std::span<const std::byte>(static_cast<const std::byte*>(mem),
+                                          full_payload.size());
   }
+  return ent;
+}
 
-  [[nodiscard]] ParseResult<Entity>
-    ParseEntityCompound(
-      base::ByteReader& reader, bool is_v3) {
-    Entity ent;
-    ent.pos = { 0, 0, 0 };
+[[nodiscard]] ParseResult<void> ParseEntities(base::ByteReader& reader,
+                                              std::vector<Entity>& out,
+                                              bool is_v3,
+                                              memory::Arena& arena) {
+  auto header = reader.ReadListHeader();
+  if (!header) return std::unexpected(header.error());
+  auto [elem_type, count] = *header;
+  if (elem_type == base::TagType::End || count == 0) return {};
+  if (elem_type != base::TagType::Compound)
+    return std::unexpected(reader.Error(ParseError::Code::InvalidTagId));
+  if (count > reader.limits().max_entities)
+    return std::unexpected(reader.Error(ParseError::Code::OversizedPayload));
 
-    const auto start = reader.pos();
-
-    reader.push_depth();
-
-    for (;;) {
-      std::string_view name;
-      auto tag_result = reader.ReadCompoundEntryHeaderView(name);
-      if (!tag_result) {
-        reader.pop_depth();
-        return std::unexpected(tag_result.error());
-      }
-      if (*tag_result == base::TagType::End) {
-        break;
-      }
-
-      if (name == "Id" && *tag_result == base::TagType::String) {
-        auto value = reader.ReadStringView();
-        if (!value) {
-          reader.pop_depth();
-          return std::unexpected(value.error());
-        }
-        ent.id = *value;
-      }
-      else if (name == "Pos" &&
-        *tag_result == base::TagType::List) {
-        auto pos_result = ReadPos3Double(reader);
-        if (!pos_result) {
-          reader.pop_depth();
-          return std::unexpected(pos_result.error());
-        }
-        ent.pos = *pos_result;
-      }
-      else if (is_v3 && name == "Data" &&
-        *tag_result == base::TagType::Compound) {
-        const auto data_start = reader.pos();
-        auto skip_result =
-          base::SkipPayload(reader, base::TagType::Compound);
-        if (!skip_result) {
-          reader.pop_depth();
-          return std::unexpected(skip_result.error());
-        }
-        ent.data = reader.SpanFrom(data_start);
-      }
-      else {
-        auto skip_result = base::SkipPayload(reader, *tag_result);
-        if (!skip_result) {
-          reader.pop_depth();
-          return std::unexpected(skip_result.error());
-        }
-      }
-    }
-
-    reader.pop_depth();
-
-    if (!is_v3) {
-      ent.data = reader.SpanFrom(start);
-    }
-
-    return ent;
+  out.clear();
+  out.reserve(count);
+  for (std::size_t i = 0; i < count; ++i) {
+    auto ent = ParseEntityCompound(reader, is_v3, arena);
+    if (!ent) return std::unexpected(ent.error());
+    out.push_back(std::move(*ent));
   }
-
-  [[nodiscard]] ParseResult<void> ParseEntities(
-    base::ByteReader& reader,
-    std::vector<Entity>& out,
-    bool is_v3) {
-    auto header = reader.ReadListHeader();
-    if (!header) {
-      return std::unexpected(header.error());
-    }
-    auto [elem_type, count] = *header;
-
-    if (elem_type == base::TagType::End || count == 0) {
-      return {};
-    }
-    if (elem_type != base::TagType::Compound) {
-      return std::unexpected(
-        reader.Error(ParseError::Code::InvalidTagId));
-    }
-    if (count > reader.limits().max_entities) {
-      return std::unexpected(
-        reader.Error(ParseError::Code::OversizedPayload));
-    }
-
-    out.clear();
-    out.reserve(count);
-
-    for (std::size_t i = 0; i < count; ++i) {
-      auto ent = ParseEntityCompound(reader, is_v3);
-      if (!ent) {
-        return std::unexpected(ent.error());
-      }
-      out.push_back(std::move(*ent));
-    }
-
-    return {};
-  }
+  return {};
+}
 
 }  // namespace fschema::schem::internal

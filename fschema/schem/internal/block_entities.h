@@ -20,14 +20,16 @@
 
 #include "fschema/base/error.h"
 #include "fschema/base/nbt_reader.h"
+#include "fschema/memory/arena.h"
 #include "fschema/schem/types.h"
 
 namespace fschema::schem::internal {
 
-  [[nodiscard]] ParseResult<void> ParseBlockEntities(
+[[nodiscard]] ParseResult<void> ParseBlockEntities(
     base::ByteReader& reader,
     std::vector<BlockEntity>& out,
-    bool is_v3);
+    bool is_v3,
+    memory::Arena& arena);
 
 }  // namespace fschema::schem::internal
 

@@ -22,28 +22,7 @@
 
 namespace fschema::schem::internal {
 
-  void ParseBlockStateString(std::string_view full, BlockState& out);
-
-  template <typename F>
-  void ForEachProperty(std::string_view properties, F&& callback) {
-    if (properties.empty()) return;
-
-    std::size_t start = 0;
-    while (start < properties.size()) {
-      const auto comma = properties.find(',', start);
-      const auto end = (comma == std::string_view::npos)
-        ? properties.size()
-        : comma;
-
-      const auto pair = properties.substr(start, end - start);
-      const auto eq = pair.find('=');
-      if (eq != std::string_view::npos) {
-        callback(pair.substr(0, eq), pair.substr(eq + 1));
-      }
-
-      start = end + 1;
-    }
-  }
+void ParseBlockStateString(std::string_view full, BlockState& out);
 
 }  // namespace fschema::schem::internal
 

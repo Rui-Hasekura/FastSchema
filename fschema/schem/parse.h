@@ -22,26 +22,24 @@
 #include <vector>
 
 #include "fschema/base/error.h"
+#include "fschema/base/limits.h"
 #include "fschema/schem/types.h"
 
 namespace fschema::schem {
 
-  // Decompresses and parses a .schem file.
-  // Supports both v2 and v3 of the Sponge Schematic specification.
-  // Decompressed bytes are owned by Schematic::owner
-  // All string_views and byte spans point into this buffer.
-  // When Schematic is destroyed, all views and spans are invalid.
-  [[nodiscard]] std::expected<Schematic, ParseError>
-    ParseSchematic(const std::filesystem::path& path);
+// Decompresses and parses a .schem file.
+// Supports both v2 and v3 of the Sponge Schematic specification.
+// Decompressed bytes are owned by Schematic::owner
+// All string_views and byte spans point into this buffer.
+// When Schematic is destroyed, all views and spans are invalid.
+[[nodiscard]] std::expected<Schematic, ParseError> ParseSchematic(
+    const std::filesystem::path& path);
 
-  // Parses from pre-decompressed NBT bytes, TAKING OWNERSHIP of the buffer.
-  // Postcondition: `data` is left in a valid-but-unspecified (moved-from) state.
-  [[nodiscard]] std::expected<Schematic, ParseError>
-    ParseSchematicFromBytes(std::vector<std::byte> data);
-
-  // Parses from a non-owning span of pre-decompressed NBT bytes.
-  [[nodiscard]] std::expected<Schematic, ParseError>
-    ParseSchematicFromBytes(std::span<const std::byte> data);
+// Parses from pre-decompressed NBT bytes.
+// bytes' ownership is transferred to the returned Schematic::owner.
+[[nodiscard]] std::expected<Schematic, ParseError> ParseSchematicFromBytes(
+    std::unique_ptr<std::vector<std::byte>> bytes,
+    const base::DecodeLimits& limits = {});
 
 }  // namespace fschema::schem
 

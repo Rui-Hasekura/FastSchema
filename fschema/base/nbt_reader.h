@@ -31,79 +31,78 @@
 
 namespace fschema::base {
 
-  class ByteReader {
-  public:
-    ByteReader(std::span<const std::byte> buffer,
-      const DecodeLimits& limits) noexcept;
+class ByteReader {
+ public:
+  ByteReader(std::span<const std::byte> buffer,
+             const DecodeLimits& limits) noexcept;
 
-    // State
-    [[nodiscard]] std::size_t pos() const noexcept;
-    [[nodiscard]] std::size_t remaining() const noexcept;
-    [[nodiscard]] std::size_t depth() const noexcept;
-    [[nodiscard]] const DecodeLimits& limits() const noexcept;
+  // State
+  [[nodiscard]] std::size_t pos() const noexcept;
+  [[nodiscard]] std::size_t remaining() const noexcept;
+  [[nodiscard]] std::size_t depth() const noexcept;
+  [[nodiscard]] const DecodeLimits& limits() const noexcept;
 
-    void advance(std::size_t num_bytes) noexcept;
-    void push_depth() noexcept;
-    void pop_depth() noexcept;
+  void advance(std::size_t num_bytes) noexcept;
+  void push_depth() noexcept;
+  void pop_depth() noexcept;
 
-    [[nodiscard]] ParseError Error(ParseError::Code code) const noexcept;
+  [[nodiscard]] ParseError Error(ParseError::Code code) const noexcept;
 
-    // Scalar read (Big-Endian -> Host)
-    template <typename T>
-      requires std::integral<T> || std::floating_point<T>
-    [[nodiscard]] ParseResult<T> Read() noexcept;
+  // Scalar read (Big-Endian -> Host)
+  template <typename T>
+    requires std::integral<T> || std::floating_point<T>
+  [[nodiscard]] ParseResult<T> Read() noexcept;
 
-    // Batch scalar read
-    // Read n T values and write to out. out.size() must be >= n.
-    template <typename T>
-      requires std::integral<T>
-    [[nodiscard]] ParseResult<void> ReadBulk(
-      std::size_t count, std::span<T> output) noexcept;
+  // Batch scalar read
+  // Read n T values and write to out. out.size() must be >= n.
+  template <typename T>
+    requires std::integral<T>
+  [[nodiscard]] ParseResult<void> ReadBulk(std::size_t count,
+                                           std::span<T> output) noexcept;
 
-    // Length-prefixed read
-    [[nodiscard]] ParseResult<std::size_t> ReadLength(
+  // Length-prefixed read
+  [[nodiscard]] ParseResult<std::size_t> ReadLength(
       std::size_t max_allowed) noexcept;
 
-    // String read
-    [[nodiscard]] ParseResult<std::string> ReadString();
+  // String read
+  [[nodiscard]] ParseResult<std::string> ReadString();
 
-    // Zero-copy string read
-    [[nodiscard]] ParseResult<std::string_view> ReadStringView() noexcept;
+  // Zero-copy string read
+  [[nodiscard]] ParseResult<std::string_view> ReadStringView() noexcept;
 
-    // Zero-copy array read (Returns Big-Endian data!)
-    template <typename T>
-      requires std::integral<T>
-    [[nodiscard]] ParseResult<std::span<const T>> ReadArraySpan(
+  // Zero-copy array read (Returns Big-Endian data!)
+  template <typename T>
+    requires std::integral<T>
+  [[nodiscard]] ParseResult<std::span<const T>> ReadArraySpan(
       std::size_t max_allowed_elements) noexcept;
 
-    // Span truncate
-    [[nodiscard]] ParseResult<std::span<const std::byte>> PeekRaw(
+  // Span truncate
+  [[nodiscard]] ParseResult<std::span<const std::byte>> PeekRaw(
       std::size_t length) noexcept;
 
-    // Compound / List 's entry read
-    [[nodiscard]] ParseResult<TagType> ReadCompoundEntryHeader(
+  // Compound / List 's entry read
+  [[nodiscard]] ParseResult<TagType> ReadCompoundEntryHeader(
       std::string& name_out);
 
-    // Zero-copy entry header read
-    [[nodiscard]] ParseResult<TagType> ReadCompoundEntryHeaderView(
+  // Zero-copy entry header read
+  [[nodiscard]] ParseResult<TagType> ReadCompoundEntryHeaderView(
       std::string_view& name_out) noexcept;
 
-    [[nodiscard]] ParseResult<std::pair<TagType, std::size_t>>
-      ReadListHeader();
+  [[nodiscard]] ParseResult<std::pair<TagType, std::size_t>> ReadListHeader();
 
-    [[nodiscard]] std::span<const std::byte> SpanFrom(
+  [[nodiscard]] std::span<const std::byte> SpanFrom(
       std::size_t start) const noexcept;
 
-  private:
-    template <typename T>
-      requires std::integral<T>
-    [[nodiscard]] T ReadScalarBe() const noexcept;
+ private:
+  template <typename T>
+    requires std::integral<T>
+  [[nodiscard]] T ReadScalarBe() const noexcept;
 
-    std::span<const std::byte> buffer_;
-    std::size_t pos_ = 0;
-    std::size_t depth_ = 0;
-    const DecodeLimits& limits_;
-  };
+  std::span<const std::byte> buffer_;
+  std::size_t pos_ = 0;
+  std::size_t depth_ = 0;
+  const DecodeLimits& limits_;
+};
 
 }  // namespace fschema::base
 

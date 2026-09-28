@@ -28,84 +28,82 @@
 
 namespace fschema::schem {
 
-  enum class Version : std::int32_t {
-    kV2 = 2,
-    kV3 = 3,
-  };
+enum class Version : std::int32_t {
+  kV2 = 2,
+  kV3 = 3,
+};
 
-  struct Metadata {
-    std::string_view name;
-    std::string_view author;
-    std::int64_t date = 0;
-    std::span<const std::byte> required_mods;
-    std::span<const std::byte> extra;
-  };
+struct Metadata {
+  std::string_view name;
+  std::string_view author;
+  std::int64_t date = 0;
+  std::span<const std::byte> required_mods;
+  std::span<const std::byte> extra;
+};
 
-  // Schem palette entry. The full blockstate string is parsed into
-  // name (resource location) and properties (without surrounding brackets).
-  //   full:       "minecraft:redstone_wire[east=side,north=none,power=15,...]"
-  //   name:       "minecraft:redstone_wire"
-  //   properties: "east=side,north=none,power=15,..."
-  struct BlockState {
-    std::string_view full;
-    std::string_view name;
-    std::string_view properties;
-  };
+// Schem palette entry. The full blockstate string is parsed into
+// name (resource location) and properties (without surrounding brackets).
+//   name:       "minecraft:redstone_wire"
+//   properties: "east=side,north=none,power=15,..."
+struct BlockState {
+  std::string_view name;
+  std::string_view properties;
+};
 
-  struct BlockEntity {
-    std::string_view id;
-    std::array<std::int32_t, 3> pos{ 0, 0, 0 };
-    std::span<const std::byte> data;
-  };
+struct BlockEntity {
+  std::string_view id;
+  std::array<std::int32_t, 3> pos{0, 0, 0};
+  std::span<const std::byte> data;
+};
 
-  struct Entity {
-    std::string_view id;
-    std::array<double, 3> pos{ 0, 0, 0 };
-    std::span<const std::byte> data;
-  };
+struct Entity {
+  std::string_view id;
+  std::array<double, 3> pos{0, 0, 0};
+  std::array<double, 3> motion{0, 0, 0};
+  std::array<float, 2> rotation{0, 0};
+  std::span<const std::byte> data;
+};
 
-  struct Schematic {
-    Version version = Version::kV2;
-    std::int32_t data_version = 0;
+struct Schematic {
+  Version version = Version::kV2;
+  std::int32_t data_version = 0;
 
-    Metadata metadata;
+  Metadata metadata;
 
-    std::uint32_t width = 0;
-    std::uint32_t height = 0;
-    std::uint32_t length = 0;
-    std::array<std::int32_t, 3> offset{ 0, 0, 0 };
+  std::uint32_t width = 0;
+  std::uint32_t height = 0;
+  std::uint32_t length = 0;
+  std::array<std::int32_t, 3> offset{0, 0, 0};
 
-    std::vector<BlockState> palette;
-    memory::NoInitVector<std::uint16_t> block_indices;
+  std::vector<BlockState> palette;
+  memory::NoInitVector<std::uint16_t> block_indices;
 
-    std::vector<BlockEntity> block_entities;
-    std::vector<Entity> entities;
+  std::vector<BlockEntity> block_entities;
+  std::vector<Entity> entities;
 
-    std::vector<std::string_view> biome_palette;
-    memory::NoInitVector<std::uint16_t> biome_indices;
+  std::vector<std::string_view> biome_palette;
+  memory::NoInitVector<std::uint16_t> biome_indices;
 
-    std::unique_ptr<memory::Arena> arena;
-    std::unique_ptr<std::vector<std::byte>> owner;
-  };
+  std::unique_ptr<std::vector<std::byte>> owner;
+  std::unique_ptr<memory::Arena> arena;
+};
 
-  [[nodiscard]] inline std::uint64_t VolumeOf(
-    const Schematic& s) noexcept {
-    return static_cast<std::uint64_t>(s.width) *
-      static_cast<std::uint64_t>(s.height) *
-      static_cast<std::uint64_t>(s.length);
+[[nodiscard]] inline std::uint64_t VolumeOf(const Schematic& s) noexcept {
+  return static_cast<std::uint64_t>(s.width) *
+         static_cast<std::uint64_t>(s.height) *
+         static_cast<std::uint64_t>(s.length);
+}
+
+// Biome array length depends on format version:
+// v2: Width * Length (2D, full vertical column)
+// v3: Width * Height * Length (3D)
+[[nodiscard]] inline std::uint64_t BiomeVolumeOf(const Schematic& s) noexcept {
+  if (s.version == Version::kV3) {
+    return VolumeOf(s);
   }
-
-  // Biome array length depends on format version:
-  // v2: Width * Length (2D, full vertical column)
-  // v3: Width * Height * Length (3D)
-  [[nodiscard]] inline std::uint64_t BiomeVolumeOf(
-    const Schematic& s) noexcept {
-    if (s.version == Version::kV3) {
-      return VolumeOf(s);
-    }
-    return static_cast<std::uint64_t>(s.width) *
-      static_cast<std::uint64_t>(s.length);
-  }
+  return static_cast<std::uint64_t>(s.width) *
+         static_cast<std::uint64_t>(s.length);
+}
 
 }  // namespace fschema::schem
 

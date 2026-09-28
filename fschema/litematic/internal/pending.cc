@@ -19,122 +19,82 @@
 #include <expected>
 #include <utility>
 
+#include "fschema/base/nbt_scope.h"
 #include "fschema/base/nbt_skip.h"
 #include "fschema/base/nbt_tag.h"
 
 namespace fschema::litematic::internal {
 
-  [[nodiscard]] ParseResult<void> ParsePendingTicks(
-    base::ByteReader& reader, std::vector<PendingTick>& out) {
-    auto header = reader.ReadListHeader();
-    if (!header) {
-      return std::unexpected(header.error());
-    }
-    auto [elem_type, count] = *header;
+[[nodiscard]] ParseResult<void> ParsePendingTicks(
+    base::ByteReader& reader,
+    std::vector<PendingTick>& out) {
+  auto header = reader.ReadListHeader();
+  if (!header) return std::unexpected(header.error());
+  auto [elem_type, count] = *header;
 
-    if (elem_type == base::TagType::End || count == 0) {
-      return {};
-    }
-    if (elem_type != base::TagType::Compound) {
-      return std::unexpected(reader.Error(ParseError::Code::InvalidTagId));
-    }
-    if (count > reader.limits().max_pending_ticks) {
-      return std::unexpected(reader.Error(ParseError::Code::OversizedPayload));
-    }
+  if (elem_type == base::TagType::End || count == 0) return {};
+  if (elem_type != base::TagType::Compound)
+    return std::unexpected(reader.Error(ParseError::Code::InvalidTagId));
+  if (count > reader.limits().max_pending_ticks)
+    return std::unexpected(reader.Error(ParseError::Code::OversizedPayload));
 
-    out.clear();
-    out.reserve(count);
+  out.clear();
+  out.reserve(count);
 
-    reader.push_depth();
-    for (std::size_t i = 0; i < count; ++i) {
-      PendingTick tick;
-      bool have_block = false;
-
-      for (;;) {
-        std::string_view field_name;
-        auto tag_result = reader.ReadCompoundEntryHeaderView(field_name);
-        if (!tag_result) {
-          reader.pop_depth();
-          return std::unexpected(tag_result.error());
-        }
-        if (*tag_result == base::TagType::End) {
-          break;
-        }
-
-        if (field_name == "Block" && *tag_result == base::TagType::String) {
-          auto value = reader.ReadStringView();
-          if (!value) {
-            reader.pop_depth();
-            return std::unexpected(value.error());
-          }
-          tick.block = *value;
-          have_block = true;
-        }
-        else if (field_name == "SubTick" && *tag_result == base::TagType::Long) {
-          auto value = reader.Read<std::int64_t>();
-          if (!value) {
-            reader.pop_depth();
-            return std::unexpected(value.error());
-          }
-          tick.sub_tick = *value;
-        }
-        else if (field_name == "Priority" && *tag_result == base::TagType::Int) {
-          auto value = reader.Read<std::int32_t>();
-          if (!value) {
-            reader.pop_depth();
-            return std::unexpected(value.error());
-          }
-          tick.priority = *value;
-        }
-        else if (field_name == "Time" && *tag_result == base::TagType::Int) {
-          auto value = reader.Read<std::int32_t>();
-          if (!value) {
-            reader.pop_depth();
-            return std::unexpected(value.error());
-          }
-          tick.time = *value;
-        }
-        else if (field_name == "x" && *tag_result == base::TagType::Int) {
-          auto value = reader.Read<std::int32_t>();
-          if (!value) {
-            reader.pop_depth();
-            return std::unexpected(value.error());
-          }
-          tick.pos[0] = *value;
-        }
-        else if (field_name == "y" && *tag_result == base::TagType::Int) {
-          auto value = reader.Read<std::int32_t>();
-          if (!value) {
-            reader.pop_depth();
-            return std::unexpected(value.error());
-          }
-          tick.pos[1] = *value;
-        }
-        else if (field_name == "z" && *tag_result == base::TagType::Int) {
-          auto value = reader.Read<std::int32_t>();
-          if (!value) {
-            reader.pop_depth();
-            return std::unexpected(value.error());
-          }
-          tick.pos[2] = *value;
-        }
-        else {
-          auto skip_result = base::SkipPayload(reader, *tag_result);
-          if (!skip_result) {
-            reader.pop_depth();
-            return std::unexpected(skip_result.error());
-          }
-        }
-      }
-
-      if (!have_block) {
-        reader.pop_depth();
-        return std::unexpected(reader.Error(ParseError::Code::MissingField));
-      }
-      out.push_back(std::move(tick));
-    }
-    reader.pop_depth();
-    return {};
+  base::DepthGuard list_guard(reader);
+  if (reader.depth() > reader.limits().max_nbt_depth) [[unlikely]] {
+    return std::unexpected(reader.Error(ParseError::Code::DepthLimitExceeded));
   }
+
+  for (std::size_t i = 0; i < count; ++i) {
+    PendingTick tick;
+    bool have_block = false;
+
+    auto result = ForEachCompoundField(
+        reader,
+        [&](std::string_view field, base::TagType t) -> ParseResult<void> {
+          if (field == "Block" && t == base::TagType::String) {
+            auto v = reader.ReadStringView();
+            if (!v) return std::unexpected(v.error());
+            tick.block = *v;
+            have_block = true;
+          } else if (field == "SubTick" && t == base::TagType::Long) {
+            auto v = reader.Read<std::int64_t>();
+            if (!v) return std::unexpected(v.error());
+            tick.sub_tick = *v;
+          } else if (field == "Priority" && t == base::TagType::Int) {
+            auto v = reader.Read<std::int32_t>();
+            if (!v) return std::unexpected(v.error());
+            tick.priority = *v;
+          } else if (field == "Time" && t == base::TagType::Int) {
+            auto v = reader.Read<std::int32_t>();
+            if (!v) return std::unexpected(v.error());
+            tick.time = *v;
+          } else if (field == "x" && t == base::TagType::Int) {
+            auto v = reader.Read<std::int32_t>();
+            if (!v) return std::unexpected(v.error());
+            tick.pos[0] = *v;
+          } else if (field == "y" && t == base::TagType::Int) {
+            auto v = reader.Read<std::int32_t>();
+            if (!v) return std::unexpected(v.error());
+            tick.pos[1] = *v;
+          } else if (field == "z" && t == base::TagType::Int) {
+            auto v = reader.Read<std::int32_t>();
+            if (!v) return std::unexpected(v.error());
+            tick.pos[2] = *v;
+          } else {
+            return base::SkipPayload(reader, t);
+          }
+          return {};
+        });
+    if (!result) return std::unexpected(result.error());
+
+    if (!have_block) [[unlikely]] {
+      return std::unexpected(reader.Error(ParseError::Code::MissingField));
+    }
+    out.push_back(std::move(tick));
+  }
+  return {};
+}
 
 }  // namespace fschema::litematic::internal

@@ -22,8 +22,6 @@
 namespace fschema::schem::internal {
 
 void ParseBlockStateString(std::string_view full, BlockState& out) {
-  out.full = full;
-
   const auto bracket = full.find('[');
   if (bracket == std::string_view::npos) {
     out.name = full;

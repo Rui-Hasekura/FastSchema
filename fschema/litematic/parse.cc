@@ -22,34 +22,33 @@
 #include <utility>
 #include <vector>
 
-#include "fschema/memory/arena.h"
 #include "fschema/base/error.h"
 #include "fschema/base/limits.h"
+#include "fschema/base/nbt_reader.h"
 #include "fschema/litematic/internal/root.h"
 #include "fschema/litematic/types.h"
-#include "fschema/base/nbt_reader.h"
+#include "fschema/memory/arena.h"
 
 namespace fschema::litematic {
 
-  [[nodiscard]] ParseResult<Litematic> ParseLitematic(
+[[nodiscard]] ParseResult<Litematic> ParseLitematic(
     std::unique_ptr<std::vector<std::byte>> decompressed,
     const base::DecodeLimits& limits) {
+  Litematic out;
+  out.arena = std::make_unique<memory::Arena>();
 
-    Litematic out;
-    out.arena = std::make_unique<memory::Arena>();
-
-    if (!decompressed || decompressed->empty()) {
-      return std::unexpected(ParseError::At(
-        ParseError::Code::Truncated, std::string{}, 0));
-    }
-    out.owner = std::move(decompressed);
-
-    std::span<const std::byte> buffer{ out.owner->data(), out.owner->size() };
-    base::ByteReader reader(buffer, limits);
-
-    auto result = internal::ParseRoot(reader, out);
-    if (!result) return std::unexpected(result.error());
-    return out;
+  if (!decompressed || decompressed->empty()) {
+    return std::unexpected(
+        ParseError::At(ParseError::Code::Truncated, std::string{}, 0));
   }
+  out.owner = std::move(decompressed);
 
-} // namespace fschema::litematic
+  std::span<const std::byte> buffer{out.owner->data(), out.owner->size()};
+  base::ByteReader reader(buffer, limits);
+
+  auto result = internal::ParseRoot(reader, out);
+  if (!result) return std::unexpected(result.error());
+  return out;
+}
+
+}  // namespace fschema::litematic

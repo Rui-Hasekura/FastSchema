@@ -22,20 +22,19 @@
 
 namespace fschema::base {
 
-  [[nodiscard]] ParseResult<void> SkipPayload(ByteReader& reader,
-    TagType tag_type);
+[[nodiscard]] ParseResult<void> SkipPayload(ByteReader& reader,
+                                            TagType tag_type);
 
-  [[nodiscard]] ParseResult<void> SkipCompound(ByteReader& reader);
+[[nodiscard]] ParseResult<void> SkipCompound(ByteReader& reader);
 
-  [[nodiscard]] ParseResult<void> SkipList(ByteReader& reader);
+[[nodiscard]] ParseResult<void> SkipList(ByteReader& reader);
 
-  [[nodiscard]] ParseResult<void> SkipScalar(ByteReader& reader,
-    TagType tag_type);
+[[nodiscard]] ParseResult<void> SkipScalar(ByteReader& reader,
+                                           TagType tag_type);
 
-  [[nodiscard]] ParseResult<void> SkipString(ByteReader& reader);
+[[nodiscard]] ParseResult<void> SkipString(ByteReader& reader);
 
-  [[nodiscard]] ParseResult<void> SkipArray(ByteReader& reader,
-    TagType tag_type);
+[[nodiscard]] ParseResult<void> SkipArray(ByteReader& reader, TagType tag_type);
 
 }  // namespace fschema::base
 

@@ -1,3 +1,18 @@
+// Copyright (C) 2026 Rui-Hasekura <ruihasekura@gmail.com>
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "fschema/schem/internal/simd_block_data.cc"
 
@@ -114,11 +129,11 @@ namespace hn = hwy::HWY_NAMESPACE;
 
 #if HWY_TARGET == HWY_AVX2
 
-[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>> DecodeSingleByteFastImpl(
-    std::span<const std::byte> data,
-    std::uint64_t volume,
-    std::size_t palette_size,
-    memory::Arena& arena) {
+[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+DecodeSingleByteFastImpl(std::span<const std::byte> data,
+                         std::uint64_t volume,
+                         std::size_t palette_size,
+                         memory::Arena& arena) {
   const auto n = static_cast<std::size_t>(volume);
   const auto* src = reinterpret_cast<const std::uint8_t*>(data.data());
 
@@ -253,11 +268,11 @@ Decode2ByteUniformFastImpl(std::span<const std::byte> data,
 
 #else  // Generic Highway path
 
-[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>> DecodeSingleByteFastImpl(
-    std::span<const std::byte> data,
-    std::uint64_t volume,
-    std::size_t palette_size,
-    memory::Arena& arena) {
+[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+DecodeSingleByteFastImpl(std::span<const std::byte> data,
+                         std::uint64_t volume,
+                         std::size_t palette_size,
+                         memory::Arena& arena) {
   const auto n = static_cast<std::size_t>(volume);
   const auto* src = reinterpret_cast<const std::uint8_t*>(data.data());
 
@@ -601,20 +616,20 @@ HWY_EXPORT(DecodeVarintChunksKernelImpl);
       data, volume, num_chunks);
 }
 
-[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>> DecodeSingleByteFast(
-    std::span<const std::byte> data,
-    std::uint64_t volume,
-    std::size_t palette_size,
-    memory::Arena& arena) {
+[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+DecodeSingleByteFast(std::span<const std::byte> data,
+                     std::uint64_t volume,
+                     std::size_t palette_size,
+                     memory::Arena& arena) {
   return HWY_DYNAMIC_DISPATCH(DecodeSingleByteFastImpl)(
       data, volume, palette_size, arena);
 }
 
-[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>> Decode2ByteUniformFast(
-    std::span<const std::byte> data,
-    std::uint64_t volume,
-    std::size_t palette_size,
-    memory::Arena& arena) {
+[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+Decode2ByteUniformFast(std::span<const std::byte> data,
+                       std::uint64_t volume,
+                       std::size_t palette_size,
+                       memory::Arena& arena) {
   return HWY_DYNAMIC_DISPATCH(Decode2ByteUniformFastImpl)(
       data, volume, palette_size, arena);
 }

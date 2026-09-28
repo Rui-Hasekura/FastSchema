@@ -24,14 +24,16 @@
 
 namespace fschema::litematic::internal {
 
-  // BlockStatePalette: List<Compound>
-  //   PER Compound: {
-  //     Name: String          <- Necessary, e.g. "minecraft:oak_stairs"
-  //     Properties: Compound  <- Optional, arbitrary key-value pairs
-  //   }
-  // Properties reserves raw span (Open schema, it's impossible to enumerate all keys).
-  [[nodiscard]] ParseResult<void> ParsePalette(
-    base::ByteReader& reader, std::vector<fschema::litematic::BlockState>& palette);
+// BlockStatePalette: List<Compound>
+//   PER Compound: {
+//     Name: String          <- Necessary, e.g. "minecraft:oak_stairs"
+//     Properties: Compound  <- Optional, arbitrary key-value pairs
+//   }
+// Properties reserves raw span (Open schema, it's impossible to enumerate all
+// keys).
+[[nodiscard]] ParseResult<void> ParsePalette(
+    base::ByteReader& reader,
+    std::vector<fschema::litematic::BlockState>& palette);
 
 }  // namespace fschema::litematic::internal
 

@@ -24,8 +24,9 @@
 
 namespace fschema::litematic::internal {
 
-  [[nodiscard]] ParseResult<void> ParsePendingTicks(
-    base::ByteReader& reader, std::vector<PendingTick>& out);
+[[nodiscard]] ParseResult<void> ParsePendingTicks(
+    base::ByteReader& reader,
+    std::vector<PendingTick>& out);
 
 }  // namespace fschema::litematic::internal
 

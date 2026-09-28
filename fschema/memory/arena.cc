@@ -16,12 +16,13 @@
 #include "fschema/memory/arena.h"
 
 #include <algorithm>
+#include <bit>
 #include <cstddef>
-#include <cstdint>
-#include <cstdlib>
 #include <new>
 #include <utility>
 #include <vector>
+
+#include "absl/base/call_once.h"
 
 #if defined(_WIN32)
 #  ifndef WIN32_LEAN_AND_MEAN
@@ -38,59 +39,55 @@
 
 namespace {
 
-static std::size_t NextPow2(std::size_t x) noexcept {
-  --x;
-  for (int i = 1; i < static_cast<int>(sizeof(std::size_t) * 8); i <<= 1)
-    x |= x >> i;
-  return ( x + 1 );
-}
-
 #if defined(_WIN32)
 [[nodiscard]] static bool EnableLockMemoryPrivilege() noexcept {
-  static bool checked = false;
+  static absl::once_flag flag;
   static bool ok = false;
-  if (checked) return ok;
-  checked = true;
+  absl::call_once(flag, []() {
+    HANDLE hToken;
+    if (!::OpenProcessToken(::GetCurrentProcess(),
+                            TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
+                            &hToken)) {
+      ok = false;
+      return;
+    }
 
-  HANDLE hToken;
-  if (!::OpenProcessToken(::GetCurrentProcess(),
-                          TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
-                          &hToken)) {
-    return ok = false;
-  }
+    LUID luid;
+    if (!::LookupPrivilegeValueA(nullptr, "SeLockMemoryPrivilege", &luid)) {
+      ::CloseHandle(hToken);
+      ok = false;
+      return;
+    }
 
-  LUID luid;
-  if (!::LookupPrivilegeValueA(nullptr, "SeLockMemoryPrivilege", &luid)) {
+    TOKEN_PRIVILEGES tp{};
+    tp.PrivilegeCount = 1;
+    tp.Privileges[0].Luid = luid;
+    tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+    BOOL adj = ::AdjustTokenPrivileges(hToken, FALSE, &tp, 0, nullptr, nullptr);
+    DWORD err = ::GetLastError();
     ::CloseHandle(hToken);
-    return ok = false;
-  }
 
-  TOKEN_PRIVILEGES tp{};
-  tp.PrivilegeCount = 1;
-  tp.Privileges[0].Luid = luid;
-  tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+    ok = (adj && err == ERROR_SUCCESS);
+  });
 
-  BOOL adj = ::AdjustTokenPrivileges(hToken, FALSE, &tp, 0, nullptr, nullptr);
-  DWORD err = ::GetLastError();
-  ::CloseHandle(hToken);
-
-  return ok = (adj && err == ERROR_SUCCESS);
+  return ok;
 }
 
 [[nodiscard]] static void* TryLargePageAlloc(std::size_t size) noexcept {
-  if (!EnableLockMemoryPrivilege()) return nullptr;
+    if (!EnableLockMemoryPrivilege()) return nullptr;
 
-  std::size_t page_min = ::GetLargePageMinimum();
-  if (page_min == 0) return nullptr;
+    std::size_t page_min = ::GetLargePageMinimum();
+    if (page_min == 0) return nullptr;
 
-  std::size_t large_size = (size + page_min - 1) & ~(page_min - 1);
+    std::size_t large_size = (size + page_min - 1) & ~(page_min - 1);
 
-  void* p = ::VirtualAlloc(nullptr,
-                           large_size,
-                           MEM_RESERVE | MEM_COMMIT | MEM_LARGE_PAGES,
-                           PAGE_READWRITE);
+    void* p = ::VirtualAlloc(nullptr,
+                             large_size,
+                             MEM_RESERVE | MEM_COMMIT | MEM_LARGE_PAGES,
+                             PAGE_READWRITE);
 
-  return p;
+    return p;
 }
 #endif  // _WIN32
 
@@ -104,6 +101,7 @@ Arena::Arena(Arena&& o) noexcept
 }
 
 Arena& Arena::operator=(Arena&& o) noexcept {
+  if (this == &o) return *this;
   Release();
   slabs_ = std::move(o.slabs_);
   cursor_ = o.cursor_;
@@ -124,23 +122,9 @@ void Arena::Reset() noexcept {
   if (bytes == 0) return nullptr;
   if (align > kAlign) align = kAlign;
   align = std::max<std::size_t>(align, 1);
-  align = (align & (align - 1)) ? NextPow2(align) : align;
+  align = std::bit_ceil(align);
 
-  void* p = TryBumpCurrent(bytes, align);
-  if (p) return p;
-
-  for (auto& s : slabs_) {
-    Cursor c{s.base, s.size, s.used};
-    std::uintptr_t raw = reinterpret_cast<std::uintptr_t>(c.base + c.used);
-    std::uintptr_t aligned = (raw + align - 1) & ~(align - 1);
-    std::size_t pad = aligned - raw;
-    if (c.used + pad + bytes <= c.size) {
-      c.used += pad + bytes;
-      s.used = c.used;
-      cursor_ = c;
-      return reinterpret_cast<void*>(aligned);
-    }
-  }
+  if (void* p = TryBumpCurrent(bytes, align)) return p;
 
   GrowFor(bytes, align);
   return TryBumpCurrent(bytes, align);

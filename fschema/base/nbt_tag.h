@@ -20,37 +20,36 @@
 
 namespace fschema::base {
 
-  enum class TagType : std::uint8_t {
-    End = 0,
-    Byte = 1,
-    Short = 2,
-    Int = 3,
-    Long = 4,
-    Float = 5,
-    Double = 6,
-    ByteArray = 7,
-    String = 8,
-    List = 9,
-    Compound = 10,
-    IntArray = 11,
-    LongArray = 12,
-  };
+enum class TagType : std::uint8_t {
+  End = 0,
+  Byte = 1,
+  Short = 2,
+  Int = 3,
+  Long = 4,
+  Float = 5,
+  Double = 6,
+  ByteArray = 7,
+  String = 8,
+  List = 9,
+  Compound = 10,
+  IntArray = 11,
+  LongArray = 12,
+};
 
-  constexpr std::uint8_t kMaxTagId = 12;
+constexpr std::uint8_t kMaxTagId = 12;
 
-  [[nodiscard]] constexpr bool IsValidTagType(std::uint8_t id) noexcept;
+[[nodiscard]] constexpr bool IsValidTagType(std::uint8_t id) noexcept;
 
-  [[nodiscard]] constexpr std::size_t FixedPayloadSize(
-    TagType tag_type) noexcept;
+[[nodiscard]] constexpr std::size_t FixedPayloadSize(TagType tag_type) noexcept;
 
-  [[nodiscard]] constexpr bool IsScalar(TagType tag_type) noexcept;
+[[nodiscard]] constexpr bool IsScalar(TagType tag_type) noexcept;
 
-  [[nodiscard]] constexpr std::size_t ElementSize(TagType tag_type) noexcept;
+[[nodiscard]] constexpr std::size_t ElementSize(TagType tag_type) noexcept;
 
-  [[nodiscard]] constexpr bool IsArray(TagType tag_type) noexcept;
+[[nodiscard]] constexpr bool IsArray(TagType tag_type) noexcept;
 
-  // Compound/List header size: TagID(1) + int32 len(4) = 5
-  [[nodiscard]] constexpr std::size_t ListHeaderSize() noexcept;
+// Compound/List header size: TagID(1) + int32 len(4) = 5
+[[nodiscard]] constexpr std::size_t ListHeaderSize() noexcept;
 
 }  // namespace fschema::base
 

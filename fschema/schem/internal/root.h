@@ -22,20 +22,20 @@
 
 namespace fschema::schem::internal {
 
-  // Root parser entry point.
-  //
-  // v2: root NBT tag is TAG_Compound("Schematic"),
-  //     fields are directly in the root compound.
-  // v3: root NBT tag is TAG_Compound(""),
-  //     contains a TAG_Compound("Schematic") child.
-  //
-  // Detection:
-  //   1. Read root tag byte (must be 0x0A).
-  //   2. Read root name.
-  //   3. If root name == "Schematic" -> v2 path.
-  //   4. Otherwise -> v3 path (scan for "Schematic" child).
-  [[nodiscard]] ParseResult<void> ParseRoot(
-    base::ByteReader& reader, Schematic& out);
+// Root parser entry point.
+//
+// v2: root NBT tag is TAG_Compound("Schematic"),
+//     fields are directly in the root compound.
+// v3: root NBT tag is TAG_Compound(""),
+//     contains a TAG_Compound("Schematic") child.
+//
+// Detection:
+//   1. Read root tag byte (must be 0x0A).
+//   2. Read root name.
+//   3. If root name == "Schematic" -> v2 path.
+//   4. Otherwise -> v3 path (scan for "Schematic" child).
+[[nodiscard]] ParseResult<void> ParseRoot(base::ByteReader& reader,
+                                          Schematic& out);
 
 }  // namespace fschema::schem::internal
 

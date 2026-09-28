@@ -20,10 +20,10 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
-#include <string_view>
 #include <vector>
 
-#include "fschema/base/decompression.h"
+#include "fschema/base/block_utils.h"
+#include "fschema/base/compressor.h"
 #include "fschema/base/error.h"
 #include "fschema/litematic/parse.h"
 #include "fschema/litematic/types.h"
@@ -32,11 +32,6 @@
 namespace fs = std::filesystem;
 namespace fb = fschema::base;
 namespace fl = fschema::litematic;
-
-[[nodiscard]] bool IsAirVariant(std::string_view name) noexcept {
-  return name == "minecraft:air" || name == "minecraft:void_air" ||
-         name == "minecraft:cave_air";
-}
 
 [[nodiscard]] std::uint64_t ExpectedVolume(
     const std::array<std::int32_t, 3>& size) noexcept {
@@ -120,7 +115,7 @@ TEST_P(LitematicParseTest, ParsesSuccessfullyAndValidatesStructure) {
 
       std::uint64_t non_air = 0;
       for (std::size_t k = 0; k < region.palette.size(); ++k) {
-        if (counts[k] > 0 && !IsAirVariant(region.palette[k].name)) {
+        if (counts[k] > 0 && !fschema::base::IsAirVariant(region.palette[k].name)) {
           non_air += counts[k];
         }
       }
@@ -158,5 +153,5 @@ TEST(LitematicUnpackNegativeTest, FileNotFound) {
   auto result = fb::DecompressGzipFile("nonexistent_file.litematic");
 
   EXPECT_FALSE(result.has_value());
-  EXPECT_EQ(result.error(), fb::DecompressError::kFileNotFound);
+  EXPECT_EQ(result.error(), fb::CompressorError::kFileNotFound);
 }

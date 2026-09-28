@@ -16,61 +16,65 @@
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "fschema/base/byte_order.cc"
 
-#include "hwy/foreach_target.h"
-#include "hwy/highway.h"
+#include "fschema/base/byte_order.h"
 
 #include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <type_traits>
 
-#include "fschema/base/byte_order.h"
+#include "hwy/foreach_target.h"
+#include "hwy/highway.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace fschema::base::HWY_NAMESPACE {
-  namespace hn = hwy::HWY_NAMESPACE;
+namespace hn = hwy::HWY_NAMESPACE;
 
-  void CopyAndBswap32(const std::byte* src,
-                      std::int32_t* dst,
-                      std::size_t count) {
-    const hn::ScalableTag<std::uint8_t> d8;
-    const std::size_t N_bytes = hn::Lanes(d8);
-    const std::size_t N_32 = N_bytes / 4;
+namespace {
 
-    std::size_t i = 0;
-    for (; i + N_32 <= count; i += N_32) {
-      auto v = hn::LoadU(d8, reinterpret_cast<const std::uint8_t*>(src) + i * 4);
+template <std::size_t kBytes>
+void CopyAndBswapImpl(const std::byte* src, std::byte* dst, std::size_t count) {
+  static_assert(kBytes == 4 || kBytes == 8,
+                "Only 4- and 8-byte swaps are supported");
+  using Scalar = std::conditional_t<kBytes == 4, std::int32_t, std::int64_t>;
+
+  const hn::ScalableTag<std::uint8_t> d8;
+  const std::size_t N = hn::Lanes(d8) / kBytes;
+
+  std::size_t i = 0;
+  for (; i + N <= count; i += N) {
+    auto v =
+        hn::LoadU(d8, reinterpret_cast<const std::uint8_t*>(src) + i * kBytes);
+    if constexpr (kBytes == 4) {
       v = hn::Reverse4(d8, v);
-      hn::Stream(v, d8, reinterpret_cast<std::uint8_t*>(dst) + i * 4);
-    }
-
-    for (; i < count; ++i) {
-      std::int32_t val;
-      std::memcpy(&val, src + i * 4, 4);
-      dst[i] = std::byteswap(val);
-    }
-  }
-
-  void CopyAndBswap64(const std::byte* src,
-                      std::int64_t* dst,
-                      std::size_t count) {
-    const hn::ScalableTag<std::uint8_t> d8;
-    const std::size_t N_bytes = hn::Lanes(d8);
-    const std::size_t N_64 = N_bytes / 8;
-
-    std::size_t i = 0;
-    for (; i + N_64 <= count; i += N_64) {
-      auto v = hn::LoadU(d8, reinterpret_cast<const std::uint8_t*>(src) + i * 8);
+    } else {
       v = hn::Reverse8(d8, v);
-      hn::Stream(v, d8, reinterpret_cast<std::uint8_t*>(dst) + i * 8);
     }
-
-    for (; i < count; ++i) {
-      std::int64_t val;
-      std::memcpy(&val, src + i * 8, 8);
-      dst[i] = std::byteswap(val);
-    }
+    hn::StoreU(v, d8, reinterpret_cast<std::uint8_t*>(dst) + i * kBytes);
   }
+
+  for (; i < count; ++i) {
+    Scalar val;
+    std::memcpy(&val, src + i * kBytes, kBytes);
+    val = std::byteswap(val);
+    std::memcpy(reinterpret_cast<std::byte*>(dst) + i * kBytes, &val, kBytes);
+  }
+}
+
+}  // namespace
+
+void CopyAndBswap32(const std::byte* src,
+                    std::int32_t* dst,
+                    std::size_t count) {
+  CopyAndBswapImpl<4>(src, reinterpret_cast<std::byte*>(dst), count);
+}
+
+void CopyAndBswap64(const std::byte* src,
+                    std::int64_t* dst,
+                    std::size_t count) {
+  CopyAndBswapImpl<8>(src, reinterpret_cast<std::byte*>(dst), count);
+}
 
 }  // namespace fschema::base::HWY_NAMESPACE
 HWY_AFTER_NAMESPACE();
@@ -78,20 +82,20 @@ HWY_AFTER_NAMESPACE();
 #if HWY_ONCE
 namespace fschema::base {
 
-  HWY_EXPORT(CopyAndBswap32);
-  HWY_EXPORT(CopyAndBswap64);
+HWY_EXPORT(CopyAndBswap32);
+HWY_EXPORT(CopyAndBswap64);
 
-  void CopyAndBswap32(const std::byte* src,
-                      std::int32_t* dst,
-                      std::size_t count) noexcept {
-    HWY_DYNAMIC_DISPATCH(CopyAndBswap32)(src, dst, count);
-  }
+void CopyAndBswap32(const std::byte* src,
+                    std::int32_t* dst,
+                    std::size_t count) noexcept {
+  HWY_DYNAMIC_DISPATCH(CopyAndBswap32)(src, dst, count);
+}
 
-  void CopyAndBswap64(const std::byte* src,
-                      std::int64_t* dst,
-                      std::size_t count) noexcept {
-    HWY_DYNAMIC_DISPATCH(CopyAndBswap64)(src, dst, count);
-  }
+void CopyAndBswap64(const std::byte* src,
+                    std::int64_t* dst,
+                    std::size_t count) noexcept {
+  HWY_DYNAMIC_DISPATCH(CopyAndBswap64)(src, dst, count);
+}
 
 }  // namespace fschema::base
 #endif  // HWY_ONCE

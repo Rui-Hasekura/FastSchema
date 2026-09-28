@@ -36,32 +36,28 @@ struct ChunkBoundary {
 };
 
 [[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
-DecodeVarintArray(
-    std::span<const std::byte> data,
-    std::uint64_t volume,
-    std::size_t palette_size,
-    memory::Arena& arena);
+DecodeVarintArray(std::span<const std::byte> data,
+                  std::uint64_t volume,
+                  std::size_t palette_size,
+                  memory::Arena& arena);
 
 [[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
-DecodeVarintScalar(
-    std::span<const std::byte> data,
-    std::uint64_t volume,
-    std::size_t palette_size,
-    memory::Arena& arena);
+DecodeVarintScalar(std::span<const std::byte> data,
+                   std::uint64_t volume,
+                   std::size_t palette_size,
+                   memory::Arena& arena);
 
 [[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
-DecodeSingleByteFast(
-    std::span<const std::byte> data,
-    std::uint64_t volume,
-    std::size_t palette_size,
-    memory::Arena& arena);
+DecodeSingleByteFast(std::span<const std::byte> data,
+                     std::uint64_t volume,
+                     std::size_t palette_size,
+                     memory::Arena& arena);
 
 [[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
-Decode2ByteUniformFast(
-    std::span<const std::byte> data,
-    std::uint64_t volume,
-    std::size_t palette_size,
-    memory::Arena& arena);
+Decode2ByteUniformFast(std::span<const std::byte> data,
+                       std::uint64_t volume,
+                       std::size_t palette_size,
+                       memory::Arena& arena);
 
 [[nodiscard]] ChunkBoundary BuildChunkBoundaries(
     std::span<const std::byte> data,
@@ -69,11 +65,10 @@ Decode2ByteUniformFast(
     std::size_t num_chunks);
 
 [[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
-DecodeVarintParallel(
-    std::span<const std::byte> data,
-    std::uint64_t volume,
-    std::size_t palette_size,
-    memory::Arena& arena);
+DecodeVarintParallel(std::span<const std::byte> data,
+                     std::uint64_t volume,
+                     std::size_t palette_size,
+                     memory::Arena& arena);
 
 void DecodeVarintChunks(const std::uint8_t* const* chunk_ptrs,
                         const std::size_t* chunk_offsets,

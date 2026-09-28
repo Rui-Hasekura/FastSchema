@@ -27,7 +27,7 @@
 #include <variant>
 #include <vector>
 
-#include "fschema/base/decompression.h"
+#include "fschema/base/compressor.h"
 #include "fschema/base/error.h"
 #include "fschema/base/limits.h"
 #include "fschema/base/nbt_reader.h"
@@ -125,7 +125,8 @@ TEST(NbtParseTest, ParsesValidSimpleNbt) {
 
   EXPECT_EQ(comp.children[1].type, fb::TagType::String);
   EXPECT_EQ(comp.children[1].name, "name");
-  const auto* str_val = std::get_if<std::string_view>(&comp.children[1].payload);
+  const auto* str_val =
+      std::get_if<std::string_view>(&comp.children[1].payload);
   ASSERT_NE(str_val, nullptr);
   EXPECT_EQ(*str_val, "Hello");
 
