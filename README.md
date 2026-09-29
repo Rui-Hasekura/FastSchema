@@ -48,10 +48,8 @@ Full extraction of Sponge Schematic structure, including delayed varint decoding
 
 | Benchmark Task    | Wall Time | CPU Time | Iterations | Throughput    | Input Size  |
 |:----------------- |:--------- |:-------- |:---------- |:------------- |:----------- |
-| **CrossConvert**  | 2055 ms   | 2031 ms  | 1          | 179.603 MiB/s | 364.819 MiB |
-| **RoundTripSame** | 2782 ms   | 2750 ms  | 16         | 132.661 MiB/s | 364.819 MiB |
-
-> Todo: Boost it. We supported just now.
+| **CrossConvert**  | 1542 ms   | 1456 ms  | 5          | 250.519 MiB/s | 364.819 MiB |
+| **RoundTripSame** | 2483 ms   | 2464 ms  | 3         | 148.087 MiB/s | 364.819 MiB |
 
 ### How to use
 
