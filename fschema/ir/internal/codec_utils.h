@@ -1,27 +1,18 @@
 /*
  * Copyright (C) 2026 Rui-Hasekura <ruihasekura@gmail.com>
- *
  * SPDX-License-Identifier: Apache-2.0
  *
- * Licensed under the Apache License,
- * Version 2.0 (the "License");
- * you may not use this file except in
- * compliance with the License.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by
- * applicable law or agreed to in writing, software
- * distributed under the
- * License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR
- * CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the
- * specific language governing permissions and
- * limitations under the
- * License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #ifndef FSCHEMA_IR_INTERNAL_CODEC_UTILS_H_
@@ -36,48 +27,28 @@
 #include "fschema/base/nbt_reader.h"
 #include "fschema/base/nbt_skip.h"
 #include "fschema/base/nbt_writer.h"
+#include "fschema/ir/types.h"
 
 namespace fschema::ir::internal {
 
-// Reorder indices between Litematica (YZX) and Sponge (XZY) layouts.
 inline void TransposeYzxToXzy(std::span<const std::uint16_t> src,
                               std::span<std::uint16_t> dst,
-                              int W,
-                              int H,
-                              int L) {
-  for (int y = 0; y < H; ++y) {
-    for (int z = 0; z < L; ++z) {
-      for (int x = 0; x < W; ++x) {
-        std::uint64_t yzx_idx = static_cast<std::uint64_t>(y) *
-                                    (static_cast<std::uint64_t>(W) * L) +
-                                static_cast<std::uint64_t>(z) * W + x;
-        std::uint64_t xzy_idx =
-            static_cast<std::uint64_t>(x) + static_cast<std::uint64_t>(z) * W +
-            static_cast<std::uint64_t>(y) * (static_cast<std::uint64_t>(W) * L);
-        dst[xzy_idx] = src[yzx_idx];
-      }
-    }
-  }
+                              int /*W*/,
+                              int /*H*/,
+                              int /*L*/) {
+  const std::size_t bytes =
+      std::min(src.size(), dst.size()) * sizeof(std::uint16_t);
+  std::memcpy(dst.data(), src.data(), bytes);
 }
 
 inline void TransposeXzyToYzx(std::span<const std::uint16_t> src,
                               std::span<std::uint16_t> dst,
-                              int W,
-                              int H,
-                              int L) {
-  for (int y = 0; y < H; ++y) {
-    for (int z = 0; z < L; ++z) {
-      for (int x = 0; x < W; ++x) {
-        std::uint64_t xzy_idx =
-            static_cast<std::uint64_t>(x) + static_cast<std::uint64_t>(z) * W +
-            static_cast<std::uint64_t>(y) * (static_cast<std::uint64_t>(W) * L);
-        std::uint64_t yzx_idx = static_cast<std::uint64_t>(y) *
-                                    (static_cast<std::uint64_t>(W) * L) +
-                                static_cast<std::uint64_t>(z) * W + x;
-        dst[yzx_idx] = src[xzy_idx];
-      }
-    }
-  }
+                              int /*W*/,
+                              int /*H*/,
+                              int /*L*/) {
+  const std::size_t bytes =
+      std::min(src.size(), dst.size()) * sizeof(std::uint16_t);
+  std::memcpy(dst.data(), src.data(), bytes);
 }
 
 inline constexpr std::string_view kTeSkip[] =
@@ -96,6 +67,7 @@ inline constexpr std::string_view kEntSkip[] = {"Id",
     const fschema::base::DecodeLimits& limits = {}) {
   std::string out;
   if (nbt.empty()) return out;
+  out.reserve(nbt.size());
   fschema::base::ByteReader reader(nbt, limits);
   reader.push_depth();
   for (;;) {
@@ -116,6 +88,21 @@ inline constexpr std::string_view kEntSkip[] = {"Id",
   }
   reader.pop_depth();
   return out;
+}
+
+[[nodiscard]] inline ParseResult<void> CaptureAsExtension(
+    base::ByteReader& reader,
+    std::string_view name,
+    base::TagType tag_type,
+    std::size_t field_start,
+    ir::SourceFormat source_format,
+    std::vector<ir::Extension>& out) {
+  auto skip_res = base::SkipPayload(reader, tag_type);
+  if (!skip_res) return std::unexpected(skip_res.error());
+
+  out.push_back(ir::Extension{
+      name, tag_type, reader.SpanFrom(field_start), source_format});
+  return {};
 }
 
 [[nodiscard]] ParseResult<void> FilterAndWriteFields(

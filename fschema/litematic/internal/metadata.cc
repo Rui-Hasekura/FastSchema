@@ -30,15 +30,24 @@ namespace fschema::litematic::internal {
 
   return ForEachCompoundField(
       reader, [&](std::string_view name, base::TagType t) -> ParseResult<void> {
+        // Common fields
         if (name == "Name" && t == base::TagType::String) {
           auto v = reader.ReadStringView();
           if (!v) return std::unexpected(v.error());
           meta.name = *v;
-        } else if (name == "Author" && t == base::TagType::String) {
+          return {};
+        }
+        if (name == "Author" && t == base::TagType::String) {
           auto v = reader.ReadStringView();
           if (!v) return std::unexpected(v.error());
           meta.author = *v;
-        } else if (name == "Description" && t == base::TagType::String) {
+          return {};
+        }
+
+        // Format-specific fields
+        const auto payload_start = reader.pos();
+
+        if (name == "Description" && t == base::TagType::String) {
           auto v = reader.ReadStringView();
           if (!v) return std::unexpected(v.error());
           meta.description = *v;
@@ -93,8 +102,13 @@ namespace fschema::litematic::internal {
           meta.preview_data = *span;
           reader.advance(total);
         } else {
-          return base::SkipPayload(reader, t);
+          auto s = base::SkipPayload(reader, t);
+          if (!s) return std::unexpected(s.error());
         }
+
+        // Capture raw payload as extension
+        // (covers all format-specific + unknown)
+        meta.extensions.push_back({name, t, reader.SpanFrom(payload_start)});
         return {};
       });
 }

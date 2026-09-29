@@ -68,11 +68,13 @@ namespace fschema::litematic::internal {
           if (!v) return std::unexpected(v.error());
         } else if (name == "Metadata" && t == base::TagType::Compound) {
           auto r = ParseMetadata(reader, out);
-          if (!r) return std::unexpected(r.error());
+          if (!r) [[unlikely]]
+            return std::unexpected(r.error());
           have_metadata = true;
         } else if (name == "Regions" && t == base::TagType::Compound) {
           auto r = ParseRegions(reader, out);
-          if (!r) return std::unexpected(r.error());
+          if (!r) [[unlikely]]
+            return std::unexpected(r.error());
           have_regions = true;
         } else {
           return base::SkipPayload(reader, t);

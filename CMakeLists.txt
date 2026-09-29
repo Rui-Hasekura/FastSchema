@@ -288,7 +288,6 @@ if(FASTSCHEMA_BUILD_BENCHMARKS)
         target_compile_definitions(${name} PRIVATE
             FASTSCHEMA_TESTDATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fschema/testdata")
         target_link_libraries(${name} PRIVATE fschema hwy benchmark TBB::tbb)
-        # 在 target_link_libraries(...) 之后加入
 target_compile_options(${name} PRIVATE
   $<$<AND:$<CONFIG:Release>,$<CXX_COMPILER_ID:MSVC>>:/Zi>
 )

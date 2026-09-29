@@ -25,6 +25,7 @@
 #include <string_view>
 #include <vector>
 
+#include "fschema/base/nbt_tag.h"
 #include "fschema/memory/arena.h"
 #include "fschema/memory/noinit_allocator.h"
 
@@ -54,6 +55,13 @@ enum class PropertyEncoding : std::uint8_t {
   kNone = 0,
   kNbt = 1,     // Litematica: Raw NBT Compound
   kString = 2,  // Sponge Schematic: Key-value string ("k=v,k=v")
+};
+
+struct Extension {
+  std::string_view key;
+  base::TagType tag_type = base::TagType::End;
+  std::span<const std::byte> raw_payload;
+  SourceFormat source_format = SourceFormat::kLitematica;
 };
 
 struct BlockState {
@@ -119,14 +127,8 @@ struct Region {
   std::vector<Entity> entities;
   std::vector<BlockEntity> block_entities;
 
-  // Litematica-specific fields.
-  std::vector<PendingTick> pending_block_ticks;
-  std::vector<PendingTick> pending_fluid_ticks;
-  std::span<const std::byte> pending_block_entities_raw;
-  std::span<const std::byte> pending_entities_raw;
-
-  // Sponge Schematic-specific fields.
-  BiomeData biomes;
+  // For specific fields.
+  std::vector<Extension> extensions;
 };
 
 struct Metadata {
@@ -134,33 +136,9 @@ struct Metadata {
   std::string_view name;
   std::string_view author;
 
-  // Litematica-specific fields.
-  std::string_view description;
-  std::int32_t region_count = 0;
-  std::int32_t total_blocks = 0;
-  std::int32_t total_volume = 0;
-  std::array<std::int32_t, 3> enclosing_size = {0, 0, 0};
-  std::int64_t time_created = 0;   // Unix timestamp in milliseconds.
-  std::int64_t time_modified = 0;  // Unix timestamp in milliseconds.
-  std::span<const std::byte> preview_data;
-
-  // Sponge Schematic-specific fields.
-  std::int64_t date = 0;  // Unix timestamp in milliseconds.
-  std::span<const std::byte> required_mods;
-  std::span<const std::byte> extra_metadata;
+  // For specific fields.
+  std::vector<Extension> extensions;
 };
-
-// Wait for impl it...
-/*
-// Preservation mechanism for unknown/unrecognized fields.
-// Allows pass-through and re-serialization of fields not explicitly handled.
-struct Extension {
-  std::string_view key;
-  std::span<const std::byte> raw_payload;
-  SourceFormat source_format;
-  std::string_view source_path;
-};
-*/
 
 struct Schema {
   SourceFormat source_format;
@@ -173,9 +151,6 @@ struct Schema {
 
   Metadata metadata;
   std::vector<Region> regions;
-
-  // Unknown or unrecognized fields preserved during parsing.
-  // std::vector<Extension> extensions;
 
   // Memory ownership management.
   std::unique_ptr<std::vector<std::byte>> owner;

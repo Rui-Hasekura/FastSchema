@@ -110,8 +110,8 @@ ParseResult<void> SkipList(ByteReader& reader) {
       return SkipList(reader);
     case TagType::Compound:
       return SkipCompound(reader);
-    default: {
-      [[unlikely]] return std::unexpected(
+    default: [[unlikely]] {
+      return std::unexpected(
           reader.Error(ParseError::Code::InvalidTagId));
     }
   }

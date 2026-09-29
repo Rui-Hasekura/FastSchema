@@ -40,7 +40,7 @@ ParseResult<void> ExtractRegion(Schema& ir, std::string_view region_name) {
   Region extracted = std::move(*it);
   ir.regions.clear();
   ir.regions.push_back(std::move(extracted));
-  ir.metadata.region_count = 1;
+  ir.source_version = 0;
   return {};
 }
 
@@ -152,6 +152,11 @@ ParseResult<Region> MergeRegions(const std::vector<Region>& regions,
   std::memset(merged.block_indices.data(), 0, vol * sizeof(std::uint16_t));
 
   // 4. Copy blocks (YZX order)
+  std::vector<std::uint16_t> scratch;
+  const std::int32_t W = merged.bounds.size[0];
+  const std::int32_t L = merged.bounds.size[2];
+  std::uint16_t* const merged_base = merged.block_indices.data();
+
   for (size_t r = 0; r < regions.size(); ++r) {
     const auto& reg = regions[r];
     std::int32_t sx = reg.bounds.size[0];
@@ -161,21 +166,47 @@ ParseResult<Region> MergeRegions(const std::vector<Region>& regions,
     std::int32_t off_y = reg.bounds.origin[1] - min_y;
     std::int32_t off_z = reg.bounds.origin[2] - min_z;
 
+    const std::size_t reg_n = reg.block_indices.size();
+
+    if (scratch.size() < reg_n) scratch.resize(reg_n);
+    {
+      const std::uint16_t* remap = remaps[r].data();
+      const std::uint16_t* src = reg.block_indices.data();
+      std::uint16_t* dst = scratch.data();
+      std::size_t i = 0;
+      for (; i + 4 <= reg_n; i += 4) {
+        const std::uint16_t v0 = src[i + 0];
+        const std::uint16_t v1 = src[i + 1];
+        const std::uint16_t v2 = src[i + 2];
+        const std::uint16_t v3 = src[i + 3];
+        dst[i + 0] = remap[v0];
+        dst[i + 1] = remap[v1];
+        dst[i + 2] = remap[v2];
+        dst[i + 3] = remap[v3];
+      }
+      // Scalar tail
+      for (; i < reg_n; ++i) {
+        dst[i] = remap[src[i]];
+      }
+    }
+
+    const std::size_t row_bytes =
+        static_cast<std::size_t>(sx) * sizeof(std::uint16_t);
     for (int y = 0; y < sy; ++y) {
+      const std::uint64_t local_y_base =
+          static_cast<std::uint64_t>(y) * (static_cast<std::uint64_t>(sx) * sz);
+      const std::uint64_t global_y_base =
+          static_cast<std::uint64_t>(y + off_y) *
+              (static_cast<std::uint64_t>(W) * L) +
+          static_cast<std::uint64_t>(off_z) * W +
+          static_cast<std::uint64_t>(off_x);
+
+      const std::uint16_t* src_row = scratch.data() + local_y_base;
+      std::uint16_t* dst_row = merged_base + global_y_base;
       for (int z = 0; z < sz; ++z) {
-        for (int x = 0; x < sx; ++x) {
-          std::uint64_t local_idx = static_cast<std::uint64_t>(y) *
-                                        (static_cast<std::uint64_t>(sx) * sz) +
-                                    static_cast<std::uint64_t>(z) * sx + x;
-          std::uint64_t global_idx =
-              static_cast<std::uint64_t>(y + off_y) *
-                  (static_cast<std::uint64_t>(merged.bounds.size[0]) *
-                   merged.bounds.size[2]) +
-              static_cast<std::uint64_t>(z + off_z) * merged.bounds.size[0] +
-              (x + off_x);
-          merged.block_indices[global_idx] =
-              remaps[r][reg.block_indices[local_idx]];
-        }
+        std::memcpy(dst_row, src_row, row_bytes);
+        src_row += sx;  // advance to next z-slice in local (stride = sx)
+        dst_row += W;   // advance to next z-slice in global (stride = W)
       }
     }
 

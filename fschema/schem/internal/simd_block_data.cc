@@ -63,55 +63,63 @@ namespace hn = hwy::HWY_NAMESPACE;
   bounds[0] = base;
   bounds[num_chunks] = end;
 
-  tbb::parallel_for(
-      tbb::blocked_range<std::size_t>(0, num_chunks - 1),
-      [&](const tbb::blocked_range<std::size_t>& range) {
-        for (std::size_t t = range.begin(); t < range.end(); ++t) {
-          const std::uint8_t* p = base + byte_starts[t + 1];
-          while (p > base && (*(p - 1) & 0x80)) {
-            --p;
-          }
-          bounds[t + 1] = p;
-        }
-      },
-      tbb::static_partitioner{});
+  auto scan_bound = [&](const tbb::blocked_range<std::size_t>& range) {
+    for (std::size_t t = range.begin(); t < range.end(); ++t) {
+      const std::uint8_t* p = base + byte_starts[t + 1];
+      while (p > base && (*(p - 1) & 0x80)) {
+        --p;
+      }
+      bounds[t + 1] = p;
+    }
+  };
+  if (num_chunks <= 4) {
+    scan_bound(tbb::blocked_range<std::size_t>(0, num_chunks - 1));
+  } else {
+    tbb::parallel_for(tbb::blocked_range<std::size_t>(0, num_chunks - 1),
+                      scan_bound,
+                      tbb::static_partitioner{});
+  }
 
   std::vector<std::uint64_t> counts(num_chunks);
-  tbb::parallel_for(
-      tbb::blocked_range<std::size_t>(0, num_chunks),
-      [&](const tbb::blocked_range<std::size_t>& range) {
-        for (std::size_t t = range.begin(); t < range.end(); ++t) {
-          std::uint64_t count = 0;
-          const std::uint8_t* p = bounds[t];
-          const std::uint8_t* chunk_end = bounds[t + 1];
-
+  
+    auto count_chunk = [&](const tbb::blocked_range<std::size_t>& range) {
+    for (std::size_t t = range.begin(); t < range.end(); ++t) {
+      std::uint64_t count = 0;
+      const std::uint8_t* p = bounds[t];
+      const std::uint8_t* chunk_end = bounds[t + 1];
 #if HWY_TARGET == HWY_AVX2
-          const __m256i mask = _mm256_set1_epi8(static_cast<char>(0x80));
-          const __m256i zero = _mm256_setzero_si256();
-          for (; p + 32 <= chunk_end; p += 32) {
-            __m256i v = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(p));
-            __m256i is_end = _mm256_cmpeq_epi8(_mm256_and_si256(v, mask), zero);
-            count += std::popcount(
-                static_cast<std::uint32_t>(_mm256_movemask_epi8(is_end)));
-          }
+      const __m256i mask = _mm256_set1_epi8(static_cast<char>(0x80));
+      const __m256i zero = _mm256_setzero_si256();
+      for (; p + 32 <= chunk_end; p += 32) {
+        __m256i v = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(p));
+        __m256i is_end = _mm256_cmpeq_epi8(_mm256_and_si256(v, mask), zero);
+        count += std::popcount(
+            static_cast<std::uint32_t>(_mm256_movemask_epi8(is_end)));
+      }
 #else
-          const hn::ScalableTag<std::uint8_t> d8;
-          const auto v_msb = hn::Set(d8, static_cast<std::uint8_t>(0x80));
-          const auto v_zero = hn::Zero(d8);
-          const std::size_t lanes = hn::Lanes(d8);
-          for (; p + lanes <= chunk_end; p += lanes) {
-            auto v = hn::LoadU(d8, p);
-            auto is_end = hn::Eq(hn::And(v, v_msb), v_zero);
-            count += hn::CountTrue(d8, is_end);
-          }
+      const hn::ScalableTag<std::uint8_t> d8;
+      const auto v_msb = hn::Set(d8, static_cast<std::uint8_t>(0x80));
+      const auto v_zero = hn::Zero(d8);
+      const std::size_t lanes = hn::Lanes(d8);
+      for (; p + lanes <= chunk_end; p += lanes) {
+        auto v = hn::LoadU(d8, p);
+        auto is_end = hn::Eq(hn::And(v, v_msb), v_zero);
+        count += hn::CountTrue(d8, is_end);
+      }
 #endif
-          for (; p < chunk_end; ++p) {
-            if ((*p & 0x80) == 0) ++count;
-          }
-          counts[t] = count;
-        }
-      },
-      tbb::static_partitioner{});
+      for (; p < chunk_end; ++p) {
+        if ((*p & 0x80) == 0) ++count;
+      }
+      counts[t] = count;
+    }
+  };
+  if (num_chunks <= 4) {
+    count_chunk(tbb::blocked_range<std::size_t>(0, num_chunks));
+  } else {
+    tbb::parallel_for(tbb::blocked_range<std::size_t>(0, num_chunks),
+                      count_chunk,
+                      tbb::static_partitioner{});
+  }
 
   std::vector<std::size_t> offsets(num_chunks);
   std::uint64_t current_offset = 0;
@@ -381,220 +389,212 @@ void DecodeVarintChunksKernelImpl(const std::uint8_t* const* chunk_ptrs,
                                   const std::uint8_t* data_end,
                                   std::size_t palette_size,
                                   std::atomic<std::uint32_t>& error_flag) {
-  tbb::parallel_for(
-      tbb::blocked_range<std::size_t>(0, num_chunks),
-      [&](const tbb::blocked_range<std::size_t>& range) {
-        for (std::size_t t = range.begin(); t < range.end(); ++t) {
-          const std::uint8_t* p = chunk_ptrs[t];
-          std::size_t target_block = chunk_offsets[t];
-          std::size_t cnt = chunk_counts[t];
-          std::uint16_t* dst = out + target_block;
+  auto process_range = [&](const tbb::blocked_range<std::size_t>& range) {
+    for (std::size_t t = range.begin(); t < range.end(); ++t) {
+      const std::uint8_t* p = chunk_ptrs[t];
+      std::size_t target_block = chunk_offsets[t];
+      std::size_t cnt = chunk_counts[t];
+      std::uint16_t* dst = out + target_block;
 
-          if (palette_size <= 16384) {
+      if (palette_size <= 16384) {
 #if HWY_TARGET == HWY_AVX2
-            std::size_t i = 0;
-
-            // 1. 对齐 dst 到 32 字节边界
-            while ((reinterpret_cast<std::uintptr_t>(dst + i) & 31) != 0 &&
-                   i < cnt) {
-              if (p >= data_end) [[unlikely]] {
-                std::uint32_t expected = 0;
-                error_flag.compare_exchange_strong(
-                    expected, 1, std::memory_order_relaxed);
-                return;
-              }
-              std::uint8_t b0 = *p++;
-              std::uint16_t val = b0;
-              if (b0 & 0x80) {
-                if (p >= data_end) [[unlikely]] {
-                  std::uint32_t expected = 0;
-                  error_flag.compare_exchange_strong(
-                      expected, 1, std::memory_order_relaxed);
-                  return;
-                }
-                val = (b0 & 0x7F) | (static_cast<std::uint16_t>(*p++) << 7);
-              }
-              if (val >= palette_size) [[unlikely]] {
-                std::uint32_t expected = 0;
-                error_flag.compare_exchange_strong(
-                    expected, 2, std::memory_order_relaxed);
-                return;
-              }
-              if (val != 0) [[likely]] {
-                dst[i] = val;
-              }
-              ++i;
+        std::size_t i = 0;
+        while ((reinterpret_cast<std::uintptr_t>(dst + i) & 31) != 0 &&
+               i < cnt) {
+          if (p >= data_end) [[unlikely]] {
+            std::uint32_t expected = 0;
+            error_flag.compare_exchange_strong(
+                expected, 1, std::memory_order_relaxed);
+            return;
+          }
+          std::uint8_t b0 = *p++;
+          std::uint16_t val = b0;
+          if (b0 & 0x80) {
+            if (p >= data_end) [[unlikely]] {
+              std::uint32_t expected = 0;
+              error_flag.compare_exchange_strong(
+                  expected, 1, std::memory_order_relaxed);
+              return;
             }
-
-            // 2. SIMD 循环
-            for (; i + 32 <= cnt && p + 64 <= data_end;) {
-              __m256i v0 =
-                  _mm256_loadu_si256(reinterpret_cast<const __m256i*>(p));
-              bool is_all_zero = _mm256_testz_si256(v0, v0);
-
-              if (is_all_zero) {
-                p += 32;
-                i += 32;
-              } else {
-                alignas(32) std::uint16_t buf16[32];
-                std::size_t decoded = 0;
-                while (decoded < 32) {
-                  std::uint8_t b0 = *p;
-                  std::uint16_t val;
-                  if (!(b0 & 0x80)) {
-                    val = b0;
-                    p += 1;
-                  } else {
-                    val = (b0 & 0x7F) | (static_cast<std::uint16_t>(p[1]) << 7);
-                    p += 2;
-                  }
-                  buf16[decoded++] = val;
-                }
-                __m256i v1 =
-                    _mm256_load_si256(reinterpret_cast<const __m256i*>(buf16));
-                __m256i v2 = _mm256_load_si256(
-                    reinterpret_cast<const __m256i*>(buf16 + 16));
-                _mm256_stream_si256(reinterpret_cast<__m256i*>(dst + i), v1);
-                _mm256_stream_si256(reinterpret_cast<__m256i*>(dst + i + 16),
-                                    v2);
-                i += 32;
-              }
-            }
-
-            // 3. 标量尾部
-            for (; i < cnt; ++i) {
-              if (p >= data_end) [[unlikely]] {
-                std::uint32_t expected = 0;
-                error_flag.compare_exchange_strong(
-                    expected, 1, std::memory_order_relaxed);
-                return;
-              }
-              std::uint8_t b0 = *p++;
-              std::uint16_t val = b0;
-              if (b0 & 0x80) {
-                if (p >= data_end) [[unlikely]] {
-                  std::uint32_t expected = 0;
-                  error_flag.compare_exchange_strong(
-                      expected, 1, std::memory_order_relaxed);
-                  return;
-                }
-                val = (b0 & 0x7F) | (static_cast<std::uint16_t>(*p++) << 7);
-              }
-              if (val >= palette_size) [[unlikely]] {
-                std::uint32_t expected = 0;
-                error_flag.compare_exchange_strong(
-                    expected, 2, std::memory_order_relaxed);
-                return;
-              }
-              if (val != 0) [[likely]] {
-                dst[i] = val;
-              }
-            }
-#else
-            const hn::ScalableTag<std::uint8_t> d8;
-            const auto v_zero = hn::Zero(d8);
-            std::size_t i = 0;
-
-            for (; i + 32 <= cnt && p + 64 <= data_end;) {
-              auto v0 = hn::LoadU(d8, p);
-              bool is_all_zero = hn::AllTrue(d8, hn::Eq(v0, v_zero));
-
-              if (is_all_zero) {
-                p += 32;
-                i += 32;
-              } else {
-                std::size_t decoded = 0;
-                while (decoded < 32) {
-                  std::uint8_t b0 = *p;
-                  std::uint16_t val;
-                  if (!(b0 & 0x80)) {
-                    val = b0;
-                    p += 1;
-                  } else {
-                    val = (b0 & 0x7F) | (static_cast<std::uint16_t>(p[1]) << 7);
-                    p += 2;
-                  }
-                  dst[i + decoded] = val;
-                  decoded++;
-                }
-                i += 32;
-              }
-            }
-
-            for (; i < cnt; ++i) {
-              if (p >= data_end) [[unlikely]] {
-                std::uint32_t expected = 0;
-                error_flag.compare_exchange_strong(
-                    expected, 1, std::memory_order_relaxed);
-                return;
-              }
-              std::uint8_t b0 = *p++;
-              std::uint16_t val = b0;
-              if (b0 & 0x80) {
-                if (p >= data_end) [[unlikely]] {
-                  std::uint32_t expected = 0;
-                  error_flag.compare_exchange_strong(
-                      expected, 1, std::memory_order_relaxed);
-                  return;
-                }
-                val = (b0 & 0x7F) | (static_cast<std::uint16_t>(*p++) << 7);
-              }
-              if (val >= palette_size) [[unlikely]] {
-                std::uint32_t expected = 0;
-                error_flag.compare_exchange_strong(
-                    expected, 2, std::memory_order_relaxed);
-                return;
-              }
-              if (val != 0) [[likely]] {
-                dst[i] = val;
-              }
-            }
-#endif
+            val = (b0 & 0x7F) | (static_cast<std::uint16_t>(*p++) << 7);
+          }
+          if (val >= palette_size) [[unlikely]] {
+            std::uint32_t expected = 0;
+            error_flag.compare_exchange_strong(
+                expected, 2, std::memory_order_relaxed);
+            return;
+          }
+          if (val != 0) [[likely]] {
+            dst[i] = val;
+          }
+          ++i;
+        }
+        for (; i + 32 <= cnt && p + 64 <= data_end;) {
+          __m256i v0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(p));
+          bool is_all_zero = _mm256_testz_si256(v0, v0);
+          if (is_all_zero) {
+            p += 32;
+            i += 32;
           } else {
-            for (std::size_t i = 0; i < cnt; ++i) {
-              if (p >= data_end) [[unlikely]] {
-                std::uint32_t expected = 0;
-                error_flag.compare_exchange_strong(
-                    expected, 1, std::memory_order_relaxed);
-                return;
+            alignas(32) std::uint16_t buf16[32];
+            std::size_t decoded = 0;
+            while (decoded < 32) {
+              std::uint8_t b0 = *p;
+              std::uint16_t val;
+              if (!(b0 & 0x80)) {
+                val = b0;
+                p += 1;
+              } else {
+                val = (b0 & 0x7F) | (static_cast<std::uint16_t>(p[1]) << 7);
+                p += 2;
               }
-              std::uint32_t value = *p++;
-              if (value & 0x80) {
-                value &= 0x7F;
-                std::uint32_t shift = 7;
-                do {
-                  if (p >= data_end) [[unlikely]] {
-                    std::uint32_t expected = 0;
-                    error_flag.compare_exchange_strong(
-                        expected, 1, std::memory_order_relaxed);
-                    return;
-                  }
-                  std::uint8_t b = *p++;
-                  value |= (b & 0x7F) << shift;
-                  if (!(b & 0x80)) break;
-                  shift += 7;
-                  if (shift > 28) [[unlikely]] {
-                    std::uint32_t expected = 0;
-                    error_flag.compare_exchange_strong(
-                        expected, 1, std::memory_order_relaxed);
-                    return;
-                  }
-                } while (true);
-              }
-              if (value >= palette_size) [[unlikely]] {
-                std::uint32_t expected = 0;
-                error_flag.compare_exchange_strong(
-                    expected, 2, std::memory_order_relaxed);
-                return;
-              }
-              if (value != 0) [[likely]] {
-                dst[i] = static_cast<std::uint16_t>(value);
-              }
+              buf16[decoded++] = val;
             }
+            __m256i v1 =
+                _mm256_load_si256(reinterpret_cast<const __m256i*>(buf16));
+            __m256i v2 =
+                _mm256_load_si256(reinterpret_cast<const __m256i*>(buf16 + 16));
+            _mm256_stream_si256(reinterpret_cast<__m256i*>(dst + i), v1);
+            _mm256_stream_si256(reinterpret_cast<__m256i*>(dst + i + 16), v2);
+            i += 32;
           }
         }
-      },
-      tbb::static_partitioner{});
+        for (; i < cnt; ++i) {
+          if (p >= data_end) [[unlikely]] {
+            std::uint32_t expected = 0;
+            error_flag.compare_exchange_strong(
+                expected, 1, std::memory_order_relaxed);
+            return;
+          }
+          std::uint8_t b0 = *p++;
+          std::uint16_t val = b0;
+          if (b0 & 0x80) {
+            if (p >= data_end) [[unlikely]] {
+              std::uint32_t expected = 0;
+              error_flag.compare_exchange_strong(
+                  expected, 1, std::memory_order_relaxed);
+              return;
+            }
+            val = (b0 & 0x7F) | (static_cast<std::uint16_t>(*p++) << 7);
+          }
+          if (val >= palette_size) [[unlikely]] {
+            std::uint32_t expected = 0;
+            error_flag.compare_exchange_strong(
+                expected, 2, std::memory_order_relaxed);
+            return;
+          }
+          if (val != 0) [[likely]] {
+            dst[i] = val;
+          }
+        }
+#else
+        const hn::ScalableTag<std::uint8_t> d8;
+        const auto v_zero = hn::Zero(d8);
+        std::size_t i = 0;
+        for (; i + 32 <= cnt && p + 64 <= data_end;) {
+          auto v0 = hn::LoadU(d8, p);
+          bool is_all_zero = hn::AllTrue(d8, hn::Eq(v0, v_zero));
+          if (is_all_zero) {
+            p += 32;
+            i += 32;
+          } else {
+            std::size_t decoded = 0;
+            while (decoded < 32) {
+              std::uint8_t b0 = *p;
+              std::uint16_t val;
+              if (!(b0 & 0x80)) {
+                val = b0;
+                p += 1;
+              } else {
+                val = (b0 & 0x7F) | (static_cast<std::uint16_t>(p[1]) << 7);
+                p += 2;
+              }
+              dst[i + decoded] = val;
+              decoded++;
+            }
+            i += 32;
+          }
+        }
+        for (; i < cnt; ++i) {
+          if (p >= data_end) [[unlikely]] {
+            std::uint32_t expected = 0;
+            error_flag.compare_exchange_strong(
+                expected, 1, std::memory_order_relaxed);
+            return;
+          }
+          std::uint8_t b0 = *p++;
+          std::uint16_t val = b0;
+          if (b0 & 0x80) {
+            if (p >= data_end) [[unlikely]] {
+              std::uint32_t expected = 0;
+              error_flag.compare_exchange_strong(
+                  expected, 1, std::memory_order_relaxed);
+              return;
+            }
+            val = (b0 & 0x7F) | (static_cast<std::uint16_t>(*p++) << 7);
+          }
+          if (val >= palette_size) [[unlikely]] {
+            std::uint32_t expected = 0;
+            error_flag.compare_exchange_strong(
+                expected, 2, std::memory_order_relaxed);
+            return;
+          }
+          if (val != 0) [[likely]] {
+            dst[i] = val;
+          }
+        }
+#endif
+      } else {
+        for (std::size_t i = 0; i < cnt; ++i) {
+          if (p >= data_end) [[unlikely]] {
+            std::uint32_t expected = 0;
+            error_flag.compare_exchange_strong(
+                expected, 1, std::memory_order_relaxed);
+            return;
+          }
+          std::uint32_t value = *p++;
+          if (value & 0x80) {
+            value &= 0x7F;
+            std::uint32_t shift = 7;
+            do {
+              if (p >= data_end) [[unlikely]] {
+                std::uint32_t expected = 0;
+                error_flag.compare_exchange_strong(
+                    expected, 1, std::memory_order_relaxed);
+                return;
+              }
+              std::uint8_t b = *p++;
+              value |= (b & 0x7F) << shift;
+              if (!(b & 0x80)) break;
+              shift += 7;
+              if (shift > 28) [[unlikely]] {
+                std::uint32_t expected = 0;
+                error_flag.compare_exchange_strong(
+                    expected, 1, std::memory_order_relaxed);
+                return;
+              }
+            } while (true);
+          }
+          if (value >= palette_size) [[unlikely]] {
+            std::uint32_t expected = 0;
+            error_flag.compare_exchange_strong(
+                expected, 2, std::memory_order_relaxed);
+            return;
+          }
+          if (value != 0) [[likely]] {
+            dst[i] = static_cast<std::uint16_t>(value);
+          }
+        }
+      }
+    }
+  };
+  if (num_chunks <= 4) {
+    process_range(tbb::blocked_range<std::size_t>(0, num_chunks));
+  } else {
+    tbb::parallel_for(tbb::blocked_range<std::size_t>(0, num_chunks),
+                      process_range,
+                      tbb::static_partitioner{});
+  }
 }
 
 }  // namespace HWY_NAMESPACE

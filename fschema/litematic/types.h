@@ -24,6 +24,7 @@
 #include <string_view>
 #include <vector>
 
+#include "fschema/base/nbt_tag.h"
 #include "fschema/memory/arena.h"
 #include "fschema/memory/noinit_allocator.h"
 
@@ -31,9 +32,15 @@ namespace fschema::litematic {
 
 // Minecraft Java Edition Version
 enum class Version : std::int32_t {
-  kV5 = 5,  // 1.13 - 1.17
+  kV5 = 5,  // 1.13 - 1.17.1
   kV6 = 6,  // 1.18 - 1.20.4
   kV7 = 7,  // 1.20.5+
+};
+
+struct RawField {
+  std::string_view name;
+  base::TagType type = base::TagType::End;
+  std::span<const std::byte> payload;
 };
 
 // Litematic Metadata
@@ -50,6 +57,7 @@ struct Metadata {
   // PreviewData is an IntArray, stored as a raw span, decoded by downstream if
   // needed.
   std::span<const std::byte> preview_data;  // May be empty
+  std::vector<RawField> extensions;
 };
 
 // Palette
@@ -110,6 +118,8 @@ struct Region {
   std::vector<PendingTick> pending_fluid_ticks;
   std::span<const std::byte> pending_block_entities;
   std::span<const std::byte> pending_entities;
+
+  std::vector<RawField> extensions;
 };
 
 // Up-level

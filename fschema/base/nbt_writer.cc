@@ -15,8 +15,10 @@
 
 #include "fschema/base/nbt_writer.h"
 
+#include <algorithm>
 #include <bit>
 #include <cassert>
+#include <cstddef>
 #include <cstring>
 #include <vector>
 
@@ -27,6 +29,12 @@ namespace fschema::base {
 NbtWriter::NbtWriter() {
   // Pre-allocate 64 KB buffer to reduce reallocations during initial writes
   buffer_.reserve(1 << 16);
+}
+
+NbtWriter::NbtWriter(std::size_t reserve_hint) {
+  std::size_t hint = std::max<std::size_t>(reserve_hint, 1 << 16);
+  hint = (hint + 4095) & ~std::size_t{4095};
+  buffer_.reserve(hint);
 }
 
 NbtWriter::~NbtWriter() = default;

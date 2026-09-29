@@ -23,6 +23,7 @@
 #include <string_view>
 #include <vector>
 
+#include "fschema/base/nbt_tag.h"
 #include "fschema/memory/arena.h"
 #include "fschema/memory/noinit_allocator.h"
 
@@ -33,12 +34,20 @@ enum class Version : std::int32_t {
   kV3 = 3,
 };
 
+struct RawField {
+  std::string_view name;
+  base::TagType type = base::TagType::End;
+  std::span<const std::byte> payload;
+};
+
 struct Metadata {
   std::string_view name;
   std::string_view author;
   std::int64_t date = 0;
   std::span<const std::byte> required_mods;
   std::span<const std::byte> extra;
+
+  std::vector<RawField> extensions;
 };
 
 // Schem palette entry. The full blockstate string is parsed into
@@ -86,6 +95,8 @@ struct Schematic {
 
   std::unique_ptr<std::vector<std::byte>> owner;
   std::unique_ptr<memory::Arena> arena;
+
+  std::vector<RawField> extensions;
 };
 
 [[nodiscard]] inline std::uint64_t VolumeOf(const Schematic& s) noexcept {

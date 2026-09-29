@@ -30,7 +30,22 @@
 
 namespace fschema::ir::format {
 
-// Todo: need to remove limits because it's NEVER USED.
+namespace {
+
+inline bool ShouldUseExtensions(const Schema& ir, bool is_v3) {
+  if (ir.source_format != SourceFormat::kSchem) return false;
+  return (is_v3 == (ir.source_version == 3));
+}
+
+inline void WriteExtensions(base::NbtWriter& writer,
+                            const std::vector<Extension>& extensions) {
+  for (const auto& ext : extensions) {
+    writer.WriteRawField(ext.key, ext.tag_type, ext.raw_payload);
+  }
+}
+
+}  // namespace
+
 ParseResult<Schema> SchemHandler::Decode(
     std::unique_ptr<std::vector<std::byte>> bytes,
     const base::DecodeLimits& limits) const {
@@ -89,8 +104,17 @@ ParseResult<std::vector<std::byte>> SchemHandler::Encode(
         ParseError{ParseError::Code::UnsupportedVersion, "TargetVersion", 0});
   }
   bool is_v3 = (options.target_version == 0 || options.target_version == 3);
+  bool use_ext = ShouldUseExtensions(ir, is_v3);
 
-  base::NbtWriter writer;
+  std::size_t nbt_hint = 0;
+  nbt_hint += target_region->palette.size() * 128;
+  nbt_hint += target_region->block_indices.size() * 3;
+  nbt_hint += target_region->block_entities.size() * 256;
+  nbt_hint += target_region->entities.size() * 256;
+  nbt_hint += 4096;
+
+  base::NbtWriter writer(nbt_hint);
+
   if (is_v3) {
     writer.BeginRootCompound("");
     writer.BeginCompoundField("Schematic");
@@ -101,14 +125,19 @@ ParseResult<std::vector<std::byte>> SchemHandler::Encode(
   writer.WriteIntField("Version", is_v3 ? 3 : 2);
   writer.WriteIntField("DataVersion", ir.data_version);
 
+  // Metadata
   writer.BeginCompoundField("Metadata");
   if (!ir.metadata.name.empty())
     writer.WriteStringField("Name", ir.metadata.name);
   if (!ir.metadata.author.empty())
     writer.WriteStringField("Author", ir.metadata.author);
-  if (ir.metadata.date != 0) writer.WriteLongField("Date", ir.metadata.date);
+
+  if (use_ext) {
+    WriteExtensions(writer, ir.metadata.extensions);
+  }
   writer.EndCompoundField();
 
+  // Dimensions
   auto check_short = [](std::int32_t val) -> ParseResult<void> {
     if (val < std::numeric_limits<std::int16_t>::min() ||
         val > std::numeric_limits<std::int16_t>::max()) {
@@ -133,10 +162,13 @@ ParseResult<std::vector<std::byte>> SchemHandler::Encode(
   writer.WriteIntArrayField(
       "Offset", std::span<const std::int32_t>(target_region->bounds.origin, 3));
 
+  // Blocks
+  // (v3 container or v2 flat)
   if (is_v3) {
     writer.BeginCompoundField("Blocks");
   }
 
+  // Palette
   writer.BeginCompoundField("Palette");
   for (std::size_t i = 0; i < target_region->palette.size(); ++i) {
     const auto& bs = target_region->palette[i];
@@ -158,14 +190,13 @@ ParseResult<std::vector<std::byte>> SchemHandler::Encode(
   }
   writer.EndCompoundField();
 
-  // Reorder YZX -> XZY for Schem format
+  // Block data (varint packed, transposed YZX→XZY)
   int W = target_region->bounds.size[0];
   int H = target_region->bounds.size[1];
   int L = target_region->bounds.size[2];
   std::vector<std::uint16_t> xzy_indices(target_region->block_indices.size());
   internal::TransposeYzxToXzy(
       target_region->block_indices, xzy_indices, W, H, L);
-
   std::vector<std::byte> block_data = internal::PackVarintSchem(
       std::span<const std::uint16_t>(xzy_indices.data(), xzy_indices.size()));
   writer.WriteByteArrayField(
@@ -174,6 +205,7 @@ ParseResult<std::vector<std::byte>> SchemHandler::Encode(
           reinterpret_cast<const std::int8_t*>(block_data.data()),
           block_data.size()));
 
+  // Block entities
   writer.BeginListField("BlockEntities",
                         base::TagType::Compound,
                         target_region->block_entities.size());
@@ -182,7 +214,6 @@ ParseResult<std::vector<std::byte>> SchemHandler::Encode(
     writer.WriteStringField("Id", be.id);
     writer.WriteIntArrayField(
         "Pos", std::span<const std::int32_t>(be.block_position.data(), 3));
-
     if (is_v3) {
       writer.BeginCompoundField("Data");
       auto res =
@@ -202,43 +233,41 @@ ParseResult<std::vector<std::byte>> SchemHandler::Encode(
     writer.EndCompoundField();  // END Blocks
   }
 
+  // Region extensions
+  // (Biomes for v3, BiomePalette/BiomeData for v2)
+  if (use_ext) {
+    WriteExtensions(writer, target_region->extensions);
+  }
+
+  // Entities
   writer.BeginListField(
       "Entities", base::TagType::Compound, target_region->entities.size());
   for (const auto& ent : target_region->entities) {
     writer.BeginListElementCompound();
-
     writer.WriteStringField("Id", ent.id);
     writer.BeginListField("Pos", base::TagType::Double, 3);
     writer.WriteListElementDouble(ent.position[0]);
     writer.WriteListElementDouble(ent.position[1]);
     writer.WriteListElementDouble(ent.position[2]);
     writer.EndListField();
-
     if (is_v3) {
       writer.BeginCompoundField("Data");
     }
-
     writer.BeginListField("Motion", base::TagType::Double, 3);
     writer.WriteListElementDouble(ent.motion[0]);
     writer.WriteListElementDouble(ent.motion[1]);
     writer.WriteListElementDouble(ent.motion[2]);
     writer.EndListField();
-
     writer.BeginListField("Rotation", base::TagType::Float, 2);
     writer.WriteListElementFloat(ent.rotation[0]);
     writer.WriteListElementFloat(ent.rotation[1]);
     writer.EndListField();
-
-    {
-      auto res = internal::FilterAndWriteFields(
-          ent.raw_nbt, internal::kEntSkip, writer);
-      if (!res) return std::unexpected(res.error());
-    }
-
+    auto res =
+        internal::FilterAndWriteFields(ent.raw_nbt, internal::kEntSkip, writer);
+    if (!res) return std::unexpected(res.error());
     if (is_v3) {
-      writer.EndCompoundField();  // END Data
+      writer.EndCompoundField();
     }
-
     writer.EndListElementCompound();
   }
   writer.EndListField();
@@ -260,22 +289,24 @@ ParseResult<Schema> SchemHandler::DecodeFromParsed(
   ir.arena = std::move(src.arena);
   ir.owner = std::move(src.owner);
 
+  // Common metadata
   ir.metadata.name = src.metadata.name;
   ir.metadata.author = src.metadata.author;
-  ir.metadata.date = src.metadata.date;
-  if (src.metadata.date != 0) {
-    ir.metadata.time_created = src.metadata.date;
-    ir.metadata.time_modified = src.metadata.date;
-  }
-  ir.metadata.required_mods = src.metadata.required_mods;
-  ir.metadata.extra_metadata = src.metadata.extra;
 
+  // Metadata extensions
+  // (Date, RequiredMods, etc.)
+  ir.metadata.extensions.reserve(src.metadata.extensions.size());
+  for (const auto& rf : src.metadata.extensions) {
+    ir.metadata.extensions.push_back(
+        {rf.name, rf.type, rf.payload, SourceFormat::kSchem});
+  }
+
+  // Region
   Region r;
   r.name = "main";
   r.bounds.origin[0] = 0;
   r.bounds.origin[1] = 0;
   r.bounds.origin[2] = 0;
-
   r.bounds.size[0] = static_cast<std::int32_t>(src.width);
   r.bounds.size[1] = static_cast<std::int32_t>(src.height);
   r.bounds.size[2] = static_cast<std::int32_t>(src.length);
@@ -291,7 +322,7 @@ ParseResult<Schema> SchemHandler::DecodeFromParsed(
     r.palette.push_back(std::move(out));
   }
 
-  // Schem internal is XZY. Convert to IR YZX
+  // Schem internal is XZY → convert to IR YZX
   int W = src.width;
   int H = src.height;
   int L = src.length;
@@ -325,10 +356,13 @@ ParseResult<Schema> SchemHandler::DecodeFromParsed(
     r.block_entities.push_back(std::move(out));
   }
 
-  r.biomes.palette = std::move(src.biome_palette);
-  r.biomes.indices = std::move(src.biome_indices);
-  r.biomes.layout = (src.version == schem::Version::kV3) ? BiomeLayout::k3D
-                                                         : BiomeLayout::k2D;
+  // Region extensions
+  // (Biomes container / BiomePalette / BiomeData)
+  r.extensions.reserve(src.extensions.size());
+  for (const auto& rf : src.extensions) {
+    r.extensions.push_back(
+        {rf.name, rf.type, rf.payload, SourceFormat::kSchem});
+  }
 
   ir.regions.push_back(std::move(r));
   return ir;

@@ -64,7 +64,7 @@ template <typename Fn>
     std::string_view name;
     auto tag = reader.ReadCompoundEntryHeaderView(name);
     if (!tag) return std::unexpected(tag.error());
-    if (*tag == TagType::End) break;
+    if (*tag == TagType::End) [[unlikely]] break;
     auto result = fn(name, *tag);
     if (!result) return std::unexpected(result.error());
   }

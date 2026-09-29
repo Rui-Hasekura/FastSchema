@@ -31,6 +31,7 @@ namespace fschema::base {
 class NbtWriter {
  public:
   NbtWriter();
+  explicit NbtWriter(std::size_t reserve_hint);
   ~NbtWriter();
 
   // Non-copyable, move-only

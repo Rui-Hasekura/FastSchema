@@ -81,6 +81,8 @@ namespace fschema::litematic::internal {
 
   auto result = ForEachCompoundField(
       reader, [&](std::string_view name, base::TagType t) -> ParseResult<void> {
+        const std::size_t payload_start = reader.pos();
+
         if (name == "Position" && t == base::TagType::Compound) {
           auto r = ParseVec3Int(reader);
           if (!r) return std::unexpected(r.error());
@@ -127,21 +129,30 @@ namespace fschema::litematic::internal {
         } else if (name == "PendingBlockTicks" && t == base::TagType::List) {
           auto r = ParsePendingTicks(reader, region.pending_block_ticks);
           if (!r) return std::unexpected(r.error());
+          region.extensions.push_back(
+              {name, t, reader.SpanFrom(payload_start)});
         } else if (name == "PendingFluidTicks" && t == base::TagType::List) {
           auto r = ParsePendingTicks(reader, region.pending_fluid_ticks);
           if (!r) return std::unexpected(r.error());
+          region.extensions.push_back(
+              {name, t, reader.SpanFrom(payload_start)});
         } else if (name == "PendingBlockEntities" && t == base::TagType::List) {
-          const auto start = reader.pos();
           auto r = base::SkipPayload(reader, base::TagType::List);
           if (!r) return std::unexpected(r.error());
-          region.pending_block_entities = reader.SpanFrom(start);
+          region.pending_block_entities = reader.SpanFrom(payload_start);
+          region.extensions.push_back(
+              {name, t, reader.SpanFrom(payload_start)});
         } else if (name == "PendingEntities" && t == base::TagType::List) {
-          const auto start = reader.pos();
           auto r = base::SkipPayload(reader, base::TagType::List);
           if (!r) return std::unexpected(r.error());
-          region.pending_entities = reader.SpanFrom(start);
+          region.pending_entities = reader.SpanFrom(payload_start);
+          region.extensions.push_back(
+              {name, t, reader.SpanFrom(payload_start)});
         } else {
-          return base::SkipPayload(reader, t);
+          auto s = base::SkipPayload(reader, t);
+          if (!s) return std::unexpected(s.error());
+          region.extensions.push_back(
+              {name, t, reader.SpanFrom(payload_start)});
         }
         return {};
       });
@@ -168,9 +179,9 @@ namespace fschema::litematic::internal {
   }
   if (!have_position) [[unlikely]] {
     return std::unexpected(
-      ParseError::At(ParseError::Code::MissingField,
-                     std::format("Regions/{}/Position", region.name),
-                     reader.pos()));
+        ParseError::At(ParseError::Code::MissingField,
+                       std::format("Regions/{}/Position", region.name),
+                       reader.pos()));
   }
 
   // Overflow-safe volume calculation

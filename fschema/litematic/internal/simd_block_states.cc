@@ -284,7 +284,7 @@ template <typename DTag, typename ErrorFn>
     }
   };  // end of process_range
 
-  if (num_simd_iters < 1024) {
+  if (num_simd_iters < 4096) {
     process_range(0, num_simd_iters);
   } else {
     tbb::parallel_for(

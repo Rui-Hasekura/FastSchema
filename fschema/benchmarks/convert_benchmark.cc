@@ -295,13 +295,13 @@ int main(int argc, char* argv[]) {
     benchmark::RegisterBenchmark(name.c_str(), BM_ConvertFormat)
         ->Arg(i)
         ->Unit(benchmark::kMillisecond)
-        ->MinTime(2.0);
+        ->MinTime(5.0);
 
     std::string rt_name = "RoundTripSame/" + files[i].filename;
     benchmark::RegisterBenchmark(rt_name.c_str(), BM_RoundTripSameFormat)
         ->Arg(i)
         ->Unit(benchmark::kMillisecond)
-        ->MinTime(30.0);
+        ->MinTime(5.0);
   }
 
   ::benchmark::RunSpecifiedBenchmarks();

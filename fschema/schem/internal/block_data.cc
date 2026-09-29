@@ -74,7 +74,7 @@ DecodeVarintParallel(std::span<const std::byte> data,
                      memory::Arena& arena) {
   const auto n = static_cast<std::size_t>(volume);
 
-  constexpr std::size_t kMinVolumeForParallel = 1 << 14;
+  constexpr std::size_t kMinVolumeForParallel = 1 << 18;
   if (n < kMinVolumeForParallel) {
     return DecodeVarintScalar(data, volume, palette_size, arena);
   }
@@ -84,7 +84,7 @@ DecodeVarintParallel(std::span<const std::byte> data,
       std::min(static_cast<std::size_t>(n / 4096),
                std::max<std::size_t>(1, hw_threads * 4));
 
-  if (num_chunks <= 1) {
+  if (num_chunks <= 4) {
     return DecodeVarintScalar(data, volume, palette_size, arena);
   }
 
