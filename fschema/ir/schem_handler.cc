@@ -17,7 +17,9 @@
 
 #include <array>
 #include <expected>
+#include <limits>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -26,6 +28,7 @@
 #include "fschema/ir/internal/codec_utils.h"
 #include "fschema/ir/internal/varint_pack.h"
 #include "fschema/ir/manipulate.h"
+#include "fschema/ir/materialize.h"
 #include "fschema/schem/parse.h"
 
 namespace fschema::ir::format {
@@ -35,13 +38,6 @@ namespace {
 inline bool ShouldUseExtensions(const Schema& ir, bool is_v3) {
   if (ir.source_format != SourceFormat::kSchem) return false;
   return (is_v3 == (ir.source_version == 3));
-}
-
-inline void WriteExtensions(base::NbtWriter& writer,
-                            const std::vector<Extension>& extensions) {
-  for (const auto& ext : extensions) {
-    writer.WriteRawField(ext.key, ext.tag_type, ext.raw_payload);
-  }
 }
 
 }  // namespace
@@ -108,7 +104,11 @@ ParseResult<std::vector<std::byte>> SchemHandler::Encode(
 
   std::size_t nbt_hint = 0;
   nbt_hint += target_region->palette.size() * 128;
-  nbt_hint += target_region->block_indices.size() * 3;
+  nbt_hint += internal::VarintUpperBound(
+      static_cast<std::size_t>(target_region->bounds.size[0]) *
+          static_cast<std::size_t>(target_region->bounds.size[1]) *
+          static_cast<std::size_t>(target_region->bounds.size[2]),
+      target_region->palette.size());
   nbt_hint += target_region->block_entities.size() * 256;
   nbt_hint += target_region->entities.size() * 256;
   nbt_hint += 4096;
@@ -133,7 +133,11 @@ ParseResult<std::vector<std::byte>> SchemHandler::Encode(
     writer.WriteStringField("Author", ir.metadata.author);
 
   if (use_ext) {
-    WriteExtensions(writer, ir.metadata.extensions);
+    if (!ir.metadata.raw_compound.empty()) {
+      auto res = internal::FilterAndWriteFields(
+          ir.metadata.raw_compound, internal::kSchemMetadataSkip, writer);
+      if (!res) return std::unexpected(res.error());
+    }
   }
   writer.EndCompoundField();
 
@@ -190,20 +194,36 @@ ParseResult<std::vector<std::byte>> SchemHandler::Encode(
   }
   writer.EndCompoundField();
 
-  // Block data (varint packed, transposed YZX→XZY)
-  int W = target_region->bounds.size[0];
-  int H = target_region->bounds.size[1];
-  int L = target_region->bounds.size[2];
-  std::vector<std::uint16_t> xzy_indices(target_region->block_indices.size());
-  internal::TransposeYzxToXzy(
-      target_region->block_indices, xzy_indices, W, H, L);
-  std::vector<std::byte> block_data = internal::PackVarintSchem(
-      std::span<const std::uint16_t>(xzy_indices.data(), xzy_indices.size()));
-  writer.WriteByteArrayField(
-      is_v3 ? "Data" : "BlockData",
-      std::span<const std::int8_t>(
-          reinterpret_cast<const std::int8_t*>(block_data.data()),
-          block_data.size()));
+  bool raw_emit_eligible = target_region->lazy_source.encoding ==
+                               ir::BlockDataEncoding::kSpongeVarint &&
+                           target_region->lazy_source.palette_pristine &&
+                           !target_region->lazy_source.raw_bytes.empty();
+
+  if (raw_emit_eligible) {
+    writer.WriteByteArrayField(
+        is_v3 ? "Data" : "BlockData",
+        std::span<const std::int8_t>(
+            reinterpret_cast<const std::int8_t*>(
+                target_region->lazy_source.raw_bytes.data()),
+            target_region->lazy_source.raw_bytes.size()));
+  } else {
+    auto mat_res = ir::EnsureMaterialized(*target_region, *ir.arena);
+    if (!mat_res) return std::unexpected(mat_res.error());
+
+    const std::size_t n = target_region->block_indices.size();
+    const std::size_t pal = target_region->palette.size();
+    const std::size_t bound = internal::VarintUpperBound(n, pal);
+    auto block_data = std::make_unique_for_overwrite<std::byte[]>(bound);
+    const std::size_t written = internal::PackVarintInto(
+        block_data.get(),
+        std::span<const std::uint16_t>(target_region->block_indices.data(), n),
+        pal);
+
+    writer.WriteByteArrayField(
+        is_v3 ? "Data" : "BlockData",
+        std::span<const std::int8_t>(
+            reinterpret_cast<const std::int8_t*>(block_data.get()), written));
+  }
 
   // Block entities
   writer.BeginListField("BlockEntities",
@@ -216,13 +236,13 @@ ParseResult<std::vector<std::byte>> SchemHandler::Encode(
         "Pos", std::span<const std::int32_t>(be.block_position.data(), 3));
     if (is_v3) {
       writer.BeginCompoundField("Data");
-      auto res =
-          internal::FilterAndWriteFields(be.raw_nbt, internal::kBeSkip, writer);
+      auto res = internal::FilterAndWriteFields(
+          be.raw_nbt, internal::kBlockEntitySkip, writer);
       if (!res) return std::unexpected(res.error());
       writer.EndCompoundField();
     } else {
-      auto res =
-          internal::FilterAndWriteFields(be.raw_nbt, internal::kBeSkip, writer);
+      auto res = internal::FilterAndWriteFields(
+          be.raw_nbt, internal::kBlockEntitySkip, writer);
       if (!res) return std::unexpected(res.error());
     }
     writer.EndListElementCompound();
@@ -233,10 +253,16 @@ ParseResult<std::vector<std::byte>> SchemHandler::Encode(
     writer.EndCompoundField();  // END Blocks
   }
 
-  // Region extensions
-  // (Biomes for v3, BiomePalette/BiomeData for v2)
+  // Region extensions / Biomes
   if (use_ext) {
-    WriteExtensions(writer, target_region->extensions);
+    if (!target_region->raw_compound.empty()) {
+      auto skip =
+          is_v3 ? std::span<const std::string_view>(internal::kSchemV3Skip)
+                : std::span<const std::string_view>(internal::kSchemV2Skip);
+      auto res = internal::FilterAndWriteFields(
+          target_region->raw_compound, skip, writer);
+      if (!res) return std::unexpected(res.error());
+    }
   }
 
   // Entities
@@ -292,14 +318,7 @@ ParseResult<Schema> SchemHandler::DecodeFromParsed(
   // Common metadata
   ir.metadata.name = src.metadata.name;
   ir.metadata.author = src.metadata.author;
-
-  // Metadata extensions
-  // (Date, RequiredMods, etc.)
-  ir.metadata.extensions.reserve(src.metadata.extensions.size());
-  for (const auto& rf : src.metadata.extensions) {
-    ir.metadata.extensions.push_back(
-        {rf.name, rf.type, rf.payload, SourceFormat::kSchem});
-  }
+  ir.metadata.raw_compound = src.metadata.raw_compound;
 
   // Region
   Region r;
@@ -322,14 +341,11 @@ ParseResult<Schema> SchemHandler::DecodeFromParsed(
     r.palette.push_back(std::move(out));
   }
 
-  // Schem internal is XZY → convert to IR YZX
-  int W = src.width;
-  int H = src.height;
-  int L = src.length;
-  r.block_indices.resize_uninitialized(src.block_indices.size(),
-                                       ir.arena.get());
-  internal::TransposeXzyToYzx(src.block_indices, r.block_indices, W, H, L);
-  r.index_order = IndexOrder::kYzx;
+  r.lazy_source.raw_bytes = src.raw_block_data;
+  r.lazy_source.encoding = ir::BlockDataEncoding::kSpongeVarint;
+  r.lazy_source.palette_size = src.palette.size();
+  r.lazy_source.air_at_zero = true;
+  r.lazy_source.palette_pristine = true;
 
   r.entities.reserve(src.entities.size());
   for (auto& ent : src.entities) {
@@ -356,13 +372,7 @@ ParseResult<Schema> SchemHandler::DecodeFromParsed(
     r.block_entities.push_back(std::move(out));
   }
 
-  // Region extensions
-  // (Biomes container / BiomePalette / BiomeData)
-  r.extensions.reserve(src.extensions.size());
-  for (const auto& rf : src.extensions) {
-    r.extensions.push_back(
-        {rf.name, rf.type, rf.payload, SourceFormat::kSchem});
-  }
+  r.raw_compound = src.raw_compound;
 
   ir.regions.push_back(std::move(r));
   return ir;

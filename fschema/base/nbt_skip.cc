@@ -28,7 +28,8 @@ namespace fschema::base {
 
 [[nodiscard]] ParseResult<void> SkipCompound(ByteReader& reader) {
   return ForEachCompoundField(
-      reader, [&](std::string_view /*name*/, TagType tag) -> ParseResult<void> {
+      reader,
+      [&](std::string_view /*name=*/, TagType tag) -> ParseResult<void> {
         return SkipPayload(reader, tag);
       });
 }

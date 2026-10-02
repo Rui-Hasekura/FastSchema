@@ -42,16 +42,14 @@ struct PaletteEntry {
   std::int32_t max_index = -1;
 
   auto r = ForEachCompoundField(
-      reader,
-      [&](std::string_view name, base::TagType t) -> ParseResult<void> {
+      reader, [&](std::string_view name, base::TagType t) -> ParseResult<void> {
         if (t != base::TagType::Int) {
           return base::SkipPayload(reader, t);
         }
         auto v = reader.Read<std::int32_t>();
         if (!v) return std::unexpected(v.error());
         if (*v < 0) [[unlikely]] {
-          return std::unexpected(
-              reader.Error(ParseError::Code::NegativeIndex));
+          return std::unexpected(reader.Error(ParseError::Code::NegativeIndex));
         }
         entries.push_back({name, *v});
         if (*v > max_index) max_index = *v;
@@ -87,16 +85,14 @@ struct PaletteEntry {
   std::int32_t max_index = -1;
 
   auto r = ForEachCompoundField(
-      reader,
-      [&](std::string_view name, base::TagType t) -> ParseResult<void> {
+      reader, [&](std::string_view name, base::TagType t) -> ParseResult<void> {
         if (t != base::TagType::Int) {
           return base::SkipPayload(reader, t);
         }
         auto v = reader.Read<std::int32_t>();
         if (!v) return std::unexpected(v.error());
         if (*v < 0) [[unlikely]] {
-          return std::unexpected(
-            reader.Error(ParseError::Code::NegativeIndex));
+          return std::unexpected(reader.Error(ParseError::Code::NegativeIndex));
         }
         entries.push_back({name, *v});
         if (*v > max_index) max_index = *v;

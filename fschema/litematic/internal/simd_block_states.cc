@@ -35,6 +35,7 @@
 #include <span>
 
 #include "fschema/base/error.h"
+#include "fschema/base/port.h"
 #include "fschema/litematic/internal/block_states.h"
 
 HWY_BEFORE_NAMESPACE();
@@ -43,7 +44,6 @@ namespace HWY_NAMESPACE {
 
 namespace hn = hwy::HWY_NAMESPACE;
 
-// Golden baseline two-stage kernel. Do not modify.
 template <typename DTag, typename ErrorFn>
 [[nodiscard]] ParseResult<void> UnpackKernel(
     DTag d_tag,
@@ -51,7 +51,7 @@ template <typename DTag, typename ErrorFn>
     std::uint32_t bits_per_block,
     std::uint64_t volume,
     std::size_t palette_size,
-    std::uint16_t* __restrict out,
+    std::uint16_t* FSCHEMA_RESTRICT out,
     ErrorFn&& error_report) {
   const std::uint64_t bit_mask = (1ULL << bits_per_block) - 1;
   const std::size_t lanes = hn::Lanes(d_tag);
@@ -115,7 +115,7 @@ template <typename DTag, typename ErrorFn>
 
 // Common single block extraction with double long window for scalar tails.
 [[nodiscard]] inline std::uint32_t ExtractBlock(
-    const std::byte* const __restrict raw_data,
+    const std::byte* const FSCHEMA_RESTRICT raw_data,
     std::size_t long_count,
     std::uint32_t bits_per_block,
     std::uint64_t block_idx,
@@ -138,12 +138,12 @@ template <typename DTag, typename ErrorFn>
 
 #if HWY_TARGET == HWY_AVX2
 [[nodiscard]] ParseResult<void> UnpackFusedKernelAvx2(
-    const std::byte* const __restrict raw_data,
+    const std::byte* const FSCHEMA_RESTRICT raw_data,
     std::size_t long_count,
     std::uint32_t bits_per_block,
     std::uint64_t volume,
     std::size_t palette_size,
-    std::uint16_t* const __restrict out) {
+    std::uint16_t* const FSCHEMA_RESTRICT out) {
   const std::uint64_t bit_mask = (1ULL << bits_per_block) - 1;
 
   const __m256i vshifts =
@@ -284,7 +284,7 @@ template <typename DTag, typename ErrorFn>
     }
   };  // end of process_range
 
-  if (num_simd_iters < 4096) {
+  if (num_simd_iters < 1024) {
     process_range(0, num_simd_iters);
   } else {
     tbb::parallel_for(
@@ -319,12 +319,12 @@ template <typename DTag, typename ErrorFn>
 template <typename D64Tag>
 [[nodiscard]] ParseResult<void> UnpackFusedKernelHwy(
     D64Tag d_tag,
-    const std::byte* const __restrict raw_data,
+    const std::byte* const FSCHEMA_RESTRICT raw_data,
     std::size_t long_count,
     std::uint32_t bits_per_block,
     std::uint64_t volume,
     std::size_t palette_size,
-    std::uint16_t* const __restrict out) {
+    std::uint16_t* const FSCHEMA_RESTRICT out) {
   const std::uint64_t bit_mask = (1ULL << bits_per_block) - 1;
   const std::size_t lanes = hn::Lanes(d_tag);
 
@@ -417,8 +417,7 @@ ParseResult<memory::NoInitVector<std::uint16_t>> UnpackIndicesFusedImpl(
       return std::unexpected(
           make_error(ParseError::Code::PaletteIndexOutOfRange));
     }
-    memory::NoInitVector<std::uint16_t> out(static_cast<std::size_t>(volume),
-                                            &arena);
+    memory::NoInitVector<std::uint16_t> out(static_cast<std::size_t>(volume));
     std::memset(out.data(),
                 0,
                 static_cast<std::size_t>(volume) * sizeof(std::uint16_t));
@@ -434,10 +433,9 @@ ParseResult<memory::NoInitVector<std::uint16_t>> UnpackIndicesFusedImpl(
         make_error(ParseError::Code::PaletteIndexOutOfRange));
   }
 
-  memory::NoInitVector<std::uint16_t> out(static_cast<std::size_t>(volume),
-                                          &arena);
   const std::byte* raw_data = raw_longs.data();
   ParseResult<void> kernel_result{};
+  memory::NoInitVector<std::uint16_t> out(static_cast<std::size_t>(volume));
 
   if (bits_per_block >= 2 && bits_per_block <= 16) {
 #if HWY_TARGET == HWY_AVX2

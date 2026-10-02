@@ -36,10 +36,10 @@
 #include <tbb/parallel_for.h>
 
 #include "fschema/base/error.h"
+#include "fschema/base/port.h"
 #include "fschema/memory/arena.h"
 #include "fschema/memory/noinit_allocator.h"
 #include "fschema/schem/internal/block_data.h"
-#include "fschema/schem/types.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace fschema::schem::internal {
@@ -282,10 +282,11 @@ DecodeSingleByteFastImpl(std::span<const std::byte> data,
                          std::size_t palette_size,
                          memory::Arena& arena) {
   const auto n = static_cast<std::size_t>(volume);
-  const auto* src = reinterpret_cast<const std::uint8_t*>(data.data());
+  const auto* FSCHEMA_RESTRICT src =
+      reinterpret_cast<const std::uint8_t*>(data.data());
 
   memory::NoInitVector<std::uint16_t> out(n, &arena);
-  auto* dst = out.data();
+  auto* FSCHEMA_RESTRICT dst = out.data();
 
   const hn::ScalableTag<std::uint8_t> d8;
   const hn::Repartition<std::uint16_t, decltype(d8)> d16;
@@ -329,10 +330,11 @@ Decode2ByteUniformFastImpl(std::span<const std::byte> data,
                            std::size_t palette_size,
                            memory::Arena& arena) {
   const auto n = static_cast<std::size_t>(volume);
-  const auto* src = reinterpret_cast<const std::uint8_t*>(data.data());
+  const auto* FSCHEMA_RESTRICT src =
+      reinterpret_cast<const std::uint8_t*>(data.data());
 
   memory::NoInitVector<std::uint16_t> out(n, &arena);
-  auto* dst = out.data();
+  auto* FSCHEMA_RESTRICT dst = out.data();
 
   const hn::ScalableTag<std::uint16_t> d16;
   const std::size_t lanes = hn::Lanes(d16);
@@ -385,16 +387,16 @@ void DecodeVarintChunksKernelImpl(const std::uint8_t* const* chunk_ptrs,
                                   const std::size_t* chunk_offsets,
                                   const std::size_t* chunk_counts,
                                   std::size_t num_chunks,
-                                  std::uint16_t* out,
-                                  const std::uint8_t* data_end,
+                                  std::uint16_t* FSCHEMA_RESTRICT out,
+                                  const std::uint8_t* FSCHEMA_RESTRICT data_end,
                                   std::size_t palette_size,
                                   std::atomic<std::uint32_t>& error_flag) {
   auto process_range = [&](const tbb::blocked_range<std::size_t>& range) {
     for (std::size_t t = range.begin(); t < range.end(); ++t) {
-      const std::uint8_t* p = chunk_ptrs[t];
+      const std::uint8_t* FSCHEMA_RESTRICT p = chunk_ptrs[t];
       std::size_t target_block = chunk_offsets[t];
       std::size_t cnt = chunk_counts[t];
-      std::uint16_t* dst = out + target_block;
+      std::uint16_t* FSCHEMA_RESTRICT dst = out + target_block;
 
       if (palette_size <= 16384) {
 #if HWY_TARGET == HWY_AVX2

@@ -21,7 +21,6 @@
 #include <expected>
 #include <span>
 #include <string_view>
-#include <utility>
 
 #include "fschema/base/error.h"
 #include "fschema/base/limits.h"
@@ -29,7 +28,6 @@
 #include "fschema/base/nbt_scope.h"
 #include "fschema/base/nbt_skip.h"
 #include "fschema/base/nbt_tag.h"
-#include "fschema/schem/internal/block_data.h"
 #include "fschema/schem/internal/block_entities.h"
 #include "fschema/schem/internal/entities.h"
 #include "fschema/schem/internal/palette.h"
@@ -37,13 +35,12 @@
 
 namespace fschema::schem::internal {
 
-// ParseMetadata
-
 [[nodiscard]] static ParseResult<void> ParseMetadata(base::ByteReader& reader,
                                                      Schematic& out) {
   auto& meta = out.metadata;
+  const std::size_t meta_start = reader.pos();
 
-  return ForEachCompoundField(
+  auto r = ForEachCompoundField(
       reader, [&](std::string_view name, base::TagType t) -> ParseResult<void> {
         const std::size_t payload_start = reader.pos();
 
@@ -72,15 +69,13 @@ namespace fschema::schem::internal {
           auto s = base::SkipPayload(reader, t);
           if (!s) return std::unexpected(s.error());
         }
-
-        // Capture raw payload as extension (covers Date, RequiredMods, and
-        // unknown)
-        meta.extensions.push_back({name, t, reader.SpanFrom(payload_start)});
         return {};
       });
-}
+  if (!r) return std::unexpected(r.error());
 
-// ParseBlocksContainer  (v3)
+  meta.raw_compound = reader.SpanFrom(meta_start);
+  return {};
+}
 
 [[nodiscard]] static ParseResult<void> ParseBlocksContainer(
     base::ByteReader& reader,
@@ -122,20 +117,9 @@ namespace fschema::schem::internal {
     return std::unexpected(ParseError::At(
         ParseError::Code::MissingField, "Blocks/Data", reader.pos()));
   }
-
-  // Delayed varint decoding.
-  const auto volume = VolumeOf(out);
-  auto decode_result =
-      DecodeVarintArray(block_data_raw, volume, out.palette.size(), *out.arena);
-  if (!decode_result) {
-    return std::unexpected(decode_result.error());
-  }
-  out.block_indices = std::move(*decode_result);
-
+  out.raw_block_data = block_data_raw;
   return {};
 }
-
-// ParseBiomesContainer  (v3)
 
 [[nodiscard]] static ParseResult<void> ParseBiomesContainer(
     base::ByteReader& reader,
@@ -166,23 +150,12 @@ namespace fschema::schem::internal {
   if (!result) return std::unexpected(result.error());
 
   if (!have_palette || !have_data) {
-    // Biomes is optional; incomplete container treated as absent.
     return {};
   }
 
-  // v3: 3D biomes, volume = W * H * L.
-  const auto volume = VolumeOf(out);
-  auto decode_result = DecodeVarintArray(
-      biome_data_raw, volume, out.biome_palette.size(), *out.arena);
-  if (!decode_result) {
-    return std::unexpected(decode_result.error());
-  }
-  out.biome_indices = std::move(*decode_result);
-
+  out.raw_biome_data = biome_data_raw;
   return {};
 }
-
-// ParseSchematicFields  (v2 flat layout + v3 container layout)
 
 [[nodiscard]] static ParseResult<void>
 ParseSchematicFields(base::ByteReader& reader, Schematic& out, bool is_v3) {
@@ -196,11 +169,12 @@ ParseSchematicFields(base::ByteReader& reader, Schematic& out, bool is_v3) {
   std::span<const std::byte> v2_biome_data_raw;
   bool v2_have_block_data = false;
 
+  const std::size_t schematic_start = reader.pos();
+
   auto result = ForEachCompoundField(
       reader, [&](std::string_view name, base::TagType t) -> ParseResult<void> {
         const std::size_t payload_start = reader.pos();
 
-        // Common fields (v2 and v3)
         if (name == "Version" && t == base::TagType::Int) {
           auto v = reader.Read<std::int32_t>();
           if (!v) return std::unexpected(v.error());
@@ -248,9 +222,7 @@ ParseSchematicFields(base::ByteReader& reader, Schematic& out, bool is_v3) {
             if (!v) return std::unexpected(v.error());
             out.offset[i] = *v;
           }
-        }
-        // v3: Blocks/Biomes containers
-        else if (is_v3 && name == "Blocks" && t == base::TagType::Compound) {
+        } else if (is_v3 && name == "Blocks" && t == base::TagType::Compound) {
           auto r = ParseBlocksContainer(reader, out);
           if (!r) [[unlikely]]
             return std::unexpected(r.error());
@@ -258,10 +230,8 @@ ParseSchematicFields(base::ByteReader& reader, Schematic& out, bool is_v3) {
           auto r = ParseBiomesContainer(reader, out);
           if (!r) [[unlikely]]
             return std::unexpected(r.error());
-          out.extensions.push_back({name, t, reader.SpanFrom(payload_start)});
-        }
-        // v2: flat palette and block data
-        else if (!is_v3 && name == "Palette" && t == base::TagType::Compound) {
+        } else if (!is_v3 && name == "Palette" &&
+                   t == base::TagType::Compound) {
           auto r = ParseBlockPalette(reader, out.palette);
           if (!r) [[unlikely]]
             return std::unexpected(r.error());
@@ -284,19 +254,15 @@ ParseSchematicFields(base::ByteReader& reader, Schematic& out, bool is_v3) {
               reader, out.block_entities, /*is_v3=*/false, *out.arena);
           if (!r) [[unlikely]]
             return std::unexpected(r.error());
-        }
-        // v2: flat biome palette and data
-        else if (!is_v3 && name == "BiomePalette" &&
-                 t == base::TagType::Compound) {
+        } else if (!is_v3 && name == "BiomePalette" &&
+                   t == base::TagType::Compound) {
           auto r = ParseBiomePalette(reader, out.biome_palette);
           if (!r) [[unlikely]]
             return std::unexpected(r.error());
-          out.extensions.push_back({name, t, reader.SpanFrom(payload_start)});
         } else if (!is_v3 && name == "BiomePaletteMax" &&
                    t == base::TagType::Int) {
           auto v = reader.Read<std::int32_t>();
           if (!v) return std::unexpected(v.error());
-          out.extensions.push_back({name, t, reader.SpanFrom(payload_start)});
         } else if (!is_v3 && name == "BiomeData" &&
                    t == base::TagType::ByteArray) {
           auto len = reader.ReadLength(reader.limits().max_array_elements);
@@ -305,24 +271,17 @@ ParseSchematicFields(base::ByteReader& reader, Schematic& out, bool is_v3) {
           if (!span) return std::unexpected(span.error());
           v2_biome_data_raw = *span;
           reader.advance(*len);
-          out.extensions.push_back({name, t, reader.SpanFrom(payload_start)});
-        }
-        // Entities (both v2 and v3)
-        else if (name == "Entities" && t == base::TagType::List) {
+        } else if (name == "Entities" && t == base::TagType::List) {
           auto r = ParseEntities(reader, out.entities, is_v3, *out.arena);
           if (!r) return std::unexpected(r.error());
-        }
-        // Skip unknown field
-        else {
+        } else {
           auto s = base::SkipPayload(reader, t);
           if (!s) return std::unexpected(s.error());
-          out.extensions.push_back({name, t, reader.SpanFrom(payload_start)});
         }
         return {};
       });
   if (!result) return std::unexpected(result.error());
 
-  // Required fields validation
   if (!have_version) [[unlikely]] {
     return std::unexpected(ParseError::At(
         ParseError::Code::MissingField, "Version", reader.pos()));
@@ -344,40 +303,23 @@ ParseSchematicFields(base::ByteReader& reader, Schematic& out, bool is_v3) {
         ParseError::At(ParseError::Code::MissingField, "Length", reader.pos()));
   }
 
-  // Volume overflow check
   const std::uint64_t volume = VolumeOf(out);
   if (volume > reader.limits().max_volume_per_region) [[unlikely]] {
     return std::unexpected(
         ParseError{ParseError::Code::VolumeOverflow, "Width*Height*Length", 0});
   }
 
-  // v2: delayed block data decoding
   if (!is_v3 && v2_have_block_data) {
-    auto decode_result = DecodeVarintArray(
-        v2_block_data_raw, volume, out.palette.size(), *out.arena);
-    if (!decode_result) {
-      return std::unexpected(decode_result.error());
-    }
-    out.block_indices = std::move(*decode_result);
+    out.raw_block_data = v2_block_data_raw;
   }
 
-  // v2: delayed biome data decoding
-  if (!is_v3 && !v2_biome_data_raw.empty() && !out.biome_palette.empty()) {
-    // v2: 2D biomes, volume = W * L.
-    const auto biome_volume = static_cast<std::uint64_t>(out.width) *
-                              static_cast<std::uint64_t>(out.length);
-    auto decode_result = DecodeVarintArray(
-        v2_biome_data_raw, biome_volume, out.biome_palette.size(), *out.arena);
-    if (!decode_result) {
-      return std::unexpected(decode_result.error());
-    }
-    out.biome_indices = std::move(*decode_result);
+  if (!is_v3 && !v2_biome_data_raw.empty()) {
+    out.raw_biome_data = v2_biome_data_raw;
   }
 
+  out.raw_compound = reader.SpanFrom(schematic_start);
   return {};
 }
-
-// ParseRoot
 
 [[nodiscard]] ParseResult<void> ParseRoot(base::ByteReader& reader,
                                           Schematic& out) {

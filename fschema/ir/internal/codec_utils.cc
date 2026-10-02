@@ -25,6 +25,7 @@
 #include "fschema/base/nbt_skip.h"
 #include "fschema/base/nbt_tag.h"
 #include "fschema/base/nbt_writer.h"
+#include "fschema/base/port.h"
 
 namespace fschema::ir::internal {
 
@@ -40,7 +41,7 @@ inline bool IsSkipName(std::string_view name,
 
 }  // namespace
 
-ParseResult<void> FilterAndWriteFields(
+FSCHEMA_HOT ParseResult<void> FilterAndWriteFields(
     std::span<const std::byte> raw_nbt,
     std::span<const std::string_view> skip_names,
     fschema::base::NbtWriter& writer) {
@@ -61,7 +62,7 @@ ParseResult<void> FilterAndWriteFields(
   return {};
 }
 
-ParseResult<void> FilterAndWriteTileEntityFields(
+FSCHEMA_HOT ParseResult<void> FilterAndWriteTileEntityFields(
     std::span<const std::byte> raw_nbt,
     std::span<const std::string_view> skip_names,
     fschema::base::NbtWriter& writer) {
@@ -75,13 +76,10 @@ ParseResult<void> FilterAndWriteTileEntityFields(
     if (*tag == fschema::base::TagType::End) break;
 
     if (name == "components" && *tag == fschema::base::TagType::Compound) {
-      // Recurse into components: pass its non-skip fields through.
       const std::size_t comp_start = reader.pos();
       auto skip = fschema::base::SkipPayload(reader, *tag);
       if (!skip) return std::unexpected(skip.error());
       auto comp_body = reader.SpanFrom(comp_start);
-      // comp_body is the compound body (fields + End); the inner loop in
-      // FilterAndWriteListElementPayload stops at End naturally.
       auto res = FilterAndWriteFields(comp_body, skip_names, writer);
       if (!res) return std::unexpected(res.error());
     } else {

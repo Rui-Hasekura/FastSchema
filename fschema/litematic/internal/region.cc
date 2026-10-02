@@ -72,6 +72,7 @@ namespace fschema::litematic::internal {
                                               memory::Arena& arena) {
   Region region;
   region.name = region_name;
+  const std::size_t compound_start = reader.pos();
 
   bool have_size = false;
   bool have_palette = false;
@@ -119,40 +120,25 @@ namespace fschema::litematic::internal {
           if (!span_result) return std::unexpected(span_result.error());
           block_states_raw = *span_result;
           reader.advance(static_cast<std::size_t>(payload_bytes));
+
+          region.raw_block_states = block_states_raw;
           have_states = true;
-        } else if (name == "TileEntities" && t == base::TagType::List) {
-          auto r = ParseTileEntities(reader, region.tile_entities);
-          if (!r) return std::unexpected(r.error());
-        } else if (name == "Entities" && t == base::TagType::List) {
-          auto r = ParseEntities(reader, region.entities);
-          if (!r) return std::unexpected(r.error());
         } else if (name == "PendingBlockTicks" && t == base::TagType::List) {
           auto r = ParsePendingTicks(reader, region.pending_block_ticks);
           if (!r) return std::unexpected(r.error());
-          region.extensions.push_back(
-              {name, t, reader.SpanFrom(payload_start)});
         } else if (name == "PendingFluidTicks" && t == base::TagType::List) {
           auto r = ParsePendingTicks(reader, region.pending_fluid_ticks);
           if (!r) return std::unexpected(r.error());
-          region.extensions.push_back(
-              {name, t, reader.SpanFrom(payload_start)});
         } else if (name == "PendingBlockEntities" && t == base::TagType::List) {
           auto r = base::SkipPayload(reader, base::TagType::List);
           if (!r) return std::unexpected(r.error());
           region.pending_block_entities = reader.SpanFrom(payload_start);
-          region.extensions.push_back(
-              {name, t, reader.SpanFrom(payload_start)});
         } else if (name == "PendingEntities" && t == base::TagType::List) {
           auto r = base::SkipPayload(reader, base::TagType::List);
           if (!r) return std::unexpected(r.error());
           region.pending_entities = reader.SpanFrom(payload_start);
-          region.extensions.push_back(
-              {name, t, reader.SpanFrom(payload_start)});
         } else {
-          auto s = base::SkipPayload(reader, t);
-          if (!s) return std::unexpected(s.error());
-          region.extensions.push_back(
-              {name, t, reader.SpanFrom(payload_start)});
+          return base::SkipPayload(reader, t);
         }
         return {};
       });
@@ -208,10 +194,17 @@ namespace fschema::litematic::internal {
   }
 
   const std::uint32_t bits_per_block = BitsPerBlock(region.palette.size());
-  auto indices = UnpackIndicesFused(
-      block_states_raw, bits_per_block, volume, region.palette.size(), arena);
-  if (!indices) return std::unexpected(indices.error());
-  region.block_indices = std::move(*indices);
+  region.raw_block_states_bpb = bits_per_block;
+  if (volume > 0) {
+    const std::uint64_t min_longs = (volume * bits_per_block + 63) / 64;
+    if (static_cast<std::uint64_t>(block_states_raw.size() / 8) < min_longs) {
+      return std::unexpected(
+          reader.Error(ParseError::Code::BlockStatesTooSmall));
+    }
+  }
+  region.raw_block_states = block_states_raw;
+  region.raw_block_states_bpb = bits_per_block;
+  region.raw_compound = reader.SpanFrom(compound_start);
   return region;
 }
 

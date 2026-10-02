@@ -13,22 +13,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef FSCHEMA_LITEMATIC_INTERNAL_ENTITY_H_
-#define FSCHEMA_LITEMATIC_INTERNAL_ENTITY_H_
-
-#include <vector>
+#ifndef FSCHEMA_IR_MATERIALIZE_H_
+#define FSCHEMA_IR_MATERIALIZE_H_
 
 #include "fschema/base/error.h"
-#include "fschema/base/nbt_reader.h"
-#include "fschema/litematic/types.h"
+#include "fschema/ir/types.h"
+#include "fschema/memory/arena.h"
 
-namespace fschema::litematic::internal {
+namespace fschema::ir {
 
-[[nodiscard]] ParseResult<Entity> ParseEntityCompound(base::ByteReader& reader);
+[[nodiscard]] ParseResult<void> EnsureMaterialized(const Region& reg,
+                                                   memory::Arena& arena);
 
-[[nodiscard]] ParseResult<void> ParseEntities(base::ByteReader& reader,
-                                              std::vector<Entity>& entities);
-
-}  // namespace fschema::litematic::internal
-
-#endif  // FSCHEMA_LITEMATIC_INTERNAL_ENTITY_H_
+}  // namespace fschema::ir
+#endif

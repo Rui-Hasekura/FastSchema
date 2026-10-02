@@ -1,19 +1,17 @@
-/*
- * Copyright (C) 2026 Rui-Hasekura <ruihasekura@gmail.com>
- * SPDX-License-Identifier: Apache-2.0
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright (C) 2026 Rui-Hasekura <ruihasekura@gmail.com>
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #ifndef FSCHEMA_IR_TYPES_H_
 #define FSCHEMA_IR_TYPES_H_
@@ -46,11 +44,6 @@ enum class SourceFormat : std::uint8_t {
   kSchem = 1,
 };
 
-enum class IndexOrder : std::uint8_t {
-  kYzx = 0,  // Litematica default
-  kXzy = 1,  // Sponge Schematic default
-};
-
 enum class PropertyEncoding : std::uint8_t {
   kNone = 0,
   kNbt = 1,     // Litematica: Raw NBT Compound
@@ -61,7 +54,6 @@ struct Extension {
   std::string_view key;
   base::TagType tag_type = base::TagType::End;
   std::span<const std::byte> raw_payload;
-  SourceFormat source_format = SourceFormat::kLitematica;
 };
 
 struct BlockState {
@@ -89,14 +81,7 @@ struct BlockEntity {
   std::span<const std::byte> raw_nbt;
 };
 
-struct PendingTick {
-  std::string_view block;
-  std::array<std::int32_t, 3> pos{};
-  std::int64_t sub_tick = 0;
-  std::int32_t priority = 0;
-  std::int32_t time = 0;
-};
-
+// TODO: implement v2 -> v3 biome conversion (v3 is a 3D superset of v2)
 enum class BiomeLayout : std::uint8_t {
   kNone = 0,
   k2D = 1,  // Sponge Schematic v2
@@ -116,19 +101,37 @@ struct BoundingBox {
   std::int32_t size[3]{};
 };
 
+enum class BlockDataEncoding : std::uint8_t {
+  kNone = 0,
+  kLitematicaLongArray,  // Litematica
+  kSpongeVarint,         // Sponge Varint ByteArray
+};
+
+struct LazyBlockData {
+  std::span<const std::byte> raw_bytes;
+  BlockDataEncoding encoding = BlockDataEncoding::kNone;
+  std::uint32_t bits_per_block = 0;  // For Litematica
+  std::size_t palette_size = 0;      // For format validation
+  bool air_at_zero = false;          // Litematica: palette[0] is air
+  bool palette_pristine = true;      // Whether the palette is unmodified
+};
+
 struct Region {
   std::string_view name;
   BoundingBox bounds;
 
   std::vector<BlockState> palette;
-  memory::NoInitVector<std::uint16_t> block_indices;
-  IndexOrder index_order = IndexOrder::kYzx;
+
+  // Materialized block indices on demand
+  mutable memory::NoInitVector<std::uint16_t> block_indices;
+  mutable LazyBlockData lazy_source;
+  mutable bool is_materialized = false;
 
   std::vector<Entity> entities;
   std::vector<BlockEntity> block_entities;
 
   // For specific fields.
-  std::vector<Extension> extensions;
+  std::span<const std::byte> raw_compound;
 };
 
 struct Metadata {
@@ -137,7 +140,7 @@ struct Metadata {
   std::string_view author;
 
   // For specific fields.
-  std::vector<Extension> extensions;
+  std::span<const std::byte> raw_compound;
 };
 
 struct Schema {

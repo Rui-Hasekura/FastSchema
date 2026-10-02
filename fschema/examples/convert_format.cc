@@ -30,8 +30,8 @@
 
 #include <cstring>
 #include <filesystem>
-#include <iostream>
 #include <memory>
+#include <print>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -43,6 +43,7 @@
 #include "fschema/ir/schem_handler.h"
 #include "fschema/ir/types.h"
 
+namespace fir = fschema::ir;
 namespace firc = fschema::ir::format;
 
 [[nodiscard]] fir::SourceFormat DetectFormat(
@@ -50,23 +51,24 @@ namespace firc = fschema::ir::format;
   auto ext = path.extension().string();
   if (ext == ".litematic") return fir::SourceFormat::kLitematica;
   if (ext == ".schem") return fir::SourceFormat::kSchem;
-  std::cerr << "Unknown file extension: " << ext
-            << " (expected .litematic or .schem)\n";
+  std::println("Unknown file extension: {} (expected .litematic or .schem)",
+               ext);
   std::exit(1);
 }
 
 int main(int argc, char* argv[]) {
   if (argc < 3) {
-    std::cerr << "Usage: " << argv[0]
-              << " <input> <output> [--target-version <ver>] [--no-compress]\n"
-              << "\nExamples:\n"
-              << "  " << argv[0] << " input.litematic output.schem\n"
-              << "  " << argv[0]
-              << " input.litematic output.schem --target-version 2\n"
-              << "  " << argv[0]
-              << " input.schem output.litematic --target-version 7\n"
-              << "  " << argv[0]
-              << " input.litematic output.litematic --target-version 5\n";
+    std::println(
+        "Usage: {} <input> <output> [--target-version <ver>] [--no-compress]",
+        argv[0]);
+    std::println("\nExamples:");
+    std::println("  {} input.litematic output.schem", argv[0]);
+    std::println("  {} input.litematic output.schem --target-version 2",
+                 argv[0]);
+    std::println("  {} input.schem output.litematic --target-version 7",
+                 argv[0]);
+    std::println("  {} input.litematic output.litematic --target-version 5",
+                 argv[0]);
     return 1;
   }
 
@@ -102,8 +104,8 @@ int main(int argc, char* argv[]) {
   // STEP 1: Read and decompress input file
   auto unpacked = fschema::base::DecompressGzipFile(input_path);
   if (!unpacked) {
-    std::cerr << "Decompress failed: "
-              << fschema::base::ToString(unpacked.error()) << "\n";
+    std::println("Decompress failed: {}",
+                 fschema::base::ToString(unpacked.error()));
     return 1;
   }
 
@@ -113,8 +115,10 @@ int main(int argc, char* argv[]) {
   auto result = firc::Convert(from_fmt, to_fmt, std::move(owner), opts);
   if (!result) {
     const fschema::ParseError& err = result.error();
-    std::cerr << "Convert failed: " << fschema::ToString(err) << " at \""
-              << err.path << "\" (offset: " << err.offset << ")\n";
+    std::println("Convert failed: {} at \"{}\" (offset: {})",
+                 fschema::ToString(err),
+                 err.path,
+                 err.offset);
     return 1;
   }
 
@@ -122,13 +126,15 @@ int main(int argc, char* argv[]) {
   const auto& out_bytes = *result;
   FILE* f = std::fopen(output_path.string().c_str(), "wb");
   if (!f) {
-    std::cerr << "Failed to open output file: " << output_path << "\n";
+    std::println("Failed to open output file: {}", output_path);
     return 1;
   }
   std::fwrite(out_bytes.data(), 1, out_bytes.size(), f);
   std::fclose(f);
 
-  std::cout << "Converted: " << input_path << " → " << output_path << " ("
-            << out_bytes.size() << " bytes)\n";
+  std::println("Converted: {} → {} ({} bytes)",
+               input_path,
+               output_path,
+               out_bytes.size());
   return 0;
 }

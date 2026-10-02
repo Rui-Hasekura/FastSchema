@@ -17,8 +17,8 @@
 //
 // Usage: parse_litematic <file.litematic>
 
-#include <iostream>
 #include <memory>
+#include <print>
 #include <vector>
 
 #include "fschema/base/compressor.h"
@@ -31,15 +31,14 @@ namespace fl = fschema::litematic;
 
 int main(int argc, char* argv[]) {
   if (argc < 2) {
-    std::cerr << "Usage: " << argv[0] << " <file.litematic>\n";
+    std::println("Usage: {} <file.litematic>", argv[0]);
     return 1;
   }
 
   // STEP 1: Decompression
   auto unpacked_bytes = fb::DecompressGzipFile(argv[1]);
   if (!unpacked_bytes) {
-    std::cerr << "Decompress failed: " << fb::ToString(unpacked_bytes.error())
-              << "\n";
+    std::println("Decompress failed: {}", fb::ToString(unpacked_bytes.error()));
     return 1;
   }
 
@@ -50,27 +49,33 @@ int main(int argc, char* argv[]) {
 
   if (!result) {
     const fschema::ParseError& err = result.error();
-    std::cerr << "Parse failed: " << fschema::ToString(err) << " at \""
-              << err.path << "\" (offset: " << err.offset << ")\n";
+    std::println("Parse failed: {} at \"{}\" (offset: {})",
+                 fschema::ToString(err),
+                 err.path,
+                 err.offset);
     return 1;
   }
 
-  // Success — fully parsed litematic with zero-copy block indices
+  // Success, fully parsed litematic with zero-copy block indices
   const auto& litematic = *result;
-  std::cout << "Name: " << litematic.metadata.name << "\n";
-  std::cout << "Author: " << litematic.metadata.author << "\n";
-  std::cout << "Version: " << static_cast<int>(litematic.version) << "\n";
-  std::cout << "DataVersion: " << litematic.data_version << "\n";
-  std::cout << "Regions: " << litematic.regions.size() << "\n";
-  std::cout << "Total blocks: " << litematic.metadata.total_blocks << "\n";
-  std::cout << "Total volume: " << litematic.metadata.total_volume << "\n";
+  std::println("Name: {}", litematic.metadata.name);
+  std::println("Author: {}", litematic.metadata.author);
+  std::println("Version: {}", static_cast<int>(litematic.version));
+  std::println("DataVersion: {}", litematic.data_version);
+  std::println("Regions: {}", litematic.regions.size());
+  std::println("Total blocks: {}", litematic.metadata.total_blocks);
+  std::println("Total volume: {}", litematic.metadata.total_volume);
 
   for (std::size_t i = 0; i < litematic.regions.size(); ++i) {
     const auto& reg = litematic.regions[i];
-    std::cout << "  Region [" << i << "] \"" << reg.name
-              << "\": " << reg.block_indices.size() << " blocks, "
-              << reg.palette.size() << " palette entries, "
-              << reg.entities.size() << " entities, "
-              << reg.tile_entities.size() << " tile entities\n";
+    std::println(
+        "  Region [{}] \"{}\": {} blocks, {} palette entries, {} entities, {} "
+        "tile entities",
+        i,
+        reg.name,
+        fl::VolumeOf(reg.size),
+        reg.palette.size(),
+        reg.entities.size(),
+        reg.tile_entities.size());
   }
 }

@@ -20,7 +20,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
+#include <print>
 #include <span>
 #include <string>
 #include <vector>
@@ -35,15 +35,7 @@
 
 namespace fb = fschema::base;
 
-#if defined(_WIN32) || defined(_WIN64)
-#  ifndef WIN32_LEAN_AND_MEAN
-#    define WIN32_LEAN_AND_MEAN
-#  endif
-#  ifndef NOMINMAX
-#    define NOMINMAX
-#  endif
-#  include <windows.h>
-#endif
+namespace {
 
 struct TestFile {
   std::string filename;
@@ -71,7 +63,7 @@ struct TestFile {
   const std::filesystem::path dir = fschema::test::GetTestDataDir();
 
   if (!std::filesystem::exists(dir)) {
-    std::cerr << "  [warn] Samples directory not found: " << dir << "\n";
+    std::println("  [warn] Samples directory not found: {}", dir.string());
     return out;
   }
 
@@ -91,10 +83,9 @@ struct TestFile {
     if (r) {
       out.push_back({filename, std::move(*r)});
     } else {
-      // Not gzip-compressed or decompression failed — fall back to raw bytes.
       auto raw_data = ReadFileRaw(path);
       if (raw_data.empty()) {
-        std::cerr << "  [warn] Read error or empty file: " << filename << "\n";
+        std::println("  [warn] Read error or empty file: {}", filename);
         continue;
       }
       out.push_back({filename, std::move(raw_data)});
@@ -106,8 +97,10 @@ struct TestFile {
 static std::vector<TestFile> files = LoadTestFiles();
 
 void PrintErrorFn(const fschema::ParseError& e) {
-  std::cerr << "  [ParseError] " << ToString(e.code) << " at path=\"" << e.path
-            << "\" offset=" << e.offset << "\n";
+  std::println("  [ParseError] {} at path=\"{}\" offset={}",
+               ToString(e.code),
+               e.path,
+               e.offset);
 }
 
 static void BM_PureNbtParse(benchmark::State& st) {
@@ -133,19 +126,20 @@ static void BM_PureNbtParse(benchmark::State& st) {
       benchmark::Counter(static_cast<double>(bytes_size) / (1024.0 * 1024.0));
 }
 
+}  // namespace
+
 int main(int argc, char* argv[]) {
 #if defined(_WIN32) || defined(_WIN64)
   SetConsoleOutputCP(CP_UTF8);
   SetConsoleCP(CP_UTF8);
 #endif
 
-  std::cout << "Highway supported: 0x" << std::hex << hwy::SupportedTargets()
-            << std::dec << "\n";
+  std::println("Highway supported: 0x{:x}", hwy::SupportedTargets());
 
   bool all_ok = true;
   for (std::size_t i = 0; i < files.size(); ++i) {
     const auto& tf = files[i];
-    std::cout << "\n══════ Verify: " << tf.filename << " ════\n";
+    std::println("\n══════ Verify: {} ════", tf.filename);
 
     std::span<const std::byte> byte_span(tf.bytes);
     fb::DecodeLimits limits;
@@ -158,14 +152,13 @@ int main(int argc, char* argv[]) {
       continue;
     }
 
-    std::cout << "  Bytes Consumed: " << reader.pos() << " / "
-              << tf.bytes.size() << "\n";
+    std::println("  Bytes Consumed: {} / {}", reader.pos(), tf.bytes.size());
     if (reader.pos() != tf.bytes.size()) {
-      std::cerr << "  [warn] Reader did not consume all bytes!\n";
+      std::println("  [warn] Reader did not consume all bytes!");
       all_ok = false;
     }
   }
-  std::cout << "Verify: " << (all_ok ? "PASS" : "FAIL") << "\n\n";
+  std::println("Verify: {}", all_ok ? "PASS" : "FAIL");
 
   ::benchmark::Initialize(&argc, argv);
 

@@ -15,9 +15,13 @@
 
 #include "fschema/ir/litematic_handler.h"
 
+#include <array>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <span>
+#include <utility>
 #include <vector>
 
 #include "absl/time/clock.h"
@@ -25,10 +29,11 @@
 #include "fschema/base/nbt_writer.h"
 #include "fschema/ir/internal/bit_pack.h"
 #include "fschema/ir/internal/codec_utils.h"
+#include "fschema/ir/materialize.h"
 #include "fschema/litematic/parse.h"
 
 #if defined(__AVX2__)
-#include <immintrin.h>
+#  include <immintrin.h>
 #endif
 
 namespace fschema::ir::format {
@@ -42,11 +47,12 @@ inline bool ShouldUseExtensions(const Schema& ir, std::int32_t target_version) {
   return effective_version == ir.source_version;
 }
 
-inline void WriteExtensions(base::NbtWriter& writer,
-                            const std::vector<Extension>& extensions) {
-  for (const auto& ext : extensions) {
-    writer.WriteRawField(ext.key, ext.tag_type, ext.raw_payload);
-  }
+[[nodiscard]] inline std::uint32_t PaletteBpb(std::size_t palette_size) {
+  std::uint32_t bpb =
+      palette_size <= 4
+          ? 2
+          : static_cast<std::uint32_t>(std::bit_width(palette_size - 1));
+  return bpb < 2 ? 2 : bpb;
 }
 
 }  // namespace
@@ -64,11 +70,11 @@ constexpr std::uint16_t kAirIdxSentinel = 0xFFFF;
 ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
     const Schema& ir,
     const EncodeOptions& options) const {
-
   std::size_t nbt_hint = 0;
   for (const auto& reg : ir.regions) {
-    nbt_hint +=
-        reg.block_indices.size() * 2;  // uint16 * 2 bytes (over-estimate)
+    nbt_hint += static_cast<std::size_t>(reg.bounds.size[0]) *
+                static_cast<std::size_t>(reg.bounds.size[1]) *
+                static_cast<std::size_t>(reg.bounds.size[2]) * 2;
     nbt_hint += reg.palette.size() * 128;
     nbt_hint += reg.block_entities.size() * 256;
     nbt_hint += reg.entities.size() * 256;
@@ -103,7 +109,10 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
       total_volume += static_cast<std::int64_t>(std::abs(reg.bounds.size[0])) *
                       static_cast<std::int64_t>(std::abs(reg.bounds.size[1])) *
                       static_cast<std::int64_t>(std::abs(reg.bounds.size[2]));
-      if (reg.palette.empty() || reg.block_indices.empty()) continue;
+      auto mat_res = ir::EnsureMaterialized(reg, *ir.arena);
+      if (!mat_res) return std::unexpected(mat_res.error());
+
+      if (reg.block_indices.empty()) continue;
       std::vector<std::uint8_t> is_air(reg.palette.size(), 0);
       for (std::size_t i = 0; i < reg.palette.size(); ++i) {
         const auto& n = reg.palette[i].name;
@@ -134,7 +143,11 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
   if (use_ext) {
     // Round-trip: write extensions
     // (Description, RegionCount, TotalBlocks, etc.)
-    WriteExtensions(writer, ir.metadata.extensions);
+    if (!ir.metadata.raw_compound.empty()) {
+      auto res = internal::FilterAndWriteFields(
+          ir.metadata.raw_compound, internal::kLitMetadataSkip, writer);
+      if (!res) return std::unexpected(res.error());
+    }
   } else {
     // Cross-format: compute all format-specific fields
     writer.WriteStringField("Description", "");
@@ -179,8 +192,10 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
     writer.WriteIntField("z", reg.bounds.size[2]);
     writer.EndCompoundField();
 
+    // Palette & index preparation
     std::vector<ir::BlockState> out_palette;
-    std::vector<std::uint16_t> out_indices(reg.block_indices.size());
+    std::unique_ptr<std::uint16_t[]> remapped;
+    std::span<const std::uint16_t> pack_src;
 
     std::uint16_t air_idx = kAirIdxSentinel;
     for (std::size_t i = 0; i < reg.palette.size(); ++i) {
@@ -192,17 +207,31 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
       }
     }
 
-    if (air_idx == 0) {
+    const bool block_states_passthrough =
+        reg.lazy_source.encoding ==
+            ir::BlockDataEncoding::kLitematicaLongArray &&
+        reg.lazy_source.palette_pristine && reg.lazy_source.air_at_zero &&
+        PaletteBpb(reg.palette.size()) == reg.lazy_source.bits_per_block &&
+        !reg.lazy_source.raw_bytes.empty();
+
+    if (block_states_passthrough) {
       out_palette.assign(reg.palette.begin(), reg.palette.end());
-      std::memcpy(out_indices.data(),
-                  reg.block_indices.data(),
-                  reg.block_indices.size() * sizeof(std::uint16_t));
+    } else if (air_idx == 0) {
+      auto mat_res = ir::EnsureMaterialized(reg, *ir.arena);
+      if (!mat_res) return std::unexpected(mat_res.error());
+      out_palette.assign(reg.palette.begin(), reg.palette.end());
+      pack_src = std::span<const std::uint16_t>(reg.block_indices.data(),
+                                                reg.block_indices.size());
     } else if (air_idx != kAirIdxSentinel) {
+      auto mat_res = ir::EnsureMaterialized(reg, *ir.arena);
+      if (!mat_res) return std::unexpected(mat_res.error());
+
       out_palette.assign(reg.palette.begin(), reg.palette.end());
       std::swap(out_palette[0], out_palette[air_idx]);
       const std::size_t n = reg.block_indices.size();
+      remapped = std::make_unique_for_overwrite<std::uint16_t[]>(n);
       const std::uint16_t* src = reg.block_indices.data();
-      std::uint16_t* dst = out_indices.data();
+      std::uint16_t* dst = remapped.get();
 
 #if defined(__AVX2__)
       const __m256i v_zero = _mm256_setzero_si256();
@@ -233,16 +262,25 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
                                     : idx;
       }
 #endif
+      pack_src = std::span<const std::uint16_t>(dst, n);
     } else {
+      auto mat_res = ir::EnsureMaterialized(reg, *ir.arena);
+      if (!mat_res) return std::unexpected(mat_res.error());
+
       if (reg.palette.size() >= 65536) {
         return std::unexpected(ParseError{
             ParseError::Code::OversizedPayload, "PaletteOverflow", 0});
       }
       out_palette.push_back({"minecraft:air", {}, PropertyEncoding::kNone});
       for (const auto& bs : reg.palette) out_palette.push_back(bs);
-      for (std::size_t i = 0; i < reg.block_indices.size(); ++i) {
-        out_indices[i] = static_cast<std::uint16_t>(reg.block_indices[i] + 1);
+      const std::size_t n = reg.block_indices.size();
+      remapped = std::make_unique_for_overwrite<std::uint16_t[]>(n);
+      const std::uint16_t* src = reg.block_indices.data();
+      // +1 shift; auto-vectorizes (u16 add).
+      for (std::size_t i = 0; i < n; ++i) {
+        remapped[i] = static_cast<std::uint16_t>(src[i] + 1);
       }
+      pack_src = std::span<const std::uint16_t>(remapped.get(), n);
     }
 
     writer.BeginListField(
@@ -278,18 +316,20 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
     }
     writer.EndListField();
 
-    std::uint32_t bpb = out_palette.size() <= 4
-                            ? 2
-                            : static_cast<std::uint32_t>(
-                                  std::bit_width(out_palette.size() - 1));
-    if (bpb < 2) bpb = 2;
-    auto longs = internal::PackIndicesLitematic(
-        std::span<const std::uint16_t>(out_indices.data(), out_indices.size()),
-        bpb);
-    writer.WriteLongArrayField(
-        "BlockStates",
-        std::span<const std::int64_t>(
-            reinterpret_cast<const std::int64_t*>(longs.data()), longs.size()));
+    const std::uint32_t bpb = PaletteBpb(out_palette.size());
+
+    // BlockStates
+    if (block_states_passthrough) {
+      writer.WriteLongArrayFieldBE("BlockStates", reg.lazy_source.raw_bytes);
+    } else {
+      const std::size_t packed_bytes =
+          internal::LitematicLongCount(pack_src.size(), bpb) * 8;
+      auto packed = std::make_unique_for_overwrite<std::byte[]>(packed_bytes);
+      internal::PackIndicesLitematicInto(packed.get(), pack_src, bpb);
+      writer.WriteLongArrayFieldBE(
+          "BlockStates",
+          std::span<const std::byte>(packed.get(), packed_bytes));
+    }
 
     // TileEntities (common)
     writer.BeginListField(
@@ -302,7 +342,7 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
         writer.WriteIntField("y", te.block_position[1]);
         writer.WriteIntField("z", te.block_position[2]);
         return internal::FilterAndWriteTileEntityFields(
-            te.raw_nbt, internal::kTeSkip, writer);
+            te.raw_nbt, internal::kBlockEntitySkip, writer);
       };
       if (version == 7) {
         writer.BeginCompoundField("components");
@@ -348,7 +388,11 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
     if (use_ext) {
       // Round-trip: write extensions
       // (PendingBlockTicks, PendingFluidTicks, etc.)
-      WriteExtensions(writer, reg.extensions);
+      if (!reg.raw_compound.empty()) {
+        auto res = internal::FilterAndWriteFields(
+            reg.raw_compound, internal::kLitRegionSkip, writer);
+        if (!res) return std::unexpected(res.error());
+      }
     } else {
       // Cross-format: write empty pending tick lists
       writer.BeginListField("PendingBlockTicks", base::TagType::Compound, 0);
@@ -377,14 +421,7 @@ ParseResult<Schema> LitematicaHandler::DecodeFromParsed(
   // Common metadata
   ir.metadata.name = src.metadata.name;
   ir.metadata.author = src.metadata.author;
-
-  // Metadata extensions
-  // (format-specific raw pass-through)
-  ir.metadata.extensions.reserve(src.metadata.extensions.size());
-  for (const auto& rf : src.metadata.extensions) {
-    ir.metadata.extensions.push_back(
-        {rf.name, rf.type, rf.payload, SourceFormat::kLitematica});
-  }
+  ir.metadata.raw_compound = src.metadata.raw_compound;
 
   // Regions
   ir.regions.reserve(src.regions.size());
@@ -408,21 +445,16 @@ ParseResult<Schema> LitematicaHandler::DecodeFromParsed(
       out.prop_encoding = PropertyEncoding::kNbt;
       r.palette.push_back(std::move(out));
     }
-    r.block_indices = std::move(reg.block_indices);
-    r.index_order = IndexOrder::kYzx;
-
+    r.lazy_source.raw_bytes = reg.raw_block_states;
+    r.lazy_source.encoding = ir::BlockDataEncoding::kLitematicaLongArray;
+    r.lazy_source.bits_per_block = reg.raw_block_states_bpb;
+    r.lazy_source.palette_size = reg.palette.size();
+    r.lazy_source.air_at_zero =
+        !reg.palette.empty() && (reg.palette[0].name == "minecraft:air" ||
+                                 reg.palette[0].name == "minecraft:cave_air" ||
+                                 reg.palette[0].name == "minecraft:void_air");
+    r.lazy_source.palette_pristine = true;
     r.entities.reserve(reg.entities.size());
-    for (auto& ent : reg.entities) {
-      Entity e;
-      e.id = ent.id;
-      e.position = ent.position;
-      e.motion = ent.motion;
-      e.rotation = ent.rotation;
-      e.raw_nbt = ent.raw_nbt;
-      r.entities.push_back(std::move(e));
-    }
-
-    r.block_entities.reserve(reg.tile_entities.size());
     for (auto& te : reg.tile_entities) {
       BlockEntity be;
       be.id = te.id;
@@ -430,14 +462,7 @@ ParseResult<Schema> LitematicaHandler::DecodeFromParsed(
       be.raw_nbt = te.raw_nbt;
       r.block_entities.push_back(std::move(be));
     }
-
-    // Region extensions
-    // (PendingBlockTicks, etc.)
-    r.extensions.reserve(reg.extensions.size());
-    for (const auto& rf : reg.extensions) {
-      r.extensions.push_back(
-          {rf.name, rf.type, rf.payload, SourceFormat::kLitematica});
-    }
+    r.raw_compound = reg.raw_compound;
 
     ir.regions.push_back(std::move(r));
   }

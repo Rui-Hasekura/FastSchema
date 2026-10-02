@@ -28,6 +28,7 @@
 #include "fschema/base/limits.h"
 #include "fschema/base/nbt_reader.h"
 #include "fschema/memory/arena.h"
+#include "fschema/schem/internal/block_data.h"
 #include "fschema/schem/internal/root.h"
 #include "fschema/schem/types.h"
 #include "fschema/tests/testdata_util.h"
@@ -80,45 +81,46 @@ TEST_P(SchemParseTest, ParsesSuccessfullyAndValidatesStructure) {
       << "Parse failed for " << file_path
       << " Code: " << static_cast<int>(result.error().code);
 
-  // Volume / block_indices consistency
-  const std::uint64_t expected_vol = fsc::VolumeOf(schematic);
-  EXPECT_EQ(schematic.block_indices.size(), expected_vol)
-      << "block_indices size mismatch with volume";
-
   // Palette sanity
   EXPECT_FALSE(schematic.palette.empty()) << "Palette is empty";
 
+  // Biome consistency (if present)
+  if (!schematic.raw_biome_data.empty()) {
+    EXPECT_FALSE(schematic.biome_palette.empty())
+        << "biome_palette is empty but raw_biome_data is not";
+  }
+
+  // Validate materialized block indices
+  const std::uint64_t expected_vol = fsc::VolumeOf(schematic);
+  auto res = fsc::internal::DecodeVarintArray(schematic.raw_block_data,
+                                              expected_vol,
+                                              schematic.palette.size(),
+                                              *schematic.arena);
+  ASSERT_TRUE(res.has_value()) << "DecodeVarintArray failed";
+  EXPECT_EQ(res->size(), expected_vol)
+      << "block_indices size mismatch with volume";
+
   // Sampled palette-index bounds check
-  const std::uint64_t n = schematic.block_indices.size();
+  const std::uint64_t n = res->size();
   constexpr std::uint64_t stride = 4096;
   for (std::uint64_t j = 0; j < n; j += stride) {
-    EXPECT_LT(schematic.block_indices[j], schematic.palette.size())
+    EXPECT_LT((*res)[j], schematic.palette.size())
         << "PaletteIndexOutOfRange at block " << j;
   }
 
-  // Biome consistency (if present)
-  if (!schematic.biome_indices.empty()) {
-    const std::uint64_t biome_expected = fsc::BiomeVolumeOf(schematic);
-    EXPECT_EQ(schematic.biome_indices.size(), biome_expected)
-        << "biome_indices size mismatch with biome volume";
-    EXPECT_FALSE(schematic.biome_palette.empty())
-        << "biome_palette is empty but biome_indices is not";
-  }
-
   // Non-air count
-  if (!schematic.palette.empty() && !schematic.block_indices.empty()) {
+  if (!schematic.palette.empty() && !res->empty()) {
     std::vector<std::uint64_t> counts(schematic.palette.size(), 0);
-    for (std::uint16_t idx : schematic.block_indices) {
+    for (std::uint16_t idx : *res) {
       ++counts[idx];
     }
     std::uint64_t non_air = 0;
     for (std::size_t k = 0; k < schematic.palette.size(); ++k) {
-      if (counts[k] > 0 && !fschema::base::IsAirVariant(schematic.palette[k].name)) {
+      if (counts[k] > 0 &&
+          !fschema::base::IsAirVariant(schematic.palette[k].name)) {
         non_air += counts[k];
       }
     }
-    // Just log; schem format doesn't carry a metadata total_blocks field
-    // to compare against (unlike litematic).
     EXPECT_GT(non_air, 0u) << "Schematic has zero non-air blocks";
   }
 }

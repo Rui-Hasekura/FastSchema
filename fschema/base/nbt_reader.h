@@ -76,7 +76,6 @@ class ByteReader {
   [[nodiscard]] ParseResult<std::span<const T>> ReadArraySpan(
       std::size_t max_allowed_elements) noexcept;
 
-  // Span truncate
   [[nodiscard]] ParseResult<std::span<const std::byte>> PeekRaw(
       std::size_t length) noexcept;
 

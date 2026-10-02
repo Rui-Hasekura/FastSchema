@@ -23,8 +23,8 @@ namespace fschema::base {
 
 struct DecodeLimits {
   // Input
-  std::size_t max_input_bytes = 1ULL << 30;   // 1 GiB After compression
-  std::size_t max_decompressed = 4ULL << 30;  // 4 GiB After decompression
+  std::size_t max_input_bytes = 1ULL << 30;   // 1 GiB after compression
+  std::size_t max_decompressed = 4ULL << 30;  // 4 GiB after decompression
 
   // NBT Tree
   std::size_t max_nbt_depth = 64;

@@ -57,7 +57,7 @@ struct Metadata {
   // PreviewData is an IntArray, stored as a raw span, decoded by downstream if
   // needed.
   std::span<const std::byte> preview_data;  // May be empty
-  std::vector<RawField> extensions;
+  std::span<const std::byte> raw_compound;
 };
 
 // Palette
@@ -107,9 +107,6 @@ struct Region {
   std::array<std::int32_t, 3> size{};
 
   std::vector<BlockState> palette;
-  // Unpacked block indices for each block in the region.
-  // Length = |x| * |y| * |z|; values in [0, palette.size())
-  memory::NoInitVector<std::uint16_t> block_indices;
   std::vector<Entity> entities;
   std::vector<TileEntity> tile_entities;
 
@@ -119,7 +116,9 @@ struct Region {
   std::span<const std::byte> pending_block_entities;
   std::span<const std::byte> pending_entities;
 
-  std::vector<RawField> extensions;
+  std::span<const std::byte> raw_block_states;
+  std::span<const std::byte> raw_compound;
+  std::uint32_t raw_block_states_bpb = 0;
 };
 
 // Up-level
@@ -145,16 +144,6 @@ struct Litematic {
                  : static_cast<std::uint64_t>(v);
   };
   return abs_dim(size[0]) * abs_dim(size[1]) * abs_dim(size[2]);
-}
-
-// Get blockname from block_indices + palette
-[[nodiscard]] inline std::string_view BlockNameAt(
-    const Region& region,
-    std::uint64_t index) noexcept {
-  if (index >= region.block_indices.size()) return {};
-  const std::uint16_t palette_idx = region.block_indices[index];
-  if (palette_idx >= region.palette.size()) return {};
-  return region.palette[palette_idx].name;
 }
 
 }  // namespace fschema::litematic

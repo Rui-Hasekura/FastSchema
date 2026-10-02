@@ -27,8 +27,9 @@ namespace fschema::litematic::internal {
 [[nodiscard]] ParseResult<void> ParseMetadata(base::ByteReader& reader,
                                               Litematic& out) {
   auto& meta = out.metadata;
+  const std::size_t compound_start = reader.pos();
 
-  return ForEachCompoundField(
+  auto result = ForEachCompoundField(
       reader, [&](std::string_view name, base::TagType t) -> ParseResult<void> {
         // Common fields
         if (name == "Name" && t == base::TagType::String) {
@@ -102,15 +103,13 @@ namespace fschema::litematic::internal {
           meta.preview_data = *span;
           reader.advance(total);
         } else {
-          auto s = base::SkipPayload(reader, t);
-          if (!s) return std::unexpected(s.error());
+          return base::SkipPayload(reader, t);
         }
-
-        // Capture raw payload as extension
-        // (covers all format-specific + unknown)
-        meta.extensions.push_back({name, t, reader.SpanFrom(payload_start)});
         return {};
       });
+  if (!result) return std::unexpected(result.error());
+  meta.raw_compound = reader.SpanFrom(compound_start);
+  return {};
 }
 
 }  // namespace fschema::litematic::internal

@@ -24,6 +24,7 @@
 #include <cstring>
 #include <type_traits>
 
+#include "fschema/base/port.h"
 #include "hwy/foreach_target.h"
 #include "hwy/highway.h"
 
@@ -34,7 +35,9 @@ namespace hn = hwy::HWY_NAMESPACE;
 namespace {
 
 template <std::size_t kBytes>
-void CopyAndBswapImpl(const std::byte* src, std::byte* dst, std::size_t count) {
+void CopyAndBswapImpl(const std::byte* FSCHEMA_RESTRICT src,
+                      std::byte* FSCHEMA_RESTRICT dst,
+                      std::size_t count) {
   static_assert(kBytes == 4 || kBytes == 8,
                 "Only 4- and 8-byte swaps are supported");
   using Scalar = std::conditional_t<kBytes == 4, std::int32_t, std::int64_t>;

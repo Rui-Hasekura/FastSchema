@@ -25,8 +25,10 @@
 #include "fschema/base/block_utils.h"
 #include "fschema/base/compressor.h"
 #include "fschema/base/error.h"
+#include "fschema/litematic/internal/block_states.h"
 #include "fschema/litematic/parse.h"
 #include "fschema/litematic/types.h"
+#include "fschema/memory/arena.h"
 #include "fschema/tests/testdata_util.h"
 
 namespace fs = std::filesystem;
@@ -94,28 +96,40 @@ TEST_P(LitematicParseTest, ParsesSuccessfullyAndValidatesStructure) {
     const auto& region = litematic.regions[i];
 
     const std::uint64_t expected_vol = ExpectedVolume(region.size);
-    EXPECT_EQ(region.block_indices.size(), expected_vol)
-        << "Region [" << i << "] block_indices size mismatch with volume";
 
     EXPECT_FALSE(region.palette.empty())
         << "Region [" << i << "] has empty palette";
 
-    const std::uint64_t n = region.block_indices.size();
+    if (expected_vol == 0) continue;
+
+    const std::uint32_t bpb = fl::internal::BitsPerBlock(region.palette.size());
+    auto unpack_res = fl::internal::UnpackIndicesFused(region.raw_block_states,
+                                                       bpb,
+                                                       expected_vol,
+                                                       region.palette.size(),
+                                                       *litematic.arena);
+    ASSERT_TRUE(unpack_res.has_value()) << "Unpack failed for region " << i;
+
+    EXPECT_EQ(unpack_res->size(), expected_vol)
+        << "Region [" << i << "] block_indices size mismatch with volume";
+
+    const std::uint64_t n = unpack_res->size();
     constexpr std::uint64_t stride = 4096;
     for (std::uint64_t j = 0; j < n; j += stride) {
-      EXPECT_LT(region.block_indices[j], region.palette.size())
+      EXPECT_LT((*unpack_res)[j], region.palette.size())
           << "Region [" << i << "] PaletteIndexOutOfRange at block " << j;
     }
 
-    if (!region.palette.empty() && !region.block_indices.empty()) {
+    if (!region.palette.empty() && !unpack_res->empty()) {
       std::vector<std::uint64_t> counts(region.palette.size(), 0);
-      for (std::uint32_t idx : region.block_indices) {
+      for (std::uint16_t idx : *unpack_res) {
         ++counts[idx];
       }
 
       std::uint64_t non_air = 0;
       for (std::size_t k = 0; k < region.palette.size(); ++k) {
-        if (counts[k] > 0 && !fschema::base::IsAirVariant(region.palette[k].name)) {
+        if (counts[k] > 0 &&
+            !fschema::base::IsAirVariant(region.palette[k].name)) {
           non_air += counts[k];
         }
       }

@@ -16,40 +16,38 @@ But... How fast is it?
 
 ### Benchmark
 
-**Environment & Toolchain:** Intel Core i5-12400F (Alder Lake-S, 6C12T), DDR4-3200 8GB×2. Windows 11 24H2, Clang-CL 22.1.3 -O2.
+> **No benchmark comparisons are provided here, as differences in output data structures and parsing semantics make direct performance comparisons potentially misleading.**
 
-#### Litematic Parsing
+**Environment & Toolchain:** Intel Core i5-12400F (Alder Lake-S, 6C/12T), DDR4-3200 8GB×2. Windows 11 24H2(with huge pages), Clang-CL 22.1.3 -O2.
 
-Full extraction of Litematic structure, including delayed SIMD unpacking of `BlockStates` into `uint16_t` block indices.
+**Input Data:**
 
-| Metric   | Wall Time | CPU Time | Iterations | Throughput  | Input Size  | Total Blocks |
-| -------- | --------- | -------- | ---------- | ----------- | ----------- | ------------ |
-| **Mean** | 44.3 ms   | 31.5 ms  | 105        | 8.656 GiB/s | 279.642 MiB | 260.297M     |
+- `.litematic` Input Size: 279.642 MiB, Total Blocks: 260.297M, Palette Max: 465
+- `.schem` Input Size: 248.778 MiB, Total Blocks: 260.297M, Palette Max: 466
+- `.nbt` Input Size: 279.642 MiB
 
-#### Pure NBT Parsing
+#### Pure Parsing & Unpacking
 
-Building the generic NBT tree from the decompressed memory buffer.
+| Types                            | Wall Time | CPU Time | Iterations | Throughput    |
+|:-------------------------------- |:--------- |:-------- |:---------- |:------------- |
+| Pure NBT Parsing                 | 1.711 ms  | 1.680 ms | 1600       | 162.583 GiB/s |
+| Litematic Parsing (ImmutableAPI) | 0.535 ms  | 0.522 ms | 5271       | 523.435 GiB/s |
+| Litematic Unpack (MutableAPI)    | 53.4 ms   | 42.8 ms  | 69         | 6.372 GiB/s   |
+| Schem Parsing (ImmutableAPI)     | 3.77 ms   | 3.72 ms  | 747        | 65.252 GiB/s  |
+| Schem Unpack (MutableAPI)        | 32.1 ms   | 26.9 ms  | 138        | 9.002 GiB/s   |
 
-| Metric   | Wall Time | CPU Time | Iterations | Throughput    | Input Size  |
-| -------- | --------- | -------- | ---------- | ------------- | ----------- |
-| **Mean** | 1.697 ms  | 1.638 ms | 1707       | 166.672 GiB/s | 279.642 MiB |
+#### Format Conversion
 
-> **Note on NBT Throughput:** The extraordinarily high throughput (166.672 GiB/s) in the Pure NBT benchmark is not a raw byte-level processing speed. In the current NBT parser implementation, large payloads like `ByteArray`, `IntArray`, and `LongArray` are handled via **zero-copy** `std::span`. The parser simply reads the length prefix and uses `ByteReader::advance()` to skip over the data block, retaining it as a raw byte span in the `NbtPayload`. For files like `.litematic` where the vast majority of the volume is a single `LongArray` (BlockStates), `ParseNbt` performs minimal actual byte-level work and tree construction, spending most of its time just advancing pointers. The heavy computation is deferred to the Litematic parsing stage, where the `LongArray` is actually unpacked into `uint16_t` indices via SIMD.
+| Types                                  | Wall Time | CPU Time | Iterations | Throughput    |
+|:-------------------------------------- |:--------- |:-------- |:---------- |:------------- |
+| CrossConvert (Litematic -> Schem)      | 209 ms    | 201 ms   | 36         | 1.359 GiB/s   |
+| RoundTripSame (Litematic -> Litematic) | 116 ms    | 113 ms   | 58         | 2.419 GiB/s   |
+| CrossConvert (Schem -> Litematic)      | 357 ms    | 339 ms   | 20         | 733.723 MiB/s |
+| RoundTripSame (Schem -> Schem)         | 112 ms    | 110 ms   | 61         | 2.216 GiB/s   |
+| CrossConvertGzip (Litematic -> Schem)  | 620 ms    | 600 ms   | 8          | 466.374 MiB/s |
+| CrossConvertGzip (Schem -> Litematic)  | 825 ms    | 803 ms   | 5          | 309.762 MiB/s |
 
-#### Schem Parsing
-
-Full extraction of Sponge Schematic structure, including delayed varint decoding of `BlockData` into `uint16_t` block indices. Utilizes an optimized SIMD scanning kernel that detects and skips large continuous Air (`0x00`) blocks to bypass memory write bottlenecks.
-
-| Metric   | Wall Time | CPU Time | Iterations | Throughput    | Input Size  | Total Blocks |
-| -------- | --------- | -------- | ---------- | ------------- | ----------- | ------------ |
-| **Mean** | 28.0 ms   | 22.8 ms  | 100        | 10.6497 GiB/s | 248.778 MiB | 260.297M     |
-
-#### Format Conversion (CrossConvert & RoundTrip)
-
-| Benchmark Task    | Wall Time | CPU Time | Iterations | Throughput    | Input Size  |
-|:----------------- |:--------- |:-------- |:---------- |:------------- |:----------- |
-| **CrossConvert**  | 1542 ms   | 1456 ms  | 5          | 250.519 MiB/s | 364.819 MiB |
-| **RoundTripSame** | 2483 ms   | 2464 ms  | 3         | 148.087 MiB/s | 364.819 MiB |
+> Gzip performance is mostly limited by Deflate itself. `libdeflate` is already highly optimized, and the results are close to the practical limit for this workload on the test machine.
 
 ### How to use
 

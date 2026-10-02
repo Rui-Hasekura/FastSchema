@@ -41,9 +41,17 @@ NbtWriter::~NbtWriter() = default;
 
 void NbtWriter::EnsureCapacity(std::size_t extra) {
   if (buffer_.size() + extra > buffer_.capacity()) {
-    // 1.5x growth strategy or exact required capacity (whichever is larger)
+    // 2x growth strategy or exact required capacity (whichever is larger)
     buffer_.reserve(std::max(buffer_.capacity() * 2, buffer_.size() + extra));
   }
+}
+
+void NbtWriter::AppendBytes(const std::byte* p, std::size_t n) {
+  if (n == 0) return;
+  // One-shot growth: a large append triggers a single reallocation sized to
+  // hold it (plus the small accumulated prefix), not a doubling chain.
+  EnsureCapacity(n);
+  buffer_.insert(buffer_.end(), p, p + n);
 }
 
 void NbtWriter::WriteTagId(TagType type) {
@@ -55,15 +63,11 @@ void NbtWriter::WriteName(std::string_view name) {
   if (name.size() > 65535) [[unlikely]] {
     name = name.substr(0, 65535);
   }
-  const std::size_t total = 2 + name.size();
-  const std::size_t old = buffer_.size();
-  EnsureCapacity(total);
-  buffer_.resize(old + total);
   const std::uint16_t len_be =
       std::byteswap(static_cast<std::uint16_t>(name.size()));
-  std::memcpy(buffer_.data() + old, &len_be, 2);
+  AppendBytes(reinterpret_cast<const std::byte*>(&len_be), 2);
   if (!name.empty()) {
-    std::memcpy(buffer_.data() + old + 2, name.data(), name.size());
+    AppendBytes(reinterpret_cast<const std::byte*>(name.data()), name.size());
   }
 }
 
@@ -81,10 +85,7 @@ void NbtWriter::WriteScalarBE(T value) {
     bits = std::byteswap(bits);
     value = std::bit_cast<T>(bits);
   }
-  const std::size_t old = buffer_.size();
-  EnsureCapacity(sizeof(T));
-  buffer_.resize(old + sizeof(T));
-  std::memcpy(buffer_.data() + old, &value, sizeof(T));
+  AppendBytes(reinterpret_cast<const std::byte*>(&value), sizeof(T));
 }
 
 // Explicit template instantiations
@@ -185,12 +186,8 @@ void NbtWriter::WriteByteArrayField(std::string_view name,
   WriteTagId(TagType::ByteArray);
   WriteName(name);
   WriteScalarBE<std::int32_t>(static_cast<std::int32_t>(data.size()));
-
-  std::size_t old_size = buffer_.size();
-  EnsureCapacity(data.size());
-  buffer_.resize(old_size + data.size());
   if (!data.empty()) {
-    std::memcpy(buffer_.data() + old_size, data.data(), data.size());
+    AppendBytes(reinterpret_cast<const std::byte*>(data.data()), data.size());
   }
 }
 
@@ -200,17 +197,15 @@ void NbtWriter::WriteIntArrayField(std::string_view name,
   WriteName(name);
   WriteScalarBE<std::int32_t>(static_cast<std::int32_t>(data.size()));
 
-  std::size_t bytes = data.size() * 4;
-  std::size_t old_size = buffer_.size();
+  const std::size_t bytes = data.size() * 4;
+  if (bytes == 0) return;
+  // Small arrays (metadata) only: resize + in-place bswap is fine here.
+  const std::size_t old_size = buffer_.size();
   EnsureCapacity(bytes);
   buffer_.resize(old_size + bytes);
-
-  if (!data.empty()) {
-    const std::byte* src = reinterpret_cast<const std::byte*>(data.data());
-    std::int32_t* dst =
-        reinterpret_cast<std::int32_t*>(buffer_.data() + old_size);
-    CopyAndBswap32(src, dst, data.size());
-  }
+  CopyAndBswap32(reinterpret_cast<const std::byte*>(data.data()),
+                 reinterpret_cast<std::int32_t*>(buffer_.data() + old_size),
+                 data.size());
 }
 
 void NbtWriter::WriteLongArrayField(std::string_view name,
@@ -219,17 +214,24 @@ void NbtWriter::WriteLongArrayField(std::string_view name,
   WriteName(name);
   WriteScalarBE<std::int32_t>(static_cast<std::int32_t>(data.size()));
 
-  std::size_t bytes = data.size() * 8;
-  std::size_t old_size = buffer_.size();
+  const std::size_t bytes = data.size() * 8;
+  if (bytes == 0) return;
+  const std::size_t old_size = buffer_.size();
   EnsureCapacity(bytes);
   buffer_.resize(old_size + bytes);
+  CopyAndBswap64(reinterpret_cast<const std::byte*>(data.data()),
+                 reinterpret_cast<std::int64_t*>(buffer_.data() + old_size),
+                 data.size());
+}
 
-  if (!data.empty()) {
-    const std::byte* src = reinterpret_cast<const std::byte*>(data.data());
-    std::int64_t* dst =
-        reinterpret_cast<std::int64_t*>(buffer_.data() + old_size);
-    CopyAndBswap64(src, dst, data.size());
-  }
+void NbtWriter::WriteLongArrayFieldBE(std::string_view name,
+                                      std::span<const std::byte> payload) {
+  assert(payload.size() % 8 == 0 &&
+         "WriteLongArrayFieldBE: payload must be a whole number of longs");
+  WriteTagId(TagType::LongArray);
+  WriteName(name);
+  WriteScalarBE<std::int32_t>(static_cast<std::int32_t>(payload.size() / 8));
+  AppendBytes(payload.data(), payload.size());
 }
 
 void NbtWriter::WriteRawField(std::string_view name,
@@ -237,13 +239,7 @@ void NbtWriter::WriteRawField(std::string_view name,
                               std::span<const std::byte> payload) {
   WriteTagId(type);
   WriteName(name);
-
-  std::size_t old_size = buffer_.size();
-  EnsureCapacity(payload.size());
-  buffer_.resize(old_size + payload.size());
-  if (!payload.empty()) {
-    std::memcpy(buffer_.data() + old_size, payload.data(), payload.size());
-  }
+  AppendBytes(payload.data(), payload.size());
 }
 
 // List Elements
@@ -276,12 +272,7 @@ void NbtWriter::EndListElementCompound() {
 }
 
 void NbtWriter::WriteListElementRawPayload(std::span<const std::byte> payload) {
-  std::size_t old_size = buffer_.size();
-  EnsureCapacity(payload.size());
-  buffer_.resize(old_size + payload.size());
-  if (!payload.empty()) {
-    std::memcpy(buffer_.data() + old_size, payload.data(), payload.size());
-  }
+  AppendBytes(payload.data(), payload.size());
 }
 
 // Finalization

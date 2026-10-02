@@ -18,8 +18,8 @@
 //
 // Usage: parse_schem <file.schem>
 
-#include <iostream>
 #include <memory>
+#include <print>
 #include <vector>
 
 #include "fschema/base/compressor.h"
@@ -32,15 +32,14 @@ namespace fsc = fschema::schem;
 
 int main(int argc, char* argv[]) {
   if (argc < 2) {
-    std::cerr << "Usage: " << argv[0] << " <file.schem>\n";
+    std::println("Usage: {} <file.schem>", argv[0]);
     return 1;
   }
 
   // STEP 1: Decompression
   auto unpacked_bytes = fb::DecompressGzipFile(argv[1]);
   if (!unpacked_bytes) {
-    std::cerr << "Decompress failed: " << fb::ToString(unpacked_bytes.error())
-              << "\n";
+    std::println("Decompress failed: {}", fb::ToString(unpacked_bytes.error()));
     return 1;
   }
 
@@ -51,34 +50,38 @@ int main(int argc, char* argv[]) {
 
   if (!result) {
     const fschema::ParseError& err = result.error();
-    std::cerr << "Parse failed: " << fschema::ToString(err) << " at \""
-              << err.path << "\" (offset: " << err.offset << ")\n";
+    std::println("Parse failed: {} at \"{}\" (offset: {})",
+                 fschema::ToString(err),
+                 err.path,
+                 err.offset);
     return 1;
   }
 
-  // Success — access parsed schematic data
+  // Success, access parsed schematic data
   const auto& schematic = *result;
-  std::cout << "Version: " << static_cast<int>(schematic.version) << "\n";
-  std::cout << "DataVersion: " << schematic.data_version << "\n";
-  std::cout << "Dimensions: " << schematic.width << " x " << schematic.height
-            << " x " << schematic.length << "\n";
-  std::cout << "Volume: " << fsc::VolumeOf(schematic) << "\n";
-  std::cout << "Palette: " << schematic.palette.size() << "\n";
-  std::cout << "Block Entities: " << schematic.block_entities.size() << "\n";
-  std::cout << "Entities: " << schematic.entities.size() << "\n";
+  std::println("Version: {}", static_cast<int>(schematic.version));
+  std::println("DataVersion: {}", schematic.data_version);
+  std::println("Dimensions: {} x {} x {}",
+               schematic.width,
+               schematic.height,
+               schematic.length);
+  std::println("Volume: {}", fsc::VolumeOf(schematic));
+  std::println("Palette: {}", schematic.palette.size());
+  std::println("Block Entities: {}", schematic.block_entities.size());
+  std::println("Entities: {}", schematic.entities.size());
 
-  if (!schematic.biome_indices.empty()) {
-    std::cout << "Biome Palette: " << schematic.biome_palette.size() << "\n";
-    std::cout << "Biome Volume: " << fsc::BiomeVolumeOf(schematic) << "\n";
+  if (!schematic.raw_biome_data.empty()) {
+    std::println("Biome Palette: {}", schematic.biome_palette.size());
+    std::println("Biome Data Size: {} bytes", schematic.raw_biome_data.size());
   }
 
   // Print first few palette entries
-  std::cout << "\nPalette (first 10):\n";
+  std::println("\nPalette (first 10):\n");
   for (std::size_t i = 0; i < schematic.palette.size() && i < 10; ++i) {
-    std::cout << "  [" << i << "] " << schematic.palette[i].name;
+    std::println("  [{}] {}", i, schematic.palette[i].name);
     if (!schematic.palette[i].properties.empty()) {
-      std::cout << " [" << schematic.palette[i].properties << "]";
+      std::println("    [{}]", schematic.palette[i].properties);
     }
-    std::cout << "\n";
+    std::println("");
   }
 }

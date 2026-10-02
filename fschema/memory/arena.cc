@@ -37,6 +37,8 @@
 #  include <unistd.h>
 #endif
 
+#include "fschema/base/port.h"
+
 namespace {
 
 #if defined(_WIN32)
@@ -118,7 +120,8 @@ void Arena::Reset() noexcept {
   }
 }
 
-[[nodiscard]] void* Arena::Allocate(std::size_t bytes, std::size_t align) {
+FSCHEMA_HOT [[nodiscard]] void* Arena::Allocate(std::size_t bytes,
+                                                std::size_t align) {
   if (bytes == 0) return nullptr;
   if (align > kAlign) align = kAlign;
   align = std::max<std::size_t>(align, 1);
@@ -152,8 +155,8 @@ void Arena::Release() noexcept {
   cursor_ = {};
 }
 
-[[nodiscard]] void* Arena::TryBumpCurrent(std::size_t bytes,
-                                          std::size_t align) {
+FSCHEMA_HOT [[nodiscard]] void* Arena::TryBumpCurrent(std::size_t bytes,
+                                                      std::size_t align) {
   if (!cursor_.base) return nullptr;
   std::uintptr_t p =
       reinterpret_cast<std::uintptr_t>(cursor_.base + cursor_.used);

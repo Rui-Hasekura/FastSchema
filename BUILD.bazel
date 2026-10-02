@@ -48,6 +48,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "@abseil//absl/container:flat_hash_map",
+        "@abseil//absl/synchronization",
         "@abseil//absl/time",
         "@highway//:hwy",
         "//third_party:libdeflate",

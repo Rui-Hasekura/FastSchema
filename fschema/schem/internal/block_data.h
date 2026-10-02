@@ -25,6 +25,7 @@
 
 #include "fschema/base/error.h"
 #include "fschema/memory/arena.h"
+#include "fschema/memory/noinit_allocator.h"
 #include "fschema/schem/types.h"
 
 namespace fschema::schem::internal {

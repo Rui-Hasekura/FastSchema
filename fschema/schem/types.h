@@ -25,7 +25,6 @@
 
 #include "fschema/base/nbt_tag.h"
 #include "fschema/memory/arena.h"
-#include "fschema/memory/noinit_allocator.h"
 
 namespace fschema::schem {
 
@@ -46,14 +45,9 @@ struct Metadata {
   std::int64_t date = 0;
   std::span<const std::byte> required_mods;
   std::span<const std::byte> extra;
-
-  std::vector<RawField> extensions;
+  std::span<const std::byte> raw_compound;
 };
 
-// Schem palette entry. The full blockstate string is parsed into
-// name (resource location) and properties (without surrounding brackets).
-//   name:       "minecraft:redstone_wire"
-//   properties: "east=side,north=none,power=15,..."
 struct BlockState {
   std::string_view name;
   std::string_view properties;
@@ -85,18 +79,17 @@ struct Schematic {
   std::array<std::int32_t, 3> offset{0, 0, 0};
 
   std::vector<BlockState> palette;
-  memory::NoInitVector<std::uint16_t> block_indices;
+  std::span<const std::byte> raw_block_data;
 
   std::vector<BlockEntity> block_entities;
   std::vector<Entity> entities;
 
   std::vector<std::string_view> biome_palette;
-  memory::NoInitVector<std::uint16_t> biome_indices;
+  std::span<const std::byte> raw_biome_data;
 
   std::unique_ptr<std::vector<std::byte>> owner;
   std::unique_ptr<memory::Arena> arena;
-
-  std::vector<RawField> extensions;
+  std::span<const std::byte> raw_compound;
 };
 
 [[nodiscard]] inline std::uint64_t VolumeOf(const Schematic& s) noexcept {
@@ -105,9 +98,6 @@ struct Schematic {
          static_cast<std::uint64_t>(s.length);
 }
 
-// Biome array length depends on format version:
-// v2: Width * Length (2D, full vertical column)
-// v3: Width * Height * Length (3D)
 [[nodiscard]] inline std::uint64_t BiomeVolumeOf(const Schematic& s) noexcept {
   if (s.version == Version::kV3) {
     return VolumeOf(s);

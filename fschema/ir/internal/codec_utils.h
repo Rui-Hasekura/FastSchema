@@ -1,19 +1,17 @@
-/*
- * Copyright (C) 2026 Rui-Hasekura <ruihasekura@gmail.com>
- * SPDX-License-Identifier: Apache-2.0
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright (C) 2026 Rui-Hasekura <ruihasekura@gmail.com>
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #ifndef FSCHEMA_IR_INTERNAL_CODEC_UTILS_H_
 #define FSCHEMA_IR_INTERNAL_CODEC_UTILS_H_
@@ -31,35 +29,44 @@
 
 namespace fschema::ir::internal {
 
-inline void TransposeYzxToXzy(std::span<const std::uint16_t> src,
-                              std::span<std::uint16_t> dst,
-                              int /*W*/,
-                              int /*H*/,
-                              int /*L*/) {
-  const std::size_t bytes =
-      std::min(src.size(), dst.size()) * sizeof(std::uint16_t);
-  std::memcpy(dst.data(), src.data(), bytes);
-}
-
-inline void TransposeXzyToYzx(std::span<const std::uint16_t> src,
-                              std::span<std::uint16_t> dst,
-                              int /*W*/,
-                              int /*H*/,
-                              int /*L*/) {
-  const std::size_t bytes =
-      std::min(src.size(), dst.size()) * sizeof(std::uint16_t);
-  std::memcpy(dst.data(), src.data(), bytes);
-}
-
-inline constexpr std::string_view kTeSkip[] =
-    {"Id", "id", "Pos", "x", "y", "z"};
-inline constexpr std::string_view kBeSkip[] =
+inline constexpr std::string_view kBlockEntitySkip[] =
     {"Id", "id", "Pos", "x", "y", "z"};
 inline constexpr std::string_view kEntSkip[] = {"Id",
                                                 "id",
                                                 "Pos",
                                                 "Motion",
                                                 "Rotation"};
+
+inline constexpr std::string_view kLitMetadataSkip[] = {"Name", "Author"};
+inline constexpr std::string_view kLitRegionSkip[] = {"Position",
+                                                      "Size",
+                                                      "BlockStatePalette",
+                                                      "BlockStates",
+                                                      "TileEntities",
+                                                      "Entities"};
+
+inline constexpr std::string_view kSchemMetadataSkip[] = {"Name", "Author"};
+inline constexpr std::string_view kSchemV2Skip[] = {"Version",
+                                                    "DataVersion",
+                                                    "Metadata",
+                                                    "Width",
+                                                    "Height",
+                                                    "Length",
+                                                    "Offset",
+                                                    "Palette",
+                                                    "PaletteMax",
+                                                    "BlockData",
+                                                    "BlockEntities",
+                                                    "Entities"};
+inline constexpr std::string_view kSchemV3Skip[] = {"Version",
+                                                    "DataVersion",
+                                                    "Metadata",
+                                                    "Width",
+                                                    "Height",
+                                                    "Length",
+                                                    "Offset",
+                                                    "Blocks",
+                                                    "Entities"};
 
 // NBT Compound (raw bytes) -> "k=v,k=v" string
 [[nodiscard]] inline std::string NbtPropsToString(
@@ -100,8 +107,7 @@ inline constexpr std::string_view kEntSkip[] = {"Id",
   auto skip_res = base::SkipPayload(reader, tag_type);
   if (!skip_res) return std::unexpected(skip_res.error());
 
-  out.push_back(ir::Extension{
-      name, tag_type, reader.SpanFrom(field_start), source_format});
+  out.push_back(ir::Extension{name, tag_type, reader.SpanFrom(field_start)});
   return {};
 }
 

@@ -25,6 +25,7 @@
 #include "absl/container/flat_hash_map.h"
 #include "fschema/base/error.h"
 #include "fschema/base/hash.h"
+#include "fschema/ir/materialize.h"
 
 namespace fschema::ir {
 
@@ -88,14 +89,16 @@ ParseResult<Region> MergeRegions(const std::vector<Region>& regions,
   std::int32_t max_y = first.bounds.origin[1] + first.bounds.size[1];
   std::int32_t max_z = first.bounds.origin[2] + first.bounds.size[2];
 
-  for (size_t i = 1; i < regions.size(); ++i) {
-    const auto& r = regions[i];
-    min_x = std::min(min_x, r.bounds.origin[0]);
-    min_y = std::min(min_y, r.bounds.origin[1]);
-    min_z = std::min(min_z, r.bounds.origin[2]);
-    max_x = std::max(max_x, r.bounds.origin[0] + r.bounds.size[0]);
-    max_y = std::max(max_y, r.bounds.origin[1] + r.bounds.size[1]);
-    max_z = std::max(max_z, r.bounds.origin[2] + r.bounds.size[2]);
+  for (size_t r = 0; r < regions.size(); ++r) {
+    const auto& reg = regions[r];
+    auto mat_res = EnsureMaterialized(reg, arena);
+    if (!mat_res) return std::unexpected(mat_res.error());
+    min_x = std::min(min_x, reg.bounds.origin[0]);
+    min_y = std::min(min_y, reg.bounds.origin[1]);
+    min_z = std::min(min_z, reg.bounds.origin[2]);
+    max_x = std::max(max_x, reg.bounds.origin[0] + reg.bounds.size[0]);
+    max_y = std::max(max_y, reg.bounds.origin[1] + reg.bounds.size[1]);
+    max_z = std::max(max_z, reg.bounds.origin[2] + reg.bounds.size[2]);
   }
 
   Region merged;
@@ -106,7 +109,6 @@ ParseResult<Region> MergeRegions(const std::vector<Region>& regions,
   merged.bounds.size[0] = max_x - min_x;
   merged.bounds.size[1] = max_y - min_y;
   merged.bounds.size[2] = max_z - min_z;
-  merged.index_order = IndexOrder::kYzx;
 
   // 2. Build merged palette with absl::flat_hash_map dedup.
   //    Index 0 is always the fill block (e.g. minecraft:air).
@@ -152,13 +154,19 @@ ParseResult<Region> MergeRegions(const std::vector<Region>& regions,
   std::memset(merged.block_indices.data(), 0, vol * sizeof(std::uint16_t));
 
   // 4. Copy blocks (YZX order)
-  std::vector<std::uint16_t> scratch;
+  std::uint16_t* scratch_ptr = nullptr;
+  std::size_t scratch_cap = 0;
+
   const std::int32_t W = merged.bounds.size[0];
   const std::int32_t L = merged.bounds.size[2];
   std::uint16_t* const merged_base = merged.block_indices.data();
 
   for (size_t r = 0; r < regions.size(); ++r) {
     const auto& reg = regions[r];
+
+    auto mat_res = EnsureMaterialized(reg, arena);
+    if (!mat_res) return std::unexpected(mat_res.error());
+
     std::int32_t sx = reg.bounds.size[0];
     std::int32_t sy = reg.bounds.size[1];
     std::int32_t sz = reg.bounds.size[2];
@@ -168,11 +176,16 @@ ParseResult<Region> MergeRegions(const std::vector<Region>& regions,
 
     const std::size_t reg_n = reg.block_indices.size();
 
-    if (scratch.size() < reg_n) scratch.resize(reg_n);
+    if (scratch_cap < reg_n) {
+      scratch_ptr = static_cast<std::uint16_t*>(arena.Allocate(
+          reg_n * sizeof(std::uint16_t), alignof(std::uint16_t)));
+      scratch_cap = reg_n;
+    }
+
     {
-      const std::uint16_t* remap = remaps[r].data();
-      const std::uint16_t* src = reg.block_indices.data();
-      std::uint16_t* dst = scratch.data();
+      const std::uint16_t* FSCHEMA_RESTRICT remap = remaps[r].data();
+      const std::uint16_t* FSCHEMA_RESTRICT src = reg.block_indices.data();
+      std::uint16_t* FSCHEMA_RESTRICT dst = scratch_ptr;
       std::size_t i = 0;
       for (; i + 4 <= reg_n; i += 4) {
         const std::uint16_t v0 = src[i + 0];
@@ -201,7 +214,7 @@ ParseResult<Region> MergeRegions(const std::vector<Region>& regions,
           static_cast<std::uint64_t>(off_z) * W +
           static_cast<std::uint64_t>(off_x);
 
-      const std::uint16_t* src_row = scratch.data() + local_y_base;
+      const std::uint16_t* src_row = scratch_ptr + local_y_base;
       std::uint16_t* dst_row = merged_base + global_y_base;
       for (int z = 0; z < sz; ++z) {
         std::memcpy(dst_row, src_row, row_bytes);

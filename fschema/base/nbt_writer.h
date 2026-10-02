@@ -1,19 +1,17 @@
-/*
- * Copyright (C) 2026 Rui-Hasekura <ruihasekura@gmail.com>
- * SPDX-License-Identifier: Apache-2.0
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright (C) 2026 Rui-Hasekura <ruihasekura@gmail.com>
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #ifndef FSCHEMA_BASE_NBT_WRITER_H_
 #define FSCHEMA_BASE_NBT_WRITER_H_
@@ -40,6 +38,9 @@ class NbtWriter {
   NbtWriter(NbtWriter&&) noexcept = default;
   NbtWriter& operator=(NbtWriter&&) noexcept = default;
 
+  // Current output size in bytes (useful for reserve estimation / debugging).
+  [[nodiscard]] std::size_t size() const noexcept { return buffer_.size(); }
+
   // Root Compound Boundaries
   void BeginRootCompound(std::string_view name);
   void EndRootCompound();
@@ -60,16 +61,14 @@ class NbtWriter {
   void WriteFloatField(std::string_view name, float value);
   void WriteDoubleField(std::string_view name, double value);
   void WriteStringField(std::string_view name, std::string_view value);
-
   void WriteByteArrayField(std::string_view name,
                            std::span<const std::int8_t> data);
   void WriteIntArrayField(std::string_view name,
                           std::span<const std::int32_t> data);
   void WriteLongArrayField(std::string_view name,
                            std::span<const std::int64_t> data);
-
-  // Writes a complete field with pre-encoded payload (TagId + Name + payload).
-  // Note: payload MUST INCLUDE internal length prefixes (for arrays/strings).
+  void WriteLongArrayFieldBE(std::string_view name,
+                             std::span<const std::byte> payload);
   void WriteRawField(std::string_view name,
                      TagType type,
                      std::span<const std::byte> payload);
@@ -104,6 +103,8 @@ class NbtWriter {
   void WriteScalarBE(T value);
 
   void EnsureCapacity(std::size_t extra);
+
+  void AppendBytes(const std::byte* p, std::size_t n);
 
   std::vector<std::byte> buffer_;
   std::size_t depth_ = 0;  // Current nesting level (Root / Compound / List)

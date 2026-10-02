@@ -19,8 +19,8 @@
 // Usage: parse_nbt <file.nbt>
 
 #include <cstdint>
-#include <iostream>
 #include <memory>
+#include <print>
 #include <span>
 #include <variant>
 #include <vector>
@@ -38,53 +38,53 @@ namespace {
 
 void PrintTag(const fb::NbtTag& tag, int indent) {
   std::string pad(indent * 2, ' ');
-  std::cout << pad << "Name: \"" << tag.name
-            << "\"  Type: " << static_cast<int>(tag.type);
+  std::println(
+      "{}Name: \"{}\"  Type: {}", pad, tag.name, static_cast<int>(tag.type));
 
   switch (tag.type) {
     case fb::TagType::Byte:
       if (const auto* v = std::get_if<std::int8_t>(&tag.payload))
-        std::cout << "  Value: " << static_cast<int>(*v);
+        std::println("{}  Value: {}", pad, static_cast<int>(*v));
       break;
     case fb::TagType::Short:
       if (const auto* v = std::get_if<std::int16_t>(&tag.payload))
-        std::cout << "  Value: " << *v;
+        std::println("{}  Value: {}", pad, *v);
       break;
     case fb::TagType::Int:
       if (const auto* v = std::get_if<std::int32_t>(&tag.payload))
-        std::cout << "  Value: " << *v;
+        std::println("{}  Value: {}", pad, *v);
       break;
     case fb::TagType::Long:
       if (const auto* v = std::get_if<std::int64_t>(&tag.payload))
-        std::cout << "  Value: " << *v;
+        std::println("{}  Value: {}", pad, *v);
       break;
     case fb::TagType::Float:
       if (const auto* v = std::get_if<float>(&tag.payload))
-        std::cout << "  Value: " << *v;
+        std::println("{}  Value: {}", pad, *v);
       break;
     case fb::TagType::Double:
       if (const auto* v = std::get_if<double>(&tag.payload))
-        std::cout << "  Value: " << *v;
+        std::println("{}  Value: {}", pad, *v);
       break;
     case fb::TagType::String:
       if (const auto* v = std::get_if<std::string_view>(&tag.payload))
-        std::cout << "  Value: \"" << *v << "\"";
+        std::println("{}  Value: \"{}\"", pad, *v);
       break;
     case fb::TagType::ByteArray:
       if (const auto* v =
               std::get_if<std::span<const std::int8_t>>(&tag.payload))
-        std::cout << "  Length: " << v->size();
+        std::println("{}  Length: {}", pad, v->size());
       break;
     case fb::TagType::IntArray:
     case fb::TagType::LongArray:
       if (const auto* v = std::get_if<std::span<const std::byte>>(&tag.payload))
-        std::cout << "  Bytes: " << v->size();
+        std::println("{}  Bytes: {}", pad, v->size());
       break;
     case fb::TagType::Compound: {
       const auto* comp =
           std::get_if<std::unique_ptr<fb::NbtCompound>>(&tag.payload);
       if (comp && *comp) {
-        std::cout << "  Children: " << (*comp)->children.size() << "\n";
+        std::println("{}  Children: {}", pad, (*comp)->children.size());
         for (const auto& child : (*comp)->children) {
           PrintTag(child, indent + 1);
         }
@@ -96,14 +96,15 @@ void PrintTag(const fb::NbtTag& tag, int indent) {
       const auto* list =
           std::get_if<std::unique_ptr<fb::NbtList>>(&tag.payload);
       if (list && *list) {
-        std::cout << "  Elements: " << (*list)->children.size()
-                  << "  ElemType: " << static_cast<int>((*list)->element_type)
-                  << "\n";
+        std::println("{}  Elements: {}  ElemType: {}",
+                     pad,
+                     (*list)->children.size(),
+                     static_cast<int>((*list)->element_type));
         for (std::size_t i = 0; i < (*list)->children.size() && i < 5; ++i) {
-          std::cout << pad << "  [" << i << "]";
+          std::println("{}  [{}]", pad, i);
           if (auto* sub_comp = std::get_if<std::unique_ptr<fb::NbtCompound>>(
                   &(*list)->children[i])) {
-            std::cout << " (compound)\n";
+            std::println("{} (compound)", pad);
             if (*sub_comp) {
               for (const auto& child : (*sub_comp)->children) {
                 PrintTag(child, indent + 2);
@@ -111,17 +112,16 @@ void PrintTag(const fb::NbtTag& tag, int indent) {
             }
           } else if (const auto* v =
                          std::get_if<std::int32_t>(&(*list)->children[i])) {
-            std::cout << " Int: " << *v << "\n";
+            std::println("{} Int: {}", pad, *v);
           } else if (const auto* v =
                          std::get_if<std::string_view>(&(*list)->children[i])) {
-            std::cout << " String: \"" << *v << "\"\n";
+            std::println("{} String: \"{}\"", pad, *v);
           } else {
-            std::cout << " (other)\n";
+            std::println("{} (other)", pad);
           }
         }
         if ((*list)->children.size() > 5) {
-          std::cout << pad << "  ... (" << (*list)->children.size() - 5
-                    << " more)\n";
+          std::println("{}  ... ({} more)", pad, (*list)->children.size() - 5);
         }
         return;
       }
@@ -130,14 +130,14 @@ void PrintTag(const fb::NbtTag& tag, int indent) {
     default:
       break;
   }
-  std::cout << "\n";
+  std::println("");
 }
 
 }  // namespace
 
 int main(int argc, char* argv[]) {
   if (argc < 2) {
-    std::cerr << "Usage: " << argv[0] << " <file.nbt>\n";
+    std::println("Usage: {} <file.nbt>", argv[0]);
     return 1;
   }
 
@@ -150,7 +150,7 @@ int main(int argc, char* argv[]) {
     // Not gzip — read raw
     FILE* f = std::fopen(argv[1], "rb");
     if (!f) {
-      std::cerr << "Failed to open file: " << argv[1] << "\n";
+      std::println("Failed to open file: {}", argv[1]);
       return 1;
     }
     std::fseek(f, 0, SEEK_END);
@@ -169,13 +169,14 @@ int main(int argc, char* argv[]) {
   auto result = fb::ParseNbt(reader);
   if (!result) {
     const fschema::ParseError& err = result.error();
-    std::cerr << "Parse failed: " << fschema::ToString(err) << " at \""
-              << err.path << "\" (offset: " << err.offset << ")\n";
+    std::println("Parse failed: {} at \"{}\" (offset: {})",
+                 fschema::ToString(err),
+                 err.path,
+                 err.offset);
     return 1;
   }
 
-  std::cout << "Bytes consumed: " << reader.pos() << " / " << raw_bytes.size()
-            << "\n\n";
+  std::println("Bytes consumed: {} / {}", reader.pos(), raw_bytes.size());
 
   // STEP 3: Print the tree
   const auto& root_tag = *result;
