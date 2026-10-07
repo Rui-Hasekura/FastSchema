@@ -44,6 +44,14 @@ namespace HWY_NAMESPACE {
 
 namespace hn = hwy::HWY_NAMESPACE;
 
+// Reference Highway kernel. Expects longs pre-bswapped to host order.
+// Not dispatched at runtime (the fused kernels below are what actually
+// execute), but documents the core algorithm shared by both fused paths.
+//
+// For each group of `lanes` blocks, builds a 64-bit window (possibly
+// straddling two longs), broadcasts it to all lanes, then applies per-lane
+// variable right-shift (VPSRLVQ on AVX2, Shr in Highway) and AND with the
+// bit mask to extract one block per lane.
 template <typename DTag, typename ErrorFn>
 [[nodiscard]] ParseResult<void> UnpackKernel(
     DTag d_tag,
@@ -56,12 +64,14 @@ template <typename DTag, typename ErrorFn>
   const std::uint64_t bit_mask = (1ULL << bits_per_block) - 1;
   const std::size_t lanes = hn::Lanes(d_tag);
 
+  // Per-lane shift amounts: {0, bpb, 2*bpb, 3*bpb}.
   const auto vshifts =
       hn::Mul(hn::Iota(d_tag, std::uint64_t{0}),
               hn::Set(d_tag, static_cast<std::uint64_t>(bits_per_block)));
   const auto vmask = hn::Set(d_tag, bit_mask);
 
   std::uint64_t block_idx = 0;
+  // Main vectorized loop: processes `lanes` blocks per iteration.
   for (; block_idx + lanes <= volume; block_idx += lanes) {
     const std::uint64_t start_off = block_idx * bits_per_block;
     const auto word_idx0 = static_cast<std::size_t>(start_off >> 6);
@@ -73,12 +83,17 @@ template <typename DTag, typename ErrorFn>
           error_report(ParseError::Code::BlockStatesTooSmall));
     }
 
+    // Build a 64-bit window starting at start_off. If the window crosses a
+    // long boundary, stitch the low bits of longs[word_idx0] together with
+    // the high bits of longs[word_idx1].
     const auto bit_shift = static_cast<std::uint32_t>(start_off & 63);
     const std::uint64_t window =
         (bit_shift == 0) ? longs[word_idx0]
                          : (longs[word_idx0] >> bit_shift) |
                                (longs[word_idx1] << (64 - bit_shift));
 
+    // Broadcast the 64-bit window to all lanes, apply variable right shift,
+    // and mask out the target bpb bits.
     const auto window_vec = hn::Set(d_tag, window);
     const auto masked_vec = hn::And(hn::Shr(window_vec, vshifts), vmask);
 
@@ -94,6 +109,7 @@ template <typename DTag, typename ErrorFn>
     }
   }
 
+  // Scalar tail: blocks that didn't fill a full lane group.
   for (; block_idx < volume; ++block_idx) {
     const std::uint64_t bit_off = block_idx * bits_per_block;
     const auto word_idx0 = static_cast<std::size_t>(bit_off >> 6);
@@ -113,7 +129,14 @@ template <typename DTag, typename ErrorFn>
   return {};
 }
 
-// Common single block extraction with double long window for scalar tails.
+// Scalar extraction of a single block from the raw big-endian long array.
+// Used for tail blocks in both the AVX2 and Highway paths.
+//
+// Reads the long containing the block's first bit, byte-swaps it (NBT
+// stores longs big-endian), and shifts right to align the block. If the
+// block straddles into the next long, ORs in the high bits from it. The
+// next-long index is clamped to long_count - 1 so the final block in the
+// array does not read out of bounds.
 [[nodiscard]] inline std::uint32_t ExtractBlock(
     const std::byte* const FSCHEMA_RESTRICT raw_data,
     std::size_t long_count,
@@ -122,12 +145,19 @@ template <typename DTag, typename ErrorFn>
     std::uint64_t bit_mask) {
   const std::uint64_t bit_offset = block_idx * bits_per_block;
   const auto word_idx = static_cast<std::size_t>(bit_offset >> 6);
+
+  // Read and swap the current long.
   std::uint64_t current_long;
   std::memcpy(&current_long, raw_data + word_idx * 8, 8);
   current_long = std::byteswap(current_long);
   const auto bit_shift = static_cast<std::uint32_t>(bit_offset & 63);
   std::uint64_t value = current_long >> bit_shift;
+
+  // Handle straddling blocks: if the block extends past the 64-bit boundary,
+  // read the next long and OR its high bits into the value.
   if (bit_shift + bits_per_block > 64) {
+    // Clamp to long_count - 1 to prevent OOB reads on the final block,
+    // even though the high bits are effectively zero in that case.
     const auto next_word_idx = std::min(word_idx + 1, long_count - 1);
     std::uint64_t next_long;
     std::memcpy(&next_long, raw_data + next_word_idx * 8, 8);
@@ -137,6 +167,18 @@ template <typename DTag, typename ErrorFn>
 }
 
 #if HWY_TARGET == HWY_AVX2
+
+// AVX2 unpacker: 16 blocks per iteration via four 4-block windows.
+//
+// Each window is a 64-bit value (possibly straddling two longs) containing
+// 4 consecutive blocks. VPSRLVQ shifts each 64-bit lane by a different
+// multiple of bpb, then AND with the bit mask isolates one block per lane.
+// The four windows are packed (VPERMD + PACKUS + VINSERTI128) into 16 x
+// uint16 and written with a non-temporal store.
+//
+// For inputs above 1024 iterations (16K blocks), the loop is parallelized
+// with TBB. The workload is uniform across iterations, so static_partitioner
+// avoids work-stealing overhead.
 [[nodiscard]] ParseResult<void> UnpackFusedKernelAvx2(
     const std::byte* const FSCHEMA_RESTRICT raw_data,
     std::size_t long_count,
@@ -146,12 +188,18 @@ template <typename DTag, typename ErrorFn>
     std::uint16_t* const FSCHEMA_RESTRICT out) {
   const std::uint64_t bit_mask = (1ULL << bits_per_block) - 1;
 
+  // Per-lane shift amounts for VPSRLVQ: {0, bpb, 2*bpb, 3*bpb}.
   const __m256i vshifts =
       _mm256_setr_epi64x(0,
                          static_cast<std::int64_t>(bits_per_block),
                          static_cast<std::int64_t>(2) * bits_per_block,
                          static_cast<std::int64_t>(3) * bits_per_block);
+
+  // Bit mask replicated across all 64-bit lanes.
   const __m256i vmask = _mm256_set1_epi64x(static_cast<std::int64_t>(bit_mask));
+
+  // Permutation control for VPERMD: gathers the low 32 bits of each 64-bit
+  // lane (indices 0, 2, 4, 6) into the lower 128 bits, preparing for PACKUS.
   const __m256i vperm = _mm256_setr_epi32(0, 2, 4, 6, 0, 0, 0, 0);
 
   std::uint64_t n_simd = 0;
@@ -168,11 +216,16 @@ template <typename DTag, typename ErrorFn>
   std::uint64_t num_simd_iters = n_simd / 16;
 
   auto process_range = [&](std::uint64_t range_begin, std::uint64_t range_end) {
+    // Per-thread max trackers. Initialized to zero and updated with VPMAXUD
+    // (_mm256_max_epu32) after each window. Checked against palette_size
+    // once after the loop.
     __m256i vmax0 = _mm256_setzero_si256();
     __m256i vmax1 = _mm256_setzero_si256();
     __m256i vmax2 = _mm256_setzero_si256();
     __m256i vmax3 = _mm256_setzero_si256();
 
+    // Extract a 64-bit window starting at block `bi`'s first bit from the
+    // pre-bswapped local `longs` array (indexed relative to first_long).
     auto GetWindow = [&](std::uint64_t bi,
                          const std::uint64_t* longs,
                          std::size_t first_long) -> std::uint64_t {
@@ -191,6 +244,9 @@ template <typename DTag, typename ErrorFn>
       const std::uint64_t first_bit = block_idx * bits_per_block;
       const std::size_t first_long = static_cast<std::size_t>(first_bit >> 6);
 
+      // Load and byte-swap the 5 longs that may be touched by this
+      // 16-block group. Individual bswap is cheaper than a separate
+      // full-array bswap pass and only touches data that will be used.
       std::uint64_t longs[5];
       std::memcpy(longs, raw_data + first_long * 8, 40);
       longs[0] = std::byteswap(longs[0]);
@@ -199,21 +255,23 @@ template <typename DTag, typename ErrorFn>
       longs[3] = std::byteswap(longs[3]);
       longs[4] = std::byteswap(longs[4]);
 
+      // Generate 4 windows, each containing 4 blocks.
       const std::uint64_t w0 = GetWindow(block_idx, longs, first_long);
       const std::uint64_t w1 = GetWindow(block_idx + 4, longs, first_long);
       const std::uint64_t w2 = GetWindow(block_idx + 8, longs, first_long);
       const std::uint64_t w3 = GetWindow(block_idx + 12, longs, first_long);
 
-      // slot 0
+      // Window 0: broadcast, variable-shift, mask, track max.
       const __m256i unpacked_vec0 = _mm256_and_si256(
           _mm256_srlv_epi64(_mm256_set1_epi64x(static_cast<std::int64_t>(w0)),
                             vshifts),
           vmask);
       vmax0 = _mm256_max_epu32(vmax0, unpacked_vec0);
+      // VPERMD: gather low-32 of each 64-bit lane into lower 128 bits.
       const __m256i packed_vec0 =
           _mm256_permutevar8x32_epi32(unpacked_vec0, vperm);
 
-      // slot 1
+      // Window 1.
       const __m256i unpacked_vec1 = _mm256_and_si256(
           _mm256_srlv_epi64(_mm256_set1_epi64x(static_cast<std::int64_t>(w1)),
                             vshifts),
@@ -222,7 +280,7 @@ template <typename DTag, typename ErrorFn>
       const __m256i packed_vec1 =
           _mm256_permutevar8x32_epi32(unpacked_vec1, vperm);
 
-      // slot 2
+      // Window 2.
       const __m256i unpacked_vec2 = _mm256_and_si256(
           _mm256_srlv_epi64(_mm256_set1_epi64x(static_cast<std::int64_t>(w2)),
                             vshifts),
@@ -231,7 +289,7 @@ template <typename DTag, typename ErrorFn>
       const __m256i packed_vec2 =
           _mm256_permutevar8x32_epi32(unpacked_vec2, vperm);
 
-      // slot 3
+      // Window 3
       const __m256i unpacked_vec3 = _mm256_and_si256(
           _mm256_srlv_epi64(_mm256_set1_epi64x(static_cast<std::int64_t>(w3)),
                             vshifts),
@@ -240,34 +298,45 @@ template <typename DTag, typename ErrorFn>
       const __m256i packed_vec3 =
           _mm256_permutevar8x32_epi32(unpacked_vec3, vperm);
 
+      // Pack 4x uint32 -> 4x uint16 via PACKUS (unsigned saturation, but
+      // values are guaranteed to fit in 16 bits by the palette size limit).
       const __m128i pack01 =
           _mm_packus_epi32(_mm256_castsi256_si128(packed_vec0),
                            _mm256_castsi256_si128(packed_vec1));
-      // pack01 = 8xuint16
 
       const __m128i pack23 =
           _mm_packus_epi32(_mm256_castsi256_si128(packed_vec2),
                            _mm256_castsi256_si128(packed_vec3));
-      // pack23 = 8xuint16
 
-      // sink -> 256-bit (16 x uint16 = 32 bytes)
+      // Combine two 128-bit halves into one 256-bit register.
       const __m256i result =
           _mm256_inserti128_si256(_mm256_castsi128_si256(pack01), pack23, 1);
 
+      // Non-temporal store: the output buffer is large (up to 512 MiB) and
+      // won't be read back until the caller materializes the region, so
+      // polluting the cache would evict useful data.
       _mm256_stream_si256(reinterpret_cast<__m256i*>(out + block_idx), result);
     }
 
+    // Reduce the four per-window max vectors to one.
     __m256i max_vec01 = _mm256_max_epu32(vmax0, vmax1);
     __m256i max_vec23 = _mm256_max_epu32(vmax2, vmax3);
     __m256i max_vec = _mm256_max_epu32(max_vec01, max_vec23);
 
+    // PCMPGTD is signed-only. XOR both operands with 0x80000000 to remap
+    // the unsigned range [0, 2^32) to the signed range [-2^31, 2^31),
+    // making the signed comparison behave as unsigned.
     const __m256i v_palette =
         _mm256_set1_epi32(static_cast<std::int32_t>(palette_size));
     const __m256i sign_flip =
         _mm256_set1_epi32(static_cast<std::int32_t>(0x80000000));
     const __m256i v_palette_signed = _mm256_xor_si256(v_palette, sign_flip);
     const __m256i max_vec_signed = _mm256_xor_si256(max_vec, sign_flip);
+    // v_palette_signed > max_vec_signed (signed) <=> v_palette > max_vec
+    // (unsigned). All lanes true means every index is in range.
     const __m256i cmp = _mm256_cmpgt_epi32(v_palette_signed, max_vec_signed);
+    // VPTEST with all-ones: returns 1 iff every bit of cmp is set. Negation
+    // detects any out-of-range lane.
     const bool out_of_range = !_mm256_testc_si256(cmp, _mm256_set1_epi32(-1));
 
     if (out_of_range) [[unlikely]] {
@@ -275,6 +344,9 @@ template <typename DTag, typename ErrorFn>
       _mm256_store_si256(reinterpret_cast<__m256i*>(max_values), max_vec);
       for (int lane_idx = 0; lane_idx < 8; ++lane_idx) {
         if (max_values[lane_idx] >= palette_size) {
+          // First-error-wins. Relaxed ordering is sufficient: TBB's
+          // parallel_for provides the happens-before edge for the
+          // post-loop load.
           std::uint32_t expected = 0;
           error_flag.compare_exchange_strong(
               expected, max_values[lane_idx], std::memory_order_relaxed);
@@ -284,6 +356,8 @@ template <typename DTag, typename ErrorFn>
     }
   };  // end of process_range
 
+  // Threshold 1024 iterations (16K blocks) to avoid TBB overhead on small
+  // inputs.
   if (num_simd_iters < 1024) {
     process_range(0, num_simd_iters);
   } else {
@@ -295,8 +369,11 @@ template <typename DTag, typename ErrorFn>
         tbb::static_partitioner{});
   }
 
+  // Non-temporal stores are weakly ordered. Fence before the scalar tail
+  // (and before the caller reads the buffer) to ensure global visibility.
   _mm_sfence();
 
+  // Scalar tail: blocks that didn't fill a 16-block group.
   for (std::uint64_t tail_idx = n_simd; tail_idx < volume; ++tail_idx) {
     const auto idx =
         ExtractBlock(raw_data, long_count, bits_per_block, tail_idx, bit_mask);
@@ -316,6 +393,11 @@ template <typename DTag, typename ErrorFn>
 }
 #endif  // HWY_TARGET == HWY_AVX2
 
+// Highway fallback kernel for non-AVX2 targets. Same windowing algorithm as
+// the AVX2 path but processes 4 blocks per iteration (one window) and runs
+// single-threaded. CappedTag<u64, 4> pins the lane count to 4 so the
+// 4-block window always fits in one 64-bit word regardless of the target's
+// native vector width.
 template <typename D64Tag>
 [[nodiscard]] ParseResult<void> UnpackFusedKernelHwy(
     D64Tag d_tag,
@@ -333,6 +415,9 @@ template <typename D64Tag>
               hn::Set(d_tag, static_cast<std::uint64_t>(bits_per_block)));
   const auto vmask = hn::Set(d_tag, bit_mask);
 
+  // Build a 64-bit window starting at block_idx's first bit. The next-long
+  // read is guarded because the last block in the array may not have a
+  // successor long.
   auto Window = [&](std::uint64_t block_idx) -> std::uint64_t {
     const std::uint64_t bit_offset = block_idx * bits_per_block;
     const auto word_idx = static_cast<std::size_t>(bit_offset >> 6);
@@ -352,6 +437,8 @@ template <typename D64Tag>
     return (current_long >> bit_shift) | high_bits;
   };
 
+  // safe_blocks counts blocks whose first bit falls within the long array.
+  // The Window lambda guards the next-long read for the last block.
   std::uint64_t n_simd = 0;
   {
     const std::uint64_t safe_blocks =
@@ -378,6 +465,7 @@ template <typename D64Tag>
     }
   }
 
+  // Deferred range check: extract the max and compare once.
   HWY_ALIGN std::uint64_t max_values[8];
   hn::Store(max_vec, d_tag, max_values);
   for (std::size_t lane_idx = 0; lane_idx < lanes; ++lane_idx) {
@@ -387,6 +475,7 @@ template <typename D64Tag>
     }
   }
 
+  // Scalar tail.
   for (std::uint64_t tail_idx = n_simd; tail_idx < volume; ++tail_idx) {
     const auto idx =
         ExtractBlock(raw_data, long_count, bits_per_block, tail_idx, bit_mask);
@@ -400,6 +489,9 @@ template <typename D64Tag>
   return {};
 }
 
+// Dispatch entry point. Validates inputs, allocates the output buffer, and
+// calls the AVX2 or Highway kernel depending on the target selected by
+// Highway's dynamic dispatch.
 ParseResult<memory::NoInitVector<std::uint16_t>> UnpackIndicesFusedImpl(
     std::span<const std::byte> raw_longs,
     std::uint32_t bits_per_block,
@@ -414,6 +506,8 @@ ParseResult<memory::NoInitVector<std::uint16_t>> UnpackIndicesFusedImpl(
     return memory::NoInitVector<std::uint16_t>{};
   }
 
+  // Degenerate palette: every block is index 0. Skip the kernel entirely
+  // and memset the output.
   if (palette_size < 2 || bits_per_block < 2) {
     if (palette_size != 1) {
       return std::unexpected(
@@ -437,8 +531,13 @@ ParseResult<memory::NoInitVector<std::uint16_t>> UnpackIndicesFusedImpl(
 
   const std::byte* raw_data = raw_longs.data();
   ParseResult<void> kernel_result{};
+  // NoInitVector allocates uninitialized memory to skip zeroing for large
+  // buffers, as the kernels will overwrite it completely.
   memory::NoInitVector<std::uint16_t> out(static_cast<std::size_t>(volume));
 
+  // bpb is clamped to [2, 16] by BitsPerBlock. The SIMD paths require this
+  // range: 4 lanes * 16 bpb = 64 bits, the width of one window. bpb > 16
+  // would overflow the window.
   if (bits_per_block >= 2 && bits_per_block <= 16) {
 #if HWY_TARGET == HWY_AVX2
     kernel_result = UnpackFusedKernelAvx2(

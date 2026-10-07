@@ -184,7 +184,7 @@ static void BM_UnpackLitematic(benchmark::State& st) {
   }
 
   auto res = fschema::litematic::internal::UnpackIndicesFused(
-      r.raw_block_states, bpb, expected, r.palette.size(), arena);
+      r.raw_block_states, bpb, expected, r.palette.size());
   if (!res) return false;
 
   if (full) {
@@ -222,7 +222,7 @@ static void BM_UnpackLitematic(benchmark::State& st) {
       fschema::litematic::internal::BitsPerBlock(r.palette.size());
 
   auto res = fschema::litematic::internal::UnpackIndicesFused(
-      r.raw_block_states, bpb, expected, r.palette.size(), arena);
+      r.raw_block_states, bpb, expected, r.palette.size());
   if (!res) return 0;
 
   std::vector<std::uint64_t> counts(r.palette.size(), 0);

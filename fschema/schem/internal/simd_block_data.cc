@@ -53,6 +53,7 @@ namespace hn = hwy::HWY_NAMESPACE;
   const auto* base = reinterpret_cast<const std::uint8_t*>(data.data());
   const auto* end = base + data.size();
 
+  // 1. Ideal split: evenly distribute bytes among chunks.
   std::vector<std::size_t> byte_starts(num_chunks + 1);
   for (std::size_t t = 0; t <= num_chunks; ++t) {
     byte_starts[t] = (t * (end - base)) / num_chunks;
@@ -62,6 +63,9 @@ namespace hn = hwy::HWY_NAMESPACE;
   bounds[0] = base;
   bounds[num_chunks] = end;
 
+  // 2. Boundary correction: walk backwards from the ideal split point until
+  // we find a byte without the MSB set (0x80). This byte is the end of a
+  // complete varint, ensuring no varint is split across chunk boundaries.
   auto scan_bound = [&](const tbb::blocked_range<std::size_t>& range) {
     for (std::size_t t = range.begin(); t < range.end(); ++t) {
       const std::uint8_t* p = base + byte_starts[t + 1];
@@ -79,14 +83,19 @@ namespace hn = hwy::HWY_NAMESPACE;
                       tbb::static_partitioner{});
   }
 
+  // 3. Count varints per chunk. Uses SIMD to count bytes where MSB == 0,
+  // as each such byte terminates a varint.
   std::vector<std::uint64_t> counts(num_chunks);
 
-    auto count_chunk = [&](const tbb::blocked_range<std::size_t>& range) {
+  auto count_chunk = [&](const tbb::blocked_range<std::size_t>& range) {
     for (std::size_t t = range.begin(); t < range.end(); ++t) {
       std::uint64_t count = 0;
       const std::uint8_t* p = bounds[t];
       const std::uint8_t* chunk_end = bounds[t + 1];
 #if HWY_TARGET == HWY_AVX2
+      // AVX2: load 32 bytes, AND with 0x80 mask, compare against zero.
+      // The MSB of each byte is extracted by PCMPEQB to a bitmask,
+      // then popcount counts the 1-bits in the mask (each 1 = 1 varint end).
       const __m256i mask = _mm256_set1_epi8(static_cast<char>(0x80));
       const __m256i zero = _mm256_setzero_si256();
       for (; p + 32 <= chunk_end; p += 32) {
@@ -96,6 +105,7 @@ namespace hn = hwy::HWY_NAMESPACE;
             static_cast<std::uint32_t>(_mm256_movemask_epi8(is_end)));
       }
 #else
+      // Highway fallback: Eq + CountTrue for varint end detection.
       const hn::ScalableTag<std::uint8_t> d8;
       const auto v_msb = hn::Set(d8, static_cast<std::uint8_t>(0x80));
       const auto v_zero = hn::Zero(d8);
@@ -106,6 +116,7 @@ namespace hn = hwy::HWY_NAMESPACE;
         count += hn::CountTrue(d8, is_end);
       }
 #endif
+      // Scalar tail for remaining bytes.
       for (; p < chunk_end; ++p) {
         if ((*p & 0x80) == 0) ++count;
       }
@@ -119,7 +130,7 @@ namespace hn = hwy::HWY_NAMESPACE;
                       count_chunk,
                       tbb::static_partitioner{});
   }
-
+  // 4. Prefix sum to get global write offsets for each chunk.
   std::vector<std::size_t> offsets(num_chunks);
   std::uint64_t current_offset = 0;
   for (std::size_t t = 0; t < num_chunks; ++t) {
@@ -149,6 +160,8 @@ DecodeSingleByteFastImpl(std::span<const std::byte> data,
 
   std::atomic<std::uint32_t> error_flag{0};
 
+  // Scalar head: align the source pointer to a 32-byte boundary.
+  // Unaligned loads work, but aligned loads + non-temporal stores are faster.
   std::size_t i = 0;
   while ((reinterpret_cast<std::uintptr_t>(src + i) & 31) != 0 && i < n) {
     if (src[i] & 0x80) {
@@ -165,17 +178,21 @@ DecodeSingleByteFastImpl(std::span<const std::byte> data,
   const __m256i v_msb_mask = _mm256_set1_epi8(static_cast<char>(0x80));
   const __m256i v_zero = _mm256_setzero_si256();
 
+  // Main loop: 32 bytes -> 32 uint16 (64 bytes) per iteration.
   for (; s < src + n32; s += 32, d += 32) {
     __m256i v32 = _mm256_load_si256(reinterpret_cast<const __m256i*>(s));
 
+    // Zero-extend 8x uint8 to 8x uint16 for both halves of the 256-bit reg.
     __m128i lo = _mm256_castsi256_si128(v32);
     __m128i hi = _mm256_extracti128_si256(v32, 1);
     __m256i wide0 = _mm256_cvtepu8_epi16(lo);
     __m256i wide1 = _mm256_cvtepu8_epi16(hi);
 
+    // Non-temporal stores: bypass cache for large output buffers.
     _mm256_stream_si256(reinterpret_cast<__m256i*>(d), wide0);
     _mm256_stream_si256(reinterpret_cast<__m256i*>(d + 16), wide1);
 
+    // Check for format errors: any MSB set means it's not a 1-byte varint.
     __m256i msb = _mm256_and_si256(v32, v_msb_mask);
     if (!_mm256_testz_si256(msb, msb)) {
       std::uint32_t expected = 0;
@@ -186,6 +203,7 @@ DecodeSingleByteFastImpl(std::span<const std::byte> data,
 
   _mm_sfence();
 
+  // Scalar tail.
   for (std::size_t j = n32; j < n; ++j) {
     if (src[j] & 0x80) {
       error_flag.store(1, std::memory_order_relaxed);
@@ -215,11 +233,17 @@ Decode2ByteUniformFastImpl(std::span<const std::byte> data,
 
   std::atomic<std::uint32_t> error_flag{0};
 
+  // 2-byte varint format: byte0 has MSB set (0x80 | val0), byte1 has MSB clear
+  // (val1). As a little-endian uint16, this looks like: 0x80 val1 val0 0x00.
+  // (Actually: byte0 is low bits, byte1 is high bits. val = (byte1 << 7) |
+  // byte0). We expect the 16-bit value to have exactly the 0x0080 bit pattern
+  // when ANDed with 0x8080.
   const __m256i mask_8080 = _mm256_set1_epi16(static_cast<short>(0x8080));
   const __m256i expected_0080 = _mm256_set1_epi16(static_cast<short>(0x0080));
   const __m256i mask_lo = _mm256_set1_epi16(0x007F);
   const __m256i mask_hi = _mm256_set1_epi16(0x7F00);
 
+  // Scalar head: align source pointer.
   std::size_t i = 0;
   while ((reinterpret_cast<std::uintptr_t>(src + i * 2) & 31) != 0 && i < n) {
     std::uint8_t b0 = src[i * 2];
@@ -235,6 +259,7 @@ Decode2ByteUniformFastImpl(std::span<const std::byte> data,
   const auto* s = src + i * 2;
   auto* d = dst + i;
 
+  // Main loop: 32 bytes (16x uint16) per iteration.
   for (; s < src + n16 * 2; s += 32, d += 16) {
     __m256i v = _mm256_load_si256(reinterpret_cast<const __m256i*>(s));
 
@@ -246,6 +271,7 @@ Decode2ByteUniformFastImpl(std::span<const std::byte> data,
           expected, 1, std::memory_order_relaxed);
     }
 
+    // Extract value: val = (v & 0x007F) | ((v & 0x7F00) >> 1).
     __m256i lo = _mm256_and_si256(v, mask_lo);
     __m256i hi = _mm256_and_si256(v, mask_hi);
     __m256i res = _mm256_or_si256(lo, _mm256_srli_epi16(hi, 1));
@@ -255,6 +281,7 @@ Decode2ByteUniformFastImpl(std::span<const std::byte> data,
 
   _mm_sfence();
 
+  // Scalar tail.
   for (std::size_t j = n16; j < n; ++j) {
     std::uint8_t b0 = src[j * 2];
     std::uint8_t b1 = src[j * 2 + 1];
@@ -396,10 +423,12 @@ void DecodeVarintChunksKernelImpl(const std::uint8_t* const* chunk_ptrs,
       std::size_t target_block = chunk_offsets[t];
       std::size_t cnt = chunk_counts[t];
       std::uint16_t* FSCHEMA_RESTRICT dst = out + target_block;
+      std::memset(dst, 0, cnt * sizeof(std::uint16_t));
 
       if (palette_size <= 16384) {
 #if HWY_TARGET == HWY_AVX2
         std::size_t i = 0;
+        // Align destination pointer to 32 bytes.
         while ((reinterpret_cast<std::uintptr_t>(dst + i) & 31) != 0 &&
                i < cnt) {
           if (p >= data_end) [[unlikely]] {
@@ -430,6 +459,7 @@ void DecodeVarintChunksKernelImpl(const std::uint8_t* const* chunk_ptrs,
           }
           ++i;
         }
+        // Fast path: check if the next 32 bytes are all zero (all air).
         for (; i + 32 <= cnt && p + 64 <= data_end;) {
           __m256i v0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(p));
           bool is_all_zero = _mm256_testz_si256(v0, v0);
@@ -437,6 +467,7 @@ void DecodeVarintChunksKernelImpl(const std::uint8_t* const* chunk_ptrs,
             p += 32;
             i += 32;
           } else {
+            // Decode 32 vars into aligned buffer, then stream store.
             alignas(32) std::uint16_t buf16[32];
             std::size_t decoded = 0;
             while (decoded < 32) {
