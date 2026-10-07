@@ -20,7 +20,7 @@
 #include <cstdint>
 #include <span>
 
-#include "fschema/memory/noinit_allocator.h"
+#include "fschema/memory/uninit_buffer.h"
 
 namespace fschema::ir::internal {
 

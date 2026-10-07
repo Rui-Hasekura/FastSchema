@@ -492,7 +492,7 @@ template <typename D64Tag>
 // Dispatch entry point. Validates inputs, allocates the output buffer, and
 // calls the AVX2 or Highway kernel depending on the target selected by
 // Highway's dynamic dispatch.
-ParseResult<memory::NoInitVector<std::uint16_t>> UnpackIndicesFusedImpl(
+ParseResult<memory::UnInitBuffer<std::uint16_t>> UnpackIndicesFusedImpl(
     std::span<const std::byte> raw_longs,
     std::uint32_t bits_per_block,
     std::uint64_t volume,
@@ -503,7 +503,7 @@ ParseResult<memory::NoInitVector<std::uint16_t>> UnpackIndicesFusedImpl(
   };
 
   if (volume == 0) {
-    return memory::NoInitVector<std::uint16_t>{};
+    return memory::UnInitBuffer<std::uint16_t>{};
   }
 
   // Degenerate palette: every block is index 0. Skip the kernel entirely
@@ -513,7 +513,7 @@ ParseResult<memory::NoInitVector<std::uint16_t>> UnpackIndicesFusedImpl(
       return std::unexpected(
           make_error(ParseError::Code::PaletteIndexOutOfRange));
     }
-    memory::NoInitVector<std::uint16_t> out(static_cast<std::size_t>(volume));
+    memory::UnInitBuffer<std::uint16_t> out(static_cast<std::size_t>(volume));
     std::memset(out.data(),
                 0,
                 static_cast<std::size_t>(volume) * sizeof(std::uint16_t));
@@ -531,9 +531,9 @@ ParseResult<memory::NoInitVector<std::uint16_t>> UnpackIndicesFusedImpl(
 
   const std::byte* raw_data = raw_longs.data();
   ParseResult<void> kernel_result{};
-  // NoInitVector allocates uninitialized memory to skip zeroing for large
+  // UnInitBuffer allocates uninitialized memory to skip zeroing for large
   // buffers, as the kernels will overwrite it completely.
-  memory::NoInitVector<std::uint16_t> out(static_cast<std::size_t>(volume));
+  memory::UnInitBuffer<std::uint16_t> out(static_cast<std::size_t>(volume));
 
   // bpb is clamped to [2, 16] by BitsPerBlock. The SIMD paths require this
   // range: 4 lanes * 16 bpb = 64 bits, the width of one window. bpb > 16
@@ -569,7 +569,7 @@ HWY_AFTER_NAMESPACE();
 namespace fschema::litematic::internal {
 HWY_EXPORT(UnpackIndicesFusedImpl);
 
-[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+[[nodiscard]] ParseResult<memory::UnInitBuffer<std::uint16_t>>
 UnpackIndicesFused(std::span<const std::byte> raw_longs,
                    std::uint32_t bits_per_block,
                    std::uint64_t volume,

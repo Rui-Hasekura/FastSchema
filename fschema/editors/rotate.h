@@ -26,7 +26,7 @@
 #include "fschema/filters/view.h"
 #include "fschema/ir/types.h"
 #include "fschema/memory/arena.h"
-#include "fschema/memory/noinit_allocator.h"
+#include "fschema/memory/uninit_buffer.h"
 
 namespace fschema::editors {
 
@@ -69,9 +69,9 @@ template <filters::Filter F>
     ir::BoundingBox new_bounds = out.bounds;
 
     // Allocate new buffer for the rotated state.
-    // NoInitVector does not value-initialize, which is fine since we overwrite
+    // UnInitBuffer does not value-initialize, which is fine since we overwrite
     // it fully.
-    memory::NoInitVector<std::uint16_t> new_data(static_cast<std::size_t>(vol),
+    memory::UnInitBuffer<std::uint16_t> new_data(static_cast<std::size_t>(vol),
                                                  &arena);
     const std::uint16_t* src = out.block_indices.data();
     std::uint16_t* dst = new_data.data();

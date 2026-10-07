@@ -17,7 +17,6 @@
 #define FSCHEMA_MEMORY_NOINIT_ALLOCATOR_H_
 
 #include <cstddef>
-#include <cstdint>
 #include <new>
 #include <type_traits>
 #include <utility>
@@ -27,7 +26,7 @@
 namespace fschema::memory {
 
 template <typename T>
-class NoInitVector {
+class UnInitBuffer {
  public:
   using value_type = T;
   using size_type = std::size_t;
@@ -39,11 +38,11 @@ class NoInitVector {
   using iterator = T*;
   using const_iterator = const T*;
 
-  NoInitVector() noexcept = default;
+  UnInitBuffer() noexcept = default;
 
-  explicit NoInitVector(size_type count) { allocate_direct(count); }
+  explicit UnInitBuffer(size_type count) { allocate_direct(count); }
 
-  NoInitVector(size_type count, Arena* arena) {
+  UnInitBuffer(size_type count, Arena* arena) {
     if (arena) {
       allocate_from_arena(count, arena);
     } else {
@@ -51,16 +50,16 @@ class NoInitVector {
     }
   }
 
-  NoInitVector(size_type count, Arena& arena) : NoInitVector(count, &arena) {}
+  UnInitBuffer(size_type count, Arena& arena) : UnInitBuffer(count, &arena) {}
 
-  NoInitVector(NoInitVector&& o) noexcept
+  UnInitBuffer(UnInitBuffer&& o) noexcept
       : data_(o.data_), size_(o.size_), arena_(o.arena_) {
     o.data_ = nullptr;
     o.size_ = 0;
     o.arena_ = nullptr;
   }
 
-  NoInitVector& operator=(NoInitVector&& o) noexcept {
+  UnInitBuffer& operator=(UnInitBuffer&& o) noexcept {
     if (this != &o) {
       release();
       data_ = o.data_;
@@ -73,12 +72,12 @@ class NoInitVector {
     return *this;
   }
 
-  NoInitVector(const NoInitVector&) = delete;
-  NoInitVector& operator=(const NoInitVector&) = delete;
+  UnInitBuffer(const UnInitBuffer&) = delete;
+  UnInitBuffer& operator=(const UnInitBuffer&) = delete;
 
-  ~NoInitVector() { release(); }
+  ~UnInitBuffer() { release(); }
 
-  void resize_uninitialized(size_type count, Arena* arena) {
+  void reallocate_uninitialized(size_type count, Arena* arena) {
     release();
     if (arena) {
       allocate_from_arena(count, arena);

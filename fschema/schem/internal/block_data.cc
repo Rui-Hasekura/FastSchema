@@ -30,7 +30,7 @@
 
 #include "fschema/base/error.h"
 #include "fschema/memory/arena.h"
-#include "fschema/memory/noinit_allocator.h"
+#include "fschema/memory/uninit_buffer.h"
 
 namespace fschema::schem::internal {
 
@@ -69,7 +69,7 @@ namespace {
 
 }  // anonymous namespace
 
-[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+[[nodiscard]] ParseResult<memory::UnInitBuffer<std::uint16_t>>
 DecodeVarintParallel(std::span<const std::byte> data,
                      std::uint64_t volume,
                      std::size_t palette_size,
@@ -98,7 +98,7 @@ DecodeVarintParallel(std::span<const std::byte> data,
     return DecodeVarintScalar(data, volume, palette_size, arena);
   }
 
-  memory::NoInitVector<std::uint16_t> out(n, &arena);
+  memory::UnInitBuffer<std::uint16_t> out(n, &arena);
 
   std::atomic<std::uint32_t> error_flag{0};
 
@@ -124,7 +124,7 @@ DecodeVarintParallel(std::span<const std::byte> data,
   return out;
 }
 
-[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+[[nodiscard]] ParseResult<memory::UnInitBuffer<std::uint16_t>>
 DecodeVarintScalar(std::span<const std::byte> data,
                    std::uint64_t volume,
                    std::size_t palette_size,
@@ -133,7 +133,7 @@ DecodeVarintScalar(std::span<const std::byte> data,
     return std::unexpected(
         ParseError{ParseError::Code::PaletteIndexOutOfRange, "Palette", 0});
   }
-  memory::NoInitVector<std::uint16_t> out(static_cast<std::size_t>(volume),
+  memory::UnInitBuffer<std::uint16_t> out(static_cast<std::size_t>(volume),
                                           &arena);
   const auto* p = reinterpret_cast<const std::uint8_t*>(data.data());
   const auto* end = p + data.size();
@@ -152,13 +152,13 @@ DecodeVarintScalar(std::span<const std::byte> data,
   return out;
 }
 
-[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+[[nodiscard]] ParseResult<memory::UnInitBuffer<std::uint16_t>>
 DecodeVarintArray(std::span<const std::byte> data,
                   std::uint64_t volume,
                   std::size_t palette_size,
                   memory::Arena& arena) {
   if (volume == 0) [[unlikely]] {
-    return memory::NoInitVector<std::uint16_t>{};
+    return memory::UnInitBuffer<std::uint16_t>{};
   }
   if (data.size() < volume) [[unlikely]] {
     return std::unexpected(

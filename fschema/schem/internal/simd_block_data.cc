@@ -37,7 +37,7 @@
 #include "fschema/base/error.h"
 #include "fschema/base/port.h"
 #include "fschema/memory/arena.h"
-#include "fschema/memory/noinit_allocator.h"
+#include "fschema/memory/uninit_buffer.h"
 #include "fschema/schem/internal/block_data.h"
 
 HWY_BEFORE_NAMESPACE();
@@ -147,7 +147,7 @@ namespace hn = hwy::HWY_NAMESPACE;
 
 #if HWY_TARGET == HWY_AVX2
 
-[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+[[nodiscard]] ParseResult<memory::UnInitBuffer<std::uint16_t>>
 DecodeSingleByteFastImpl(std::span<const std::byte> data,
                          std::uint64_t volume,
                          std::size_t palette_size,
@@ -155,7 +155,7 @@ DecodeSingleByteFastImpl(std::span<const std::byte> data,
   const auto n = static_cast<std::size_t>(volume);
   const auto* src = reinterpret_cast<const std::uint8_t*>(data.data());
 
-  memory::NoInitVector<std::uint16_t> out(n, &arena);
+  memory::UnInitBuffer<std::uint16_t> out(n, &arena);
   auto* dst = out.data();
 
   std::atomic<std::uint32_t> error_flag{0};
@@ -220,7 +220,7 @@ DecodeSingleByteFastImpl(std::span<const std::byte> data,
   return out;
 }
 
-[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+[[nodiscard]] ParseResult<memory::UnInitBuffer<std::uint16_t>>
 Decode2ByteUniformFastImpl(std::span<const std::byte> data,
                            std::uint64_t volume,
                            std::size_t palette_size,
@@ -228,7 +228,7 @@ Decode2ByteUniformFastImpl(std::span<const std::byte> data,
   const auto n = static_cast<std::size_t>(volume);
   const auto* src = reinterpret_cast<const std::uint8_t*>(data.data());
 
-  memory::NoInitVector<std::uint16_t> out(n, &arena);
+  memory::UnInitBuffer<std::uint16_t> out(n, &arena);
   auto* dst = out.data();
 
   std::atomic<std::uint32_t> error_flag{0};
@@ -302,7 +302,7 @@ Decode2ByteUniformFastImpl(std::span<const std::byte> data,
 
 #else  // Generic Highway path
 
-[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+[[nodiscard]] ParseResult<memory::UnInitBuffer<std::uint16_t>>
 DecodeSingleByteFastImpl(std::span<const std::byte> data,
                          std::uint64_t volume,
                          std::size_t palette_size,
@@ -311,7 +311,7 @@ DecodeSingleByteFastImpl(std::span<const std::byte> data,
   const auto* FSCHEMA_RESTRICT src =
       reinterpret_cast<const std::uint8_t*>(data.data());
 
-  memory::NoInitVector<std::uint16_t> out(n, &arena);
+  memory::UnInitBuffer<std::uint16_t> out(n, &arena);
   auto* FSCHEMA_RESTRICT dst = out.data();
 
   const hn::ScalableTag<std::uint8_t> d8;
@@ -350,7 +350,7 @@ DecodeSingleByteFastImpl(std::span<const std::byte> data,
   return out;
 }
 
-[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+[[nodiscard]] ParseResult<memory::UnInitBuffer<std::uint16_t>>
 Decode2ByteUniformFastImpl(std::span<const std::byte> data,
                            std::uint64_t volume,
                            std::size_t palette_size,
@@ -359,7 +359,7 @@ Decode2ByteUniformFastImpl(std::span<const std::byte> data,
   const auto* FSCHEMA_RESTRICT src =
       reinterpret_cast<const std::uint8_t*>(data.data());
 
-  memory::NoInitVector<std::uint16_t> out(n, &arena);
+  memory::UnInitBuffer<std::uint16_t> out(n, &arena);
   auto* FSCHEMA_RESTRICT dst = out.data();
 
   const hn::ScalableTag<std::uint16_t> d16;
@@ -654,7 +654,7 @@ HWY_EXPORT(DecodeVarintChunksKernelImpl);
       data, volume, num_chunks);
 }
 
-[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+[[nodiscard]] ParseResult<memory::UnInitBuffer<std::uint16_t>>
 DecodeSingleByteFast(std::span<const std::byte> data,
                      std::uint64_t volume,
                      std::size_t palette_size,
@@ -663,7 +663,7 @@ DecodeSingleByteFast(std::span<const std::byte> data,
       data, volume, palette_size, arena);
 }
 
-[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+[[nodiscard]] ParseResult<memory::UnInitBuffer<std::uint16_t>>
 Decode2ByteUniformFast(std::span<const std::byte> data,
                        std::uint64_t volume,
                        std::size_t palette_size,

@@ -25,7 +25,7 @@
 
 #include "fschema/base/nbt/tag.h"
 #include "fschema/memory/arena.h"
-#include "fschema/memory/noinit_allocator.h"
+#include "fschema/memory/uninit_buffer.h"
 
 namespace fschema::ir {
 
@@ -95,7 +95,7 @@ enum class BiomeLayout : std::uint8_t {
 
 struct BiomeData {
   std::vector<std::string_view> palette;
-  memory::NoInitVector<std::uint16_t> indices;
+  memory::UnInitBuffer<std::uint16_t> indices;
   BiomeLayout layout = BiomeLayout::kNone;
 };
 
@@ -171,7 +171,7 @@ struct Region {
   // The materialized (decoded) block indices.
   // Memory layout is YZX (Y major, Z middle, X minor) to match disk formats.
   // Mutable: materialized on-demand via `EnsureMaterialized()`.
-  mutable memory::NoInitVector<std::uint16_t> block_indices;
+  mutable memory::UnInitBuffer<std::uint16_t> block_indices;
 
   // The raw packed data, retained for lazy passthrough during encoding.
   mutable LazyBlockData lazy_source;

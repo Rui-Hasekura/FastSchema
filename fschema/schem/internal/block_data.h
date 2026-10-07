@@ -25,7 +25,7 @@
 
 #include "fschema/base/error.h"
 #include "fschema/memory/arena.h"
-#include "fschema/memory/noinit_allocator.h"
+#include "fschema/memory/uninit_buffer.h"
 #include "fschema/schem/types.h"
 
 namespace fschema::schem::internal {
@@ -36,25 +36,25 @@ struct ChunkBoundary {
   std::vector<std::size_t> counts;
 };
 
-[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+[[nodiscard]] ParseResult<memory::UnInitBuffer<std::uint16_t>>
 DecodeVarintArray(std::span<const std::byte> data,
                   std::uint64_t volume,
                   std::size_t palette_size,
                   memory::Arena& arena);
 
-[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+[[nodiscard]] ParseResult<memory::UnInitBuffer<std::uint16_t>>
 DecodeVarintScalar(std::span<const std::byte> data,
                    std::uint64_t volume,
                    std::size_t palette_size,
                    memory::Arena& arena);
 
-[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+[[nodiscard]] ParseResult<memory::UnInitBuffer<std::uint16_t>>
 DecodeSingleByteFast(std::span<const std::byte> data,
                      std::uint64_t volume,
                      std::size_t palette_size,
                      memory::Arena& arena);
 
-[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+[[nodiscard]] ParseResult<memory::UnInitBuffer<std::uint16_t>>
 Decode2ByteUniformFast(std::span<const std::byte> data,
                        std::uint64_t volume,
                        std::size_t palette_size,
@@ -65,7 +65,7 @@ Decode2ByteUniformFast(std::span<const std::byte> data,
     std::uint64_t volume,
     std::size_t num_chunks);
 
-[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+[[nodiscard]] ParseResult<memory::UnInitBuffer<std::uint16_t>>
 DecodeVarintParallel(std::span<const std::byte> data,
                      std::uint64_t volume,
                      std::size_t palette_size,

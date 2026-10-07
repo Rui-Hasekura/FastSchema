@@ -42,7 +42,7 @@ ParseResult<void> EnsureMaterialized(const Region& reg, memory::Arena& arena) {
     reg.block_indices = std::move(*res);
   } else {
     // Empty region or unknown format, allocate default space
-    reg.block_indices.resize_uninitialized(static_cast<std::size_t>(volume),
+    reg.block_indices.reallocate_uninitialized(static_cast<std::size_t>(volume),
                                            &arena);
   }
 

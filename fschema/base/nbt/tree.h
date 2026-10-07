@@ -24,7 +24,7 @@
 #include <vector>
 
 #include "fschema/base/nbt/tag.h"
-#include "fschema/memory/noinit_allocator.h"
+#include "fschema/memory/uninit_buffer.h"
 
 namespace fschema::base {
 

@@ -118,7 +118,7 @@ template <filters::Filter F>
   const std::uint64_t vol = static_cast<std::uint64_t>(bb.size[0]) *
                             static_cast<std::uint64_t>(bb.size[1]) *
                             static_cast<std::uint64_t>(bb.size[2]);
-  out.block_indices.resize_uninitialized(static_cast<std::size_t>(vol), &arena);
+  out.block_indices.reallocate_uninitialized(static_cast<std::size_t>(vol), &arena);
 
   // Fill with the first palette entry (may or may not be air; the encoder
   // normalizes at serialization time).

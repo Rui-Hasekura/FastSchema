@@ -22,7 +22,7 @@
 #include <span>
 
 #include "fschema/base/error.h"
-#include "fschema/memory/noinit_allocator.h"
+#include "fschema/memory/uninit_buffer.h"
 
 namespace fschema::litematic::internal {
 
@@ -34,7 +34,7 @@ namespace fschema::litematic::internal {
   return static_cast<std::uint32_t>(std::bit_width(palette_size - 1));
 }
 
-[[nodiscard]] ParseResult<memory::NoInitVector<std::uint16_t>>
+[[nodiscard]] ParseResult<memory::UnInitBuffer<std::uint16_t>>
 UnpackIndicesFused(std::span<const std::byte> raw_longs,
                    std::uint32_t bits_per_block,
                    std::uint64_t volume,

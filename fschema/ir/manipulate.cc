@@ -152,7 +152,7 @@ ParseResult<Region> MergeRegions(const std::vector<Region>& regions,
   std::uint64_t vol = static_cast<std::uint64_t>(merged.bounds.size[0]) *
                       static_cast<std::uint64_t>(merged.bounds.size[1]) *
                       static_cast<std::uint64_t>(merged.bounds.size[2]);
-  merged.block_indices.resize_uninitialized(vol, &arena);
+  merged.block_indices.reallocate_uninitialized(vol, &arena);
   std::memset(merged.block_indices.data(), 0, vol * sizeof(std::uint16_t));
 
   // 4. Copy blocks (YZX order)

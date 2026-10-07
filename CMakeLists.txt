@@ -236,7 +236,7 @@ target_sources(fschema
       fschema/litematic/parse.h
       fschema/litematic/types.h
       fschema/memory/arena.h
-      fschema/memory/noinit_allocator.h
+      fschema/memory/uninit_buffer.h
       fschema/schem/parse.h
       fschema/schem/types.h
       fschema/editors/internal/state_transform.h
