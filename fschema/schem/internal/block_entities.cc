@@ -24,11 +24,11 @@
 #include <vector>
 
 #include "fschema/base/error.h"
-#include "fschema/base/nbt_reader.h"
-#include "fschema/base/nbt_scope.h"
-#include "fschema/base/nbt_skip.h"
-#include "fschema/base/nbt_tag.h"
-#include "fschema/base/nbt_writer.h"
+#include "fschema/base/nbt/reader.h"
+#include "fschema/base/nbt/scope.h"
+#include "fschema/base/nbt/skip.h"
+#include "fschema/base/nbt/tag.h"
+#include "fschema/base/nbt/writer.h"
 #include "fschema/memory/arena.h"
 #include "fschema/schem/types.h"
 

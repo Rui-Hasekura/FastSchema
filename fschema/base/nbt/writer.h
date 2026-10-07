@@ -22,7 +22,7 @@
 #include <string_view>
 #include <vector>
 
-#include "fschema/base/nbt_tag.h"
+#include "fschema/base/nbt/tag.h"
 
 namespace fschema::base {
 
@@ -87,6 +87,11 @@ class NbtWriter {
 
   // Pass-through raw payload for a single list element (no header)
   void WriteListElementRawPayload(std::span<const std::byte> payload);
+
+  // Appends a single TAG_End byte (0x00) without changing the writer's
+  // internal depth counter. Needed when appending to a raw compound body
+  // that was copied via WriteListElementRawPayload.
+  void WriteEndTag() { WriteTagId(TagType::End); }
 
   // Finalization
   // Moves and returns the constructed NBT buffer

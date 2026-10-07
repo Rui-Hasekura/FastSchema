@@ -23,7 +23,7 @@
 #include <variant>
 #include <vector>
 
-#include "fschema/base/nbt_tag.h"
+#include "fschema/base/nbt/tag.h"
 #include "fschema/memory/noinit_allocator.h"
 
 namespace fschema::base {
@@ -42,7 +42,7 @@ using NbtPayload = std::variant<std::monostate,
                                 std::string_view,
                                 std::span<const std::byte>,
                                 std::unique_ptr<NbtCompound>,
-                                std::unique_ptr<NbtList> >;
+                                std::unique_ptr<NbtList>>;
 
 struct NbtTag {
   TagType type = TagType::End;

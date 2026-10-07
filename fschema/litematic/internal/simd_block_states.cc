@@ -338,11 +338,14 @@ template <typename D64Tag>
     const auto word_idx = static_cast<std::size_t>(bit_offset >> 6);
     const auto next_word_idx = word_idx + 1;
     std::uint64_t current_long;
-    std::uint64_t next_long;
+    std::uint64_t next_long = 0;
     std::memcpy(&current_long, raw_data + word_idx * 8, 8);
-    std::memcpy(&next_long, raw_data + next_word_idx * 8, 8);
     current_long = std::byteswap(current_long);
-    next_long = std::byteswap(next_long);
+    // OOB check for next_long
+    if (next_word_idx < long_count) {
+      std::memcpy(&next_long, raw_data + next_word_idx * 8, 8);
+      next_long = std::byteswap(next_long);
+    }
     const auto bit_shift = static_cast<std::uint32_t>(bit_offset & 63);
     const std::uint64_t high_bits =
         (bit_shift == 0) ? std::uint64_t(0) : next_long << (64 - bit_shift);

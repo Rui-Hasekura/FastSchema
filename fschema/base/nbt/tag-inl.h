@@ -19,7 +19,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "fschema/base/nbt_tag.h"
+#include "fschema/base/nbt/tag.h"
 
 namespace fschema::base {
 

@@ -21,13 +21,11 @@
 
 #include <algorithm>
 #include <atomic>
-#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <span>
 #include <thread>
-#include <utility>
 #include <vector>
 
 #include "fschema/base/error.h"
@@ -56,6 +54,10 @@ namespace {
           ParseError{ParseError::Code::Truncated, "BlockData", 0});
     }
     const std::uint8_t byte = *p++;
+    if (shift == 28 && byte > 0x0F) [[unlikely]] {
+      return std::unexpected(
+          ParseError{ParseError::Code::VarintOverflow, "BlockData", 0});
+    }
     value |= (byte & 0x7F) << shift;
     if (byte < 0x80) {
       return value;

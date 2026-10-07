@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "fschema/base/nbt_parse.h"
+#include "fschema/base/nbt/parse.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -26,10 +26,10 @@
 #include <vector>
 
 #include "fschema/base/error.h"
-#include "fschema/base/nbt_reader.h"
-#include "fschema/base/nbt_scope.h"
-#include "fschema/base/nbt_tag.h"
-#include "fschema/base/nbt_tree.h"
+#include "fschema/base/nbt/reader.h"
+#include "fschema/base/nbt/scope.h"
+#include "fschema/base/nbt/tag.h"
+#include "fschema/base/nbt/tree.h"
 
 namespace fschema::base {
 
@@ -59,6 +59,10 @@ namespace fschema::base {
   auto [elem_type, count] = *header;
   if (elem_type == TagType::End || count == 0) {
     return NbtList{elem_type, {}};
+  }
+
+  if (count > reader.limits().max_nbt_list_elements) [[unlikely]] {
+    return std::unexpected(reader.Error(ParseError::Code::OversizedPayload));
   }
 
   NbtList list;

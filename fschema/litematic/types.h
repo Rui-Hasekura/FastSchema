@@ -24,9 +24,8 @@
 #include <string_view>
 #include <vector>
 
-#include "fschema/base/nbt_tag.h"
+#include "fschema/base/nbt/tag.h"
 #include "fschema/memory/arena.h"
-#include "fschema/memory/noinit_allocator.h"
 
 namespace fschema::litematic {
 
@@ -82,10 +81,14 @@ struct Entity {
 };
 
 struct TileEntity {
-  std::string_view id;                         // e.g. "minecraft:chest"
-  std::array<std::int32_t, 3> block_position;  // Block position
-  std::span<const std::byte>
-      raw_nbt;  // Full NBT subtree, for deep parsing if needed
+  std::string_view id;
+
+  // WARNING: It's in the LOCAL coordinate system of the region,
+  // not world coordinates.
+  std::array<std::int32_t, 3> block_position;
+
+  // Full NBT subtree, for deep parsing if needed.
+  std::span<const std::byte> raw_nbt;
 };
 
 // (v6+) Pending lists (Optional)

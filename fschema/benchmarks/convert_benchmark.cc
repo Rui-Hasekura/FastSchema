@@ -42,8 +42,6 @@ namespace firc = fschema::ir::format;
 
 namespace {
 
-using BytesResult = fschema::ParseResult<std::vector<std::byte>>;
-
 constexpr double kMiB = 1024.0 * 1024.0;
 
 struct TestFile {
@@ -115,7 +113,7 @@ void RegisterHandlers() {
     for (std::uint16_t idx : reg.block_indices) {
       if (idx < counts.size()) ++counts[idx];
     }
-    for (size_t i = 0; i < reg.palette.size(); ++i) {
+    for (std::size_t i = 0; i < reg.palette.size(); ++i) {
       if (counts[i] > 0 && !fschema::base::IsAirVariant(reg.palette[i].name)) {
         total += counts[i];
       }
@@ -377,7 +375,7 @@ void BM_CopyOnly(benchmark::State& st) {
 
     for (const auto& tgt : targets) {
       firc::EncodeOptions opts;
-      opts.compress = false;
+      opts.compress = true;
       opts.multi_region =
           firc::EncodeOptions::MultiRegionStrategy::kMergeBoundingBox;
       opts.target_version = tgt.version;

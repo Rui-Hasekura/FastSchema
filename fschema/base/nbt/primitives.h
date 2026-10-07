@@ -13,24 +13,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef FSCHEMA_BASE_NBT_PARSE_H_
-#define FSCHEMA_BASE_NBT_PARSE_H_
+#ifndef FSCHEMA_BASE_NBT_PRIMITIVES_H_
+#define FSCHEMA_BASE_NBT_PRIMITIVES_H_
 
-#include <expected>
+#include <array>
 
 #include "fschema/base/error.h"
-#include "fschema/base/nbt_reader.h"
-#include "fschema/base/nbt_tag.h"
-#include "fschema/base/nbt_tree.h"
+#include "fschema/base/nbt/reader.h"
 
 namespace fschema::base {
 
-[[nodiscard]] ParseResult<NbtPayload> ParsePayload(ByteReader& reader,
-                                                   TagType tag_type);
-[[nodiscard]] ParseResult<NbtCompound> ParseCompound(ByteReader& reader);
-[[nodiscard]] ParseResult<NbtList> ParseList(ByteReader& reader);
-[[nodiscard]] ParseResult<NbtTag> ParseNbt(ByteReader& reader);
+// Reads a List<Double>[3]. Returns {0,0,0} for empty/End list, returns
+// InvalidTagId if element type is not Double, returns {0,0,0} and skips
+// all elements if length != 3.
+[[nodiscard]] ParseResult<std::array<double, 3>> ReadVec3DoubleList(
+    ByteReader& reader);
+
+// Reads a List<Float>[2]. Same semantics as ReadVec3DoubleList but for 2
+// floats.
+[[nodiscard]] ParseResult<std::array<float, 2>> ReadVec2FloatList(
+    ByteReader& reader);
 
 }  // namespace fschema::base
 
-#endif  // FSCHEMA_BASE_NBT_PARSE_H_
+#endif  // FSCHEMA_BASE_NBT_PRIMITIVES_H_

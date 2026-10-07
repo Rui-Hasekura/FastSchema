@@ -22,9 +22,9 @@
 #include <string_view>
 
 #include "fschema/base/limits.h"
-#include "fschema/base/nbt_reader.h"
-#include "fschema/base/nbt_skip.h"
-#include "fschema/base/nbt_writer.h"
+#include "fschema/base/nbt/reader.h"
+#include "fschema/base/nbt/skip.h"
+#include "fschema/base/nbt/writer.h"
 #include "fschema/ir/types.h"
 
 namespace fschema::ir::internal {

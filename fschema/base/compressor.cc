@@ -15,8 +15,6 @@
 
 #include "fschema/base/compressor.h"
 
-#include <libdeflate.h>
-
 #include <algorithm>
 #include <bit>
 #include <cstddef>
@@ -29,6 +27,8 @@
 #include <span>
 #include <system_error>
 #include <vector>
+
+#include "libdeflate.h"
 
 namespace fschema::base {
 

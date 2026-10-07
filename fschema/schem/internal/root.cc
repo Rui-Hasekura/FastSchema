@@ -24,10 +24,10 @@
 
 #include "fschema/base/error.h"
 #include "fschema/base/limits.h"
-#include "fschema/base/nbt_reader.h"
-#include "fschema/base/nbt_scope.h"
-#include "fschema/base/nbt_skip.h"
-#include "fschema/base/nbt_tag.h"
+#include "fschema/base/nbt/reader.h"
+#include "fschema/base/nbt/scope.h"
+#include "fschema/base/nbt/skip.h"
+#include "fschema/base/nbt/tag.h"
 #include "fschema/schem/internal/block_entities.h"
 #include "fschema/schem/internal/entities.h"
 #include "fschema/schem/internal/palette.h"
@@ -93,6 +93,7 @@ namespace fschema::schem::internal {
         } else if (name == "Data" && t == base::TagType::ByteArray) {
           auto len = reader.ReadLength(reader.limits().max_array_elements);
           if (!len) return std::unexpected(len.error());
+
           auto span = reader.PeekRaw(*len);
           if (!span) return std::unexpected(span.error());
           block_data_raw = *span;
@@ -211,11 +212,11 @@ ParseSchematicFields(base::ByteReader& reader, Schematic& out, bool is_v3) {
               static_cast<std::uint32_t>(static_cast<std::uint16_t>(*v));
           have_length = true;
         } else if (name == "Offset" && t == base::TagType::IntArray) {
-          auto len = reader.ReadLength(3);
+          auto len = reader.ReadLength(reader.limits().max_array_elements);
           if (!len) return std::unexpected(len.error());
           if (*len != 3) [[unlikely]] {
             return std::unexpected(
-                reader.Error(ParseError::Code::InvalidTagId));
+                reader.Error(ParseError::Code::InvalidStructure));
           }
           for (int i = 0; i < 3; ++i) {
             auto v = reader.Read<std::int32_t>();

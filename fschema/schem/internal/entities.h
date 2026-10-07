@@ -19,7 +19,7 @@
 #include <vector>
 
 #include "fschema/base/error.h"
-#include "fschema/base/nbt_reader.h"
+#include "fschema/base/nbt/reader.h"
 #include "fschema/memory/arena.h"
 #include "fschema/schem/types.h"
 

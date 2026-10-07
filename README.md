@@ -10,8 +10,6 @@ It's a super fast Minecraft schema tool library. Why it's so fast:
 
 - **Multi-threading**: Parallelized via Intel oneTBB for multi-core scaling.
 
-- **Toolchain**: C++23 standard (excluding C++20 Modules for build system compatibility).
-
 But... How fast is it?
 
 ### Benchmark
@@ -28,34 +26,71 @@ But... How fast is it?
 
 #### Pure Parsing & Unpacking
 
-| Types                            | Wall Time | CPU Time | Iterations | Throughput    |
-|:-------------------------------- |:--------- |:-------- |:---------- |:------------- |
-| Pure NBT Parsing                 | 1.711 ms  | 1.680 ms | 1600       | 162.583 GiB/s |
-| Litematic Parsing (ImmutableAPI) | 0.535 ms  | 0.522 ms | 5271       | 523.435 GiB/s |
-| Litematic Unpack (MutableAPI)    | 53.4 ms   | 42.8 ms  | 69         | 6.372 GiB/s   |
-| Schem Parsing (ImmutableAPI)     | 3.77 ms   | 3.72 ms  | 747        | 65.252 GiB/s  |
-| Schem Unpack (MutableAPI)        | 32.1 ms   | 26.9 ms  | 138        | 9.002 GiB/s   |
+| Types                            | Wall Time | CPU Time | Iterations | Throughput   |
+|:-------------------------------- |:--------- |:-------- |:---------- |:------------ |
+| Pure NBT Parsing                 | 1.627 ms  | 1.594 ms | 1774       | 171.3GiB/s   |
+| Litematic Parsing (ImmutableAPI) | 0.641 ms  | 0.622 ms | 4371       | 439.05GiB/s  |
+| Litematic Unpack (MutableAPI)    | 45.5 ms   | 42.2 ms  | 64         | 6.45706GiB/s |
+| Schem Parsing (ImmutableAPI)     | 2.23 ms   | 2.18 ms  | 1195       | 111.261GiB/s |
+| Schem Unpack (MutableAPI)        | 25.3 ms   | 19.8 ms  | 119        | 12.2345GiB/s |
 
 #### Format Conversion
 
 | Types                                  | Wall Time | CPU Time | Iterations | Throughput    |
 |:-------------------------------------- |:--------- |:-------- |:---------- |:------------- |
-| CrossConvert (Litematic -> Schem)      | 209 ms    | 201 ms   | 36         | 1.359 GiB/s   |
-| RoundTripSame (Litematic -> Litematic) | 116 ms    | 113 ms   | 58         | 2.419 GiB/s   |
-| CrossConvert (Schem -> Litematic)      | 357 ms    | 339 ms   | 20         | 733.723 MiB/s |
-| RoundTripSame (Schem -> Schem)         | 112 ms    | 110 ms   | 61         | 2.216 GiB/s   |
-| CrossConvertGzip (Litematic -> Schem)  | 620 ms    | 600 ms   | 8          | 466.374 MiB/s |
-| CrossConvertGzip (Schem -> Litematic)  | 825 ms    | 803 ms   | 5          | 309.762 MiB/s |
+| CrossConvert (Litematic -> Schem)      | 206 ms    | 202 ms   | 34         | 1.354 GiB/s   |
+| RoundTripSame (Litematic -> Litematic) | 119 ms    | 114 ms   | 61         | 2.396 GiB/s   |
+| CrossConvert (Schem -> Litematic)      | 268 ms    | 261 ms   | 27         | 953.189 MiB/s |
+| RoundTripSame (Schem -> Schem)         | 103 ms    | 102 ms   | 65         | 2.389 GiB/s   |
+| CrossConvertGzip (Litematic -> Schem)  | 618 ms    | 598 ms   | 7          | 467.461 MiB/s |
+| CrossConvertGzip (Schem -> Litematic)  | 738 ms    | 721 ms   | 6          | 344.876 MiB/s |
 
 > Gzip performance is mostly limited by Deflate itself. `libdeflate` is already highly optimized, and the results are close to the practical limit for this workload on the test machine.
 
+### Installation
+
+##### Prerequisites
+
+Before build it, ensure your environment meets the following requirements:
+
+**CMake**: 3.28 or higher. [click me if need to update](cmake.org/download/)
+
+**C++ Compiler**: Must support C++23. *Clang/GCC are recommended.*
+
+- Recommended: **Clang** 17+, **GCC** 14+, MSVC 19.38+
+
+- Compat: Clang 16+, GCC 13.1+, MSVC19.36+
+
+##### Build & Install from Source
+
+```bash
+git clone https://github.com/Rui-Hasekura/FastSchema
+cd FastSchema
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+cmake --install build
+```
+
+##### CMake `find_package`
+
+```cmake
+find_package(fschema REQUIRED)
+
+add_executable(your_app main.cc)
+target_link_libraries(your_app PRIVATE fschema::fschema)
+```
+
+> *Why not FetchContent? Well, we don't have any tags or releases yet...*
+
 ### How to use
 
-This library is still under development...
+This library is still under development.
 
-But it supports parsing or converting `.litematic`(v5 - v7) , `.schem`(v2 - v3) and NBT files now.
+It features a high-performance parser, converters(not because the implementation is bad or I lack confidence, but ideally avoid cross-converting if you can), and tools(quite a few, actually).
 
-[You can get examples at here](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/examples).
+Documentation is work-in-progress. However, the API is fairly straightforward(at least I think), so you can explore it on your own for now.
+
+[You can find examples here](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/examples).
 
 ### License
 
@@ -76,6 +111,8 @@ This project also includes a [NOTICE](https://github.com/Rui-Hasekura/FastSchema
 - [Google Abseil](https://github.com/abseil/abseil-cpp)
 
 - [xxHash](https://github.com/cyan4973/xxhash)
+
+- [pdqsort](https://github.com/orlp/pdqsort)
 
 #### Testing & Benchmarking
 

@@ -17,6 +17,7 @@
 
 #include <array>
 #include <bit>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -26,7 +27,7 @@
 
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
-#include "fschema/base/nbt_writer.h"
+#include "fschema/base/nbt/writer.h"
 #include "fschema/ir/internal/bit_pack.h"
 #include "fschema/ir/internal/codec_utils.h"
 #include "fschema/ir/materialize.h"
@@ -180,16 +181,16 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
 
     // Position
     writer.BeginCompoundField("Position");
-    writer.WriteIntField("x", reg.bounds.origin[0]);
-    writer.WriteIntField("y", reg.bounds.origin[1]);
-    writer.WriteIntField("z", reg.bounds.origin[2]);
+    writer.WriteIntField("x", reg.position[0]);
+    writer.WriteIntField("y", reg.position[1]);
+    writer.WriteIntField("z", reg.position[2]);
     writer.EndCompoundField();
 
     // Size
     writer.BeginCompoundField("Size");
-    writer.WriteIntField("x", reg.bounds.size[0]);
-    writer.WriteIntField("y", reg.bounds.size[1]);
-    writer.WriteIntField("z", reg.bounds.size[2]);
+    writer.WriteIntField("x", reg.size[0]);
+    writer.WriteIntField("y", reg.size[1]);
+    writer.WriteIntField("z", reg.size[2]);
     writer.EndCompoundField();
 
     // Palette & index preparation
@@ -207,12 +208,19 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
       }
     }
 
+    // Passthrough conditions:
     const bool block_states_passthrough =
         reg.lazy_source.encoding ==
+            // 1. Must use the Litematica long-array bit-packed format;
             ir::BlockDataEncoding::kLitematicaLongArray &&
+        // 2. Palette must be pristine;
+        // 3. Palette[0] must be air;
         reg.lazy_source.palette_pristine && reg.lazy_source.air_at_zero &&
+        // 4. Bits-per-block must match the palette size;
         PaletteBpb(reg.palette.size()) == reg.lazy_source.bits_per_block &&
-        !reg.lazy_source.raw_bytes.empty();
+        // 5. Region must not have been edited;
+        // 6. Region must have a non-empty block_indices array.
+        !reg.edited && !reg.lazy_source.raw_bytes.empty();
 
     if (block_states_passthrough) {
       out_palette.assign(reg.palette.begin(), reg.palette.end());
@@ -338,9 +346,9 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
       writer.BeginListElementCompound();
       auto write_te_body = [&]() -> ParseResult<void> {
         writer.WriteStringField("id", te.id);
-        writer.WriteIntField("x", te.block_position[0]);
-        writer.WriteIntField("y", te.block_position[1]);
-        writer.WriteIntField("z", te.block_position[2]);
+        writer.WriteIntField("x", te.block_position[0] - reg.bounds.origin[0]);
+        writer.WriteIntField("y", te.block_position[1] - reg.bounds.origin[1]);
+        writer.WriteIntField("z", te.block_position[2] - reg.bounds.origin[2]);
         return internal::FilterAndWriteTileEntityFields(
             te.raw_nbt, internal::kBlockEntitySkip, writer);
       };
@@ -364,9 +372,12 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
       writer.BeginListElementCompound();
       writer.WriteStringField("id", ent.id);
       writer.BeginListField("Pos", base::TagType::Double, 3);
-      writer.WriteListElementDouble(ent.position[0]);
-      writer.WriteListElementDouble(ent.position[1]);
-      writer.WriteListElementDouble(ent.position[2]);
+      writer.WriteListElementDouble(ent.position[0] -
+                                    static_cast<double>(reg.position[0]));
+      writer.WriteListElementDouble(ent.position[1] -
+                                    static_cast<double>(reg.position[1]));
+      writer.WriteListElementDouble(ent.position[2] -
+                                    static_cast<double>(reg.position[2]));
       writer.EndListField();
       writer.BeginListField("Motion", base::TagType::Double, 3);
       writer.WriteListElementDouble(ent.motion[0]);
@@ -428,6 +439,8 @@ ParseResult<Schema> LitematicaHandler::DecodeFromParsed(
   for (auto& reg : src.regions) {
     Region r;
     r.name = reg.name;
+    r.position = reg.position;
+    r.size = reg.size;
     for (int i = 0; i < 3; ++i) {
       if (reg.size[i] < 0) {
         r.bounds.origin[i] = reg.position[i] + reg.size[i];
@@ -454,14 +467,36 @@ ParseResult<Schema> LitematicaHandler::DecodeFromParsed(
                                  reg.palette[0].name == "minecraft:cave_air" ||
                                  reg.palette[0].name == "minecraft:void_air");
     r.lazy_source.palette_pristine = true;
-    r.entities.reserve(reg.entities.size());
+
+    r.block_entities.reserve(reg.tile_entities.size());
     for (auto& te : reg.tile_entities) {
       BlockEntity be;
       be.id = te.id;
-      be.block_position = te.block_position;
+      be.block_position = {
+          te.block_position[0] + r.bounds.origin[0],
+          te.block_position[1] + r.bounds.origin[1],
+          te.block_position[2] + r.bounds.origin[2],
+      };
       be.raw_nbt = te.raw_nbt;
       r.block_entities.push_back(std::move(be));
     }
+
+    r.entities.reserve(reg.entities.size());
+    for (auto& src_ent : reg.entities) {
+      Entity ent;
+      ent.id = src_ent.id;
+      ent.position = {
+          src_ent.position[0] + static_cast<double>(reg.position[0]),
+          src_ent.position[1] + static_cast<double>(reg.position[1]),
+          src_ent.position[2] + static_cast<double>(reg.position[2]),
+      };
+      ent.motion = src_ent.motion;
+      ent.rotation = src_ent.rotation;
+      ent.raw_nbt = src_ent.raw_nbt;
+      r.entities.push_back(std::move(ent));
+    }
+
+
     r.raw_compound = reg.raw_compound;
 
     ir.regions.push_back(std::move(r));

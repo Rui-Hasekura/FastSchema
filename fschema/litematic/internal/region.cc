@@ -26,10 +26,10 @@
 #include <vector>
 
 #include "fschema/base/error.h"
-#include "fschema/base/nbt_reader.h"
-#include "fschema/base/nbt_scope.h"
-#include "fschema/base/nbt_skip.h"
-#include "fschema/base/nbt_tag.h"
+#include "fschema/base/nbt/reader.h"
+#include "fschema/base/nbt/scope.h"
+#include "fschema/base/nbt/skip.h"
+#include "fschema/base/nbt/tag.h"
 #include "fschema/litematic/internal/block_states.h"
 #include "fschema/litematic/internal/entity.h"
 #include "fschema/litematic/internal/palette.h"
@@ -120,9 +120,13 @@ namespace fschema::litematic::internal {
           if (!span_result) return std::unexpected(span_result.error());
           block_states_raw = *span_result;
           reader.advance(static_cast<std::size_t>(payload_bytes));
-
-          region.raw_block_states = block_states_raw;
           have_states = true;
+        } else if (name == "TileEntities" && t == base::TagType::List) {
+          auto r = ParseTileEntities(reader, region.tile_entities);
+          if (!r) return std::unexpected(r.error());
+        } else if (name == "Entities" && t == base::TagType::List) {
+          auto r = ParseEntities(reader, region.entities);
+          if (!r) return std::unexpected(r.error());
         } else if (name == "PendingBlockTicks" && t == base::TagType::List) {
           auto r = ParsePendingTicks(reader, region.pending_block_ticks);
           if (!r) return std::unexpected(r.error());

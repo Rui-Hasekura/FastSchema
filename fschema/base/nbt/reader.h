@@ -18,8 +18,6 @@
 
 #include <concepts>
 #include <cstddef>
-#include <cstdint>
-#include <expected>
 #include <span>
 #include <string>
 #include <string_view>
@@ -27,7 +25,7 @@
 
 #include "fschema/base/error.h"
 #include "fschema/base/limits.h"
-#include "fschema/base/nbt_tag.h"
+#include "fschema/base/nbt/tag.h"
 
 namespace fschema::base {
 
@@ -105,6 +103,6 @@ class ByteReader {
 
 }  // namespace fschema::base
 
-#include "fschema/base/nbt_reader-inl.h"
+#include "fschema/base/nbt/reader-inl.h"
 
 #endif  // FSCHEMA_BASE_NBT_READER_H_

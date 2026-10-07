@@ -27,7 +27,7 @@
 
 #include "fschema/base/byte_order.h"
 #include "fschema/base/error.h"
-#include "fschema/base/nbt_reader.h"
+#include "fschema/base/nbt/reader.h"
 
 namespace fschema::base {
 

@@ -81,7 +81,6 @@ class FormatRegistry {
   absl::Mutex register_mutex_;
 };
 
-// High-level Convenience APIs
 [[nodiscard]] ParseResult<Schema> DecodeFromFormat(
     SourceFormat fmt,
     std::unique_ptr<std::vector<std::byte>> bytes,

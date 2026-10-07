@@ -16,28 +16,60 @@
 #ifndef FSCHEMA_BASE_LIMITS_H_
 #define FSCHEMA_BASE_LIMITS_H_
 
-#include <cstddef>
 #include <cstdint>
 
 namespace fschema::base {
 
+/// Security and safety limits for decoding schematic files.
+///
+/// These limits prevent malicious or malformed inputs from causing excessive
+/// memory allocations or stack overflows.
+/// They act as hard guards during the parsing phase.
+/// If a limit is exceeded, a `ParseError` (usually
+/// `OversizedPayload` or `DepthLimitExceeded`) is returned immediately.
 struct DecodeLimits {
-  // Input
-  std::size_t max_input_bytes = 1ULL << 30;   // 1 GiB after compression
-  std::size_t max_decompressed = 4ULL << 30;  // 4 GiB after decompression
+  // Input / Memory Bounds
 
-  // NBT Tree
+  // Max compressed file size: 1 GiB.
+  std::size_t max_input_bytes = 1ULL << 30;
+  // Max decompressed NBT payload: 4 GiB.
+  std::size_t max_decompressed = 4ULL << 30;
+
+  // NBT Tree Structure
+
+  // Max nesting depth for compounds/lists (DoS / stack overflow guard).
   std::size_t max_nbt_depth = 64;
-  std::size_t max_string_bytes = 1ULL << 16;    // 64 KiB per string
-  std::size_t max_array_elements = 1ULL << 28;  // 256M per array tag
+  // Max size per NBT String tag: 64 KiB (NBT spec limit).
+  std::size_t max_string_bytes = 1ULL << 16;
+  // Max elements per ByteArray/IntArray/LongArray tag: 256M.
+  std::size_t max_array_elements = 1ULL << 28;
 
-  // Litematic
+  // Max elements per NBT List tag in the raw NBT tree: 8M.
+  // Note: Maybe it's not enough, need feedback.
+  std::size_t max_nbt_list_elements = 1ULL << 23;
+
+  // Litematic / Schematic Domain Limits
+
+  /// Max number of regions in a single Litematic file.
   std::size_t max_regions = 64;
-  std::uint64_t max_volume_per_region = 1ULL << 28;  // 256M blocks
-  std::size_t max_palette_size = 1ULL << 16;         // 65536 (2^16)
-  std::size_t max_entities = 1ULL << 18;             // 262144 (2^18)
-  std::size_t max_tile_entities = 1ULL << 20;        // 1048576 (2^20)
-  std::size_t max_pending_ticks = 1ULL << 16;        // 65536 (2^16)
+
+  /// Max blocks per region (256M). Prevents 64-bit volume overflow and limits
+  /// the maximum memory footprint of materialized `block_indices`
+  /// (256M * 2 bytes = 512 MiB per region).
+  std::uint64_t max_volume_per_region = 1ULL << 28;
+
+  /// Max entries in a block palette. Hard limit imposed by the `std::uint16_t`
+  /// indexing used in the materialized `block_indices` array.
+  std::size_t max_palette_size = 1ULL << 16;  // 65536 (2^16)
+
+  /// Max entities per region.
+  std::size_t max_entities = 1ULL << 18;  // 262144 (2^18)
+
+  /// Max block entities (tile entities) per region.
+  std::size_t max_tile_entities = 1ULL << 20;  // 1048576 (2^20)
+
+  /// Max pending block/fluid ticks per region.
+  std::size_t max_pending_ticks = 1ULL << 16;  // 65536 (2^16)
 };
 
 }  // namespace fschema::base

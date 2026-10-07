@@ -25,13 +25,7 @@
 
 namespace fschema::base {
 
-FSCHEMA_ALWAYS_INLINE uint64_t FastHash64(const void* data,
-                                          size_t len,
-                                          uint64_t seed = 0) {
-  return XXH64(data, len, seed);
-}
-
-FSCHEMA_ALWAYS_INLINE uint64_t FastHash3_64(const void* data,
+FSCHEMA_ALWAYS_INLINE uint64_t Hash64WithSeed(const void* data,
                                             size_t len,
                                             uint64_t seed = 0) {
   return XXH3_64bits_withSeed(data, len, seed);

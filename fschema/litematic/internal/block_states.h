@@ -22,7 +22,7 @@
 #include <span>
 
 #include "fschema/base/error.h"
-#include "fschema/base/nbt_reader.h"
+#include "fschema/base/nbt/reader.h"
 #include "fschema/memory/noinit_allocator.h"
 
 namespace fschema::litematic::internal {

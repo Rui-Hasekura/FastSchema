@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required(VERSION 3.26...4.4)
+cmake_minimum_required(VERSION 3.28...4.4)
 
 project(
     FastSchema
@@ -62,7 +62,7 @@ endblock()
 # libdeflate (static)
 FetchContent_Declare(libdeflate
     GIT_REPOSITORY https://github.com/ebiggers/libdeflate.git
-    GIT_TAG v1.22)
+    GIT_TAG v1.26)
 block()
     set(LIBDEFLATE_BUILD_TESTS OFF)
     set(LIBDEFLATE_BUILD_SHARED_LIB OFF)
@@ -73,7 +73,7 @@ endblock()
 # Intel oneTBB (shared)
 FetchContent_Declare(oneTBB
     GIT_REPOSITORY https://github.com/oneapi-src/oneTBB.git
-    GIT_TAG        v2021.13.0)
+    GIT_TAG        v2023.1.0)
 block()
     set(TBB_TEST OFF)
     set(TBB_EXAMPLES OFF)
@@ -115,11 +115,11 @@ target_sources(fschema
     fschema/base/byte_order.cc
     fschema/base/compressor.cc
     fschema/base/error.cc
-    fschema/base/nbt_parse.cc
-    fschema/base/nbt_primitives.cc
-    fschema/base/nbt_reader.cc
-    fschema/base/nbt_skip.cc
-    fschema/base/nbt_writer.cc
+    fschema/base/nbt/parse.cc
+    fschema/base/nbt/primitives.cc
+    fschema/base/nbt/reader.cc
+    fschema/base/nbt/skip.cc
+    fschema/base/nbt/writer.cc
     fschema/memory/arena.cc
     fschema/litematic/parse.cc
     fschema/litematic/internal/entity.cc
@@ -148,42 +148,118 @@ target_sources(fschema
     fschema/ir/internal/varint_pack.cc
 )
 
-# Public headers FILE_SET
-file(GLOB_RECURSE FSCHEMA_ALL_HEADERS
-    CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/fschema/*.h"
-)
-
-# Public
-set(FSCHEMA_PUBLIC_HEADERS ${FSCHEMA_ALL_HEADERS})
-list(FILTER FSCHEMA_PUBLIC_HEADERS EXCLUDE REGEX "/(internal|memory)/")
-
-# Private
-set(FSCHEMA_PRIVATE_HEADERS ${FSCHEMA_ALL_HEADERS})
-list(FILTER FSCHEMA_PRIVATE_HEADERS INCLUDE REGEX "/(internal|memory)/")
-
+# Private headers
 target_sources(fschema
   PRIVATE
-    ${FSCHEMA_PRIVATE_HEADERS}
+    fschema/ir/internal/bit_pack.h
+    fschema/ir/internal/varint_pack.h
+    fschema/litematic/internal/block_states.h
+    fschema/litematic/internal/entity.h
+    fschema/litematic/internal/metadata.h
+    fschema/litematic/internal/palette.h
+    fschema/litematic/internal/pending.h
+    fschema/litematic/internal/region.h
+    fschema/litematic/internal/root.h
+    fschema/litematic/internal/tile_entity.h
+    fschema/schem/internal/block_data.h
+    fschema/schem/internal/block_entities.h
+    fschema/schem/internal/block_state_string.h
+    fschema/schem/internal/entities.h
+    fschema/schem/internal/palette.h
+    fschema/schem/internal/root.h
 )
 
+# Public headers
 target_sources(fschema
   PUBLIC
     FILE_SET HEADERS
     BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
-    FILES ${FSCHEMA_PUBLIC_HEADERS}
+    FILES
+      fschema/base/block_utils.h
+      fschema/base/byte_order.h
+      fschema/base/compressor.h
+      fschema/base/error.h
+      fschema/base/hash.h
+      fschema/base/limits.h
+      fschema/base/nbt/parse.h
+      fschema/base/nbt/primitives.h
+      fschema/base/nbt/reader-inl.h
+      fschema/base/nbt/reader.h
+      fschema/base/nbt/scope.h
+      fschema/base/nbt/skip.h
+      fschema/base/nbt/tag-inl.h
+      fschema/base/nbt/tag.h
+      fschema/base/nbt/tree.h
+      fschema/base/nbt/property.h
+      fschema/base/nbt/writer.h
+      fschema/base/port.h
+      fschema/editors/bounding_box_trim.h
+      fschema/editors/copy.h
+      fschema/editors/erase_nbt.h
+      fschema/editors/extract.h
+      fschema/editors/fill.h
+      fschema/editors/hollow.h
+      fschema/editors/mirror.h
+      fschema/editors/move.h
+      fschema/editors/overlay.h
+      fschema/editors/palette_utils.h
+      fschema/editors/replace.h
+      fschema/editors/replace_palette_entry.h
+      fschema/editors/rotate.h
+      fschema/filters/axis_filter.h
+      fschema/filters/block_name_filter.h
+      fschema/filters/block_state_filter.h
+      fschema/filters/box_filter.h
+      fschema/filters/composite_filter.h
+      fschema/filters/concepts.h
+      fschema/filters/nbt_filter.h
+      fschema/filters/neighbor_filter.h
+      fschema/filters/pos.h
+      fschema/filters/random_filter.h
+      fschema/filters/sphere_filter.h
+      fschema/filters/surface_filter.h
+      fschema/filters/view.h
+      fschema/inspectors/count.h
+      fschema/inspectors/diff.h
+      fschema/inspectors/floating_check.h
+      fschema/inspectors/list_entity.h
+      fschema/inspectors/list_material.h
+      fschema/inspectors/list_tile_entity.h
+      fschema/inspectors/support_check.h
+      fschema/inspectors/version_check.h
+      fschema/ir/format_handler.h
+      fschema/ir/litematic_handler.h
+      fschema/ir/manipulate.h
+      fschema/ir/materialize.h
+      fschema/ir/schem_handler.h
+      fschema/ir/types.h
+      fschema/litematic/parse.h
+      fschema/litematic/types.h
+      fschema/memory/arena.h
+      fschema/memory/noinit_allocator.h
+      fschema/schem/parse.h
+      fschema/schem/types.h
+      fschema/editors/internal/state_transform.h
+      fschema/filters/internal/neighbors.h
+      fschema/inspectors/internal/block_version_data.h
+      fschema/inspectors/internal/block_versions.inc
+      fschema/inspectors/internal/data_versions.inc
+      fschema/ir/internal/codec_utils.h
+      fschema/third_party/pdqsort/pdqsort.h
+      fschema/third_party/xxhash/xxhash.h
 )
 
 target_link_libraries(fschema
   PUBLIC
     absl::base
     absl::flat_hash_map
+    absl::flat_hash_set
     absl::synchronization
     absl::time
   PRIVATE
-    hwy
-    libdeflate::libdeflate_static
-    TBB::tbb
+    $<BUILD_INTERFACE:hwy>
+    $<BUILD_INTERFACE:libdeflate::libdeflate_static>
+    $<BUILD_INTERFACE:TBB::tbb>
 )
 
 # Compiler flags
@@ -207,6 +283,8 @@ endif()
 if(FASTSCHEMA_INSTALL)
     include(CMakePackageConfigHelpers)
 
+    set(FSCHEMA_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/fschema")
+
     install(TARGETS fschema
         EXPORT fschemaTargets
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -218,35 +296,37 @@ if(FASTSCHEMA_INSTALL)
     install(EXPORT fschemaTargets
         FILE fschemaTargets.cmake
         NAMESPACE fschema::
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fschema
+        DESTINATION ${FSCHEMA_INSTALL_CMAKEDIR}
     )
 
-    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/fschemaConfig.cmake.in
-        "@PACKAGE_INIT@
-        include(CMakeFindDependencyMacro)
-        find_dependency(hwy)
-        find_dependency(TBB)
-        find_dependency(libdeflate)
-        include(\"\${CMAKE_CURRENT_LIST_DIR}/fschemaTargets.cmake\")
-        check_required_components(fschema)"
+    set(FSCHEMA_CONFIG_IN "${CMAKE_CURRENT_BINARY_DIR}/fschemaConfig.cmake.in")
+    file(WRITE "${FSCHEMA_CONFIG_IN}"
+"@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(absl)
+
+include(\"\${CMAKE_CURRENT_LIST_DIR}/fschemaTargets.cmake\")
+check_required_components(fschema)
+"
     )
 
     configure_package_config_file(
-        ${CMAKE_CURRENT_BINARY_DIR}/fschemaConfig.cmake.in
-        ${CMAKE_CURRENT_BINARY_DIR}/fschemaConfig.cmake
-        INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fschema
+        "${FSCHEMA_CONFIG_IN}"
+        "${CMAKE_CURRENT_BINARY_DIR}/fschemaConfig.cmake"
+        INSTALL_DESTINATION ${FSCHEMA_INSTALL_CMAKEDIR}
     )
 
     write_basic_package_version_file(
-        fschemaConfigVersion.cmake
+        "${CMAKE_CURRENT_BINARY_DIR}/fschemaConfigVersion.cmake"
         VERSION ${PROJECT_VERSION}
         COMPATIBILITY SameMajorVersion
     )
 
     install(FILES
-        ${CMAKE_CURRENT_BINARY_DIR}/fschemaConfig.cmake
-        ${CMAKE_CURRENT_BINARY_DIR}/fschemaConfigVersion.cmake
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fschema
+        "${CMAKE_CURRENT_BINARY_DIR}/fschemaConfig.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/fschemaConfigVersion.cmake"
+        DESTINATION ${FSCHEMA_INSTALL_CMAKEDIR}
     )
 endif()
 
@@ -302,5 +382,5 @@ if(FASTSCHEMA_BUILD_BENCHMARKS)
     fschema_add_bench(fschema_schem_parse_benchmark      fschema/benchmarks/schem_parse_benchmark.cc)
     fschema_add_bench(fschema_litematic_parse_benchmark  fschema/benchmarks/litematic_parse_benchmark.cc)
     fschema_add_bench(fschema_nbt_parse_benchmark        fschema/benchmarks/nbt_parse_benchmark.cc)
-    fschema_add_bench(fschema_convert_benchmark fschema/benchmarks/convert_benchmark.cc)
+    fschema_add_bench(fschema_convert_benchmark          fschema/benchmarks/convert_benchmark.cc)
 endif()

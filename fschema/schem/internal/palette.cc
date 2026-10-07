@@ -21,9 +21,9 @@
 #include <vector>
 
 #include "fschema/base/error.h"
-#include "fschema/base/nbt_scope.h"
-#include "fschema/base/nbt_skip.h"
-#include "fschema/base/nbt_tag.h"
+#include "fschema/base/nbt/scope.h"
+#include "fschema/base/nbt/skip.h"
+#include "fschema/base/nbt/tag.h"
 #include "fschema/schem/internal/block_state_string.h"
 #include "fschema/schem/types.h"
 
@@ -68,7 +68,8 @@ struct PaletteEntry {
         ParseError{ParseError::Code::OversizedPayload, "Palette", 0});
   }
 
-  palette.resize(static_cast<std::size_t>(max_index + 1));
+  palette.assign(static_cast<std::size_t>(max_index + 1),
+                 BlockState{"minecraft:air", {}});
   for (const auto& entry : entries) {
     auto& bs = palette[static_cast<std::size_t>(entry.index)];
     ParseBlockStateString(entry.key, bs);

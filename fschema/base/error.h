@@ -22,40 +22,78 @@
 
 namespace fschema {
 
+/// Represents a failure during the parsing or decoding of a schematic file.
+///
+/// The library uses `std::expected` for error propagation
+/// instead of C++ exceptions.
+/// All decoding and manipulation functions return `ParseResult<T>`,
+/// which is an alias for `std::expected<T, ParseError>`.
 struct ParseError {
+  /// Categorizes the specific type of parsing or structural failure.
   enum class Code : std::uint8_t {
+    // NBT Layer Errors
 
-    // NBT
-    Truncated,     // Too short to parse
-    InvalidTagId,  // TagID > 12
+    // Input buffer ended unexpectedly before parsing completed.
+    Truncated,
+    // Encountered an NBT tag ID > 12 (kMaxTagId).
+    InvalidTagId,
+    // A length-prefixed array/string declared a negative size.
     NegativeLength,
-    DepthLimitExceeded,  // Nested depth too deep
-    OversizedPayload,    // Over DecodeLimits
+    // NBT nesting depth exceeded `DecodeLimits::max_nbt_depth`.
+    DepthLimitExceeded,
+    // A payload size exceeded the corresponding `DecodeLimits` threshold.
+    OversizedPayload,
 
-    // Litematic schema
-    UnsupportedVersion,      // Version < 5 or > 7
-    MissingField,            // Necessary field not found in NBT tree
-    BlockStatesTooSmall,     // LongArray is too small for volume * bpb
-    PaletteIndexOutOfRange,  // idx >= palette.size()
-    VolumeOverflow,          // x * y * z overflow
+        // Litematic / IR Layer Errors
 
-    // Schem schema
+    // File format version is outside the supported range
+    // (e.g., Litematica < 5 or > 7).
+    UnsupportedVersion,
+    // A required field was not found in the NBT compound.
+    MissingField,
+    // NBT tag structure or dimensions violate the format specification.
+    InvalidStructure,
+    // The LongArray payload is too small for the given volume and
+    // bits-per-block.
+    BlockStatesTooSmall,
+    // A decoded block index points outside the palette bounds.
+    PaletteIndexOutOfRange,
+    // Width * Height * Length calculation overflowed the 64-bit limit.
+    VolumeOverflow,
+
+    // Schem Layer Errors
+
+    // A varint sequence exceeded 5 bytes (32-bit limit) or was malformed.
     VarintOverflow,
+    // The BlockData ByteArray is smaller than the expected volume.
     BlockDataTooSmall,
+    // A palette index in the Sponge format was negative.
     NegativeIndex,
   };
 
+  /// The specific error category.
   Code code;
+
+  /// A breadcrumb path indicating where in the NBT tree the error occurred
+  /// (e.g., "Regions/main/BlockStates"). May be empty for low-level errors.
   std::string path;
+
+  /// The byte offset in the source buffer where the error was detected.
   std::size_t offset;
-  [[nodiscard]] static ParseError At(Code, std::string, std::size_t);
+
+  /// Constructs a ParseError with the given code, path, and offset.
+  [[nodiscard]] static ParseError At(Code code, std::string path, std::size_t offset);
 };
 
+/// Convenience alias for functions that return a value or a ParseError.
+/// Used extensively throughout the parsing and IR manipulation API.
 template <typename T>
 using ParseResult = std::expected<T, ParseError>;
 
+/// Converts a ParseError::Code to a static string view (e.g., for logging).
 [[nodiscard]] std::string_view ToString(ParseError::Code code) noexcept;
 
+/// Overload for converting a ParseError directly to a string view.
 [[nodiscard]] inline std::string_view ToString(const ParseError& e) noexcept {
   return ToString(e.code);
 }

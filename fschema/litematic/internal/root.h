@@ -17,7 +17,7 @@
 #define FSCHEMA_LITEMATIC_INTERNAL_ROOT_H_
 
 #include "fschema/base/error.h"
-#include "fschema/base/nbt_reader.h"
+#include "fschema/base/nbt/reader.h"
 #include "fschema/litematic/types.h"
 
 namespace fschema::litematic::internal {

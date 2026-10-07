@@ -23,7 +23,7 @@
 #include <string_view>
 #include <vector>
 
-#include "fschema/base/nbt_tag.h"
+#include "fschema/base/nbt/tag.h"
 #include "fschema/memory/arena.h"
 #include "fschema/memory/noinit_allocator.h"
 
@@ -56,28 +56,33 @@ struct Extension {
   std::span<const std::byte> raw_payload;
 };
 
+// Represents a unique block state (e.g.,
+// "minecraft:oak_stairs[facing=north]").
+// Used as an entry in a Region's palette.
 struct BlockState {
   std::string_view name;
 
-  // View to raw property bytes.
+  // Raw byte representation of the block's properties.
+  // The encoding depends on the source format (see `prop_encoding`).
   std::span<const std::byte> raw_properties;
 
+  // Defines how `raw_properties` should be interpreted.
   PropertyEncoding prop_encoding = PropertyEncoding::kNone;
 };
 
 struct Entity {
   std::string_view id;
-  std::array<double, 3> position{};
+  std::array<double, 3> position{};  // World-space
   std::array<double, 3> motion{};
   std::array<float, 2> rotation{};
 
-  // ALL EXTRA DATA include Components.
+  // Includes components and other extra data.
   std::span<const std::byte> raw_nbt;
 };
 
 struct BlockEntity {
   std::string_view id;
-  std::array<std::int32_t, 3> block_position{};
+  std::array<std::int32_t, 3> block_position{};  // World-space
   std::span<const std::byte> raw_nbt;
 };
 
@@ -94,10 +99,17 @@ struct BiomeData {
   BiomeLayout layout = BiomeLayout::kNone;
 };
 
+// An axis-aligned 3D bounding box representing a region's spatial extents.
 struct BoundingBox {
+  // The world-space origin (minimum corner) of the box.
   std::int32_t origin[3]{};
 
-  // Always positive (> 0) after normalization.
+  // The dimensions of the box: size[0]=Width(X),
+  //                            size[1]=Height(Y),
+  //                            size[2]=Length(Z).
+  // Invariant:
+  // All elements are strictly non-negative after format normalization.
+  // A size of 0 indicates an empty region.
   std::int32_t size[3]{};
 };
 
@@ -107,30 +119,79 @@ enum class BlockDataEncoding : std::uint8_t {
   kSpongeVarint,         // Sponge Varint ByteArray
 };
 
+// Holds the raw, packed representation of a region's block indices.
+// This allows deferred materialization (decoding)
+// until block-level access is required.
 struct LazyBlockData {
+  // The raw byte span of the packed block data
+  // (e.g., Litematica LongArray or Sponge Varint ByteArray).
+  // Points into the Schema's owned byte buffer.
   std::span<const std::byte> raw_bytes;
+
+  // The encoding scheme used by `raw_bytes`.
   BlockDataEncoding encoding = BlockDataEncoding::kNone;
-  std::uint32_t bits_per_block = 0;  // For Litematica
-  std::size_t palette_size = 0;      // For format validation
-  bool air_at_zero = false;          // Litematica: palette[0] is air
-  bool palette_pristine = true;      // Whether the palette is unmodified
+
+  // Bits per block (only valid for `kLitematicaLongArray` encoding).
+  std::uint32_t bits_per_block = 0;
+
+  // The original palette size when parsed,
+  // used for validation during unpacking.
+  std::size_t palette_size = 0;
+
+  // True if palette[0] is an air variant. Required by Litematica format.
+  bool air_at_zero = false;
+
+  // True if the associated palette has not been structurally modified
+  // (e.g., entries appended).
+  // If true, the encoder may
+  // bypass repacking and write `raw_bytes` directly (lazy passthrough).
+  bool palette_pristine = true;
 };
 
+// Represents a 3D volume of blocks, entities, and block entities.
+// This is the primary unit of manipulation for
+// filters, editors, and inspectors.
 struct Region {
+  // The name of the region (e.g., "main", or named sub-regions in Litematica).
   std::string_view name;
+
+  // The bounds of the region in world space.
   BoundingBox bounds;
 
+  // Raw position
+  std::array<std::int32_t, 3> position{};
+
+  // Raw size
+  std::array<std::int32_t, 3> size{};
+
+  // The palette of distinct block states.
+  // Indices in `block_indices` refer to this vector.
   std::vector<BlockState> palette;
 
-  // Materialized block indices on demand
+  // The materialized (decoded) block indices.
+  // Memory layout is YZX (Y major, Z middle, X minor) to match disk formats.
+  // Mutable: materialized on-demand via `EnsureMaterialized()`.
   mutable memory::NoInitVector<std::uint16_t> block_indices;
+
+  // The raw packed data, retained for lazy passthrough during encoding.
   mutable LazyBlockData lazy_source;
+
+  // True if `block_indices` has been decoded and is ready for access.
   mutable bool is_materialized = false;
 
+  // True if the region has been modified by an Editor.
+  // Forces the encoder to repack `block_indices`
+  // instead of using lazy passthrough.
+  mutable bool edited = false;
+
+  // Entities contained within the region (e.g., armor stands, mobs).
   std::vector<Entity> entities;
+
+  // Block entities contained within the region (e.g., minecraft:chest).
   std::vector<BlockEntity> block_entities;
 
-  // For specific fields.
+  // Raw NBT compound span for unparsed/unknown fields
+  // (used for round-trip fidelity).
   std::span<const std::byte> raw_compound;
 };
 
@@ -143,20 +204,32 @@ struct Metadata {
   std::span<const std::byte> raw_compound;
 };
 
+// The root IR object.
+// Represents a fully parsed schematic file,
+// independent of the original source format.
 struct Schema {
+  // The format this schema was originally decoded from.
   SourceFormat source_format;
 
-  // Format version for the source file.
+  // The version of the source format (e.g., Litematica v5/v6/v7, Schem v2/v3).
   std::int32_t source_version = 0;
 
-  // Minecraft DataVersion.
+  // The Minecraft DataVersion (e.g., 2860 for 1.18, 3837 for 1.20.5).
   std::int32_t data_version = 0;
 
+  // File-level metadata.
   Metadata metadata;
+
+  // The collection of regions contained in the schematic.
   std::vector<Region> regions;
 
-  // Memory ownership management.
+  // Ownership of the raw decompressed NBT byte buffer.
+  // All `std::string_view` and `std::span` fields in the IR
+  // point into this buffer.
   std::unique_ptr<std::vector<std::byte>> owner;
+
+  // Arena allocator for materialized block indices
+  // and other temporary allocations.
   std::unique_ptr<memory::Arena> arena;
 };
 

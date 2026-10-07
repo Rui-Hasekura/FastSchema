@@ -19,8 +19,8 @@
 #include <string_view>
 
 #include "fschema/base/error.h"
-#include "fschema/base/nbt_reader.h"
-#include "fschema/base/nbt_tag.h"
+#include "fschema/base/nbt/reader.h"
+#include "fschema/base/nbt/tag.h"
 #include "fschema/base/port.h"
 
 namespace fschema::base {

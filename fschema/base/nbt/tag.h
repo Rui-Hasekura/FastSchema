@@ -53,6 +53,6 @@ constexpr std::uint8_t kMaxTagId = 12;
 
 }  // namespace fschema::base
 
-#include "fschema/base/nbt_tag-inl.h"
+#include "fschema/base/nbt/tag-inl.h"
 
 #endif  // FSCHEMA_BASE_NBT_TAG_H_

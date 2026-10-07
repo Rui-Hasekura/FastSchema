@@ -55,8 +55,8 @@ struct BlockStateKey {
 
 struct BlockStateKeyHash {
   std::size_t operator()(const BlockStateKey& k) const noexcept {
-    std::uint64_t h1 = base::FastHash3_64(k.name.data(), k.name.size());
-    std::uint64_t h2 = base::FastHash3_64(k.props.data(), k.props.size(), h1);
+    std::uint64_t h1 = base::Hash64WithSeed(k.name.data(), k.name.size());
+    std::uint64_t h2 = base::Hash64WithSeed(k.props.data(), k.props.size(), h1);
     return static_cast<std::size_t>(h2);
   }
 };
@@ -109,6 +109,8 @@ ParseResult<Region> MergeRegions(const std::vector<Region>& regions,
   merged.bounds.size[0] = max_x - min_x;
   merged.bounds.size[1] = max_y - min_y;
   merged.bounds.size[2] = max_z - min_z;
+  merged.position = {min_x, min_y, min_z};
+  merged.size = {max_x - min_x, max_y - min_y, max_z - min_z};
 
   // 2. Build merged palette with absl::flat_hash_map dedup.
   //    Index 0 is always the fill block (e.g. minecraft:air).
@@ -225,18 +227,10 @@ ParseResult<Region> MergeRegions(const std::vector<Region>& regions,
 
     // Merge entities and block entities
     for (const auto& be : reg.block_entities) {
-      BlockEntity nbe = be;
-      nbe.block_position[0] += off_x;
-      nbe.block_position[1] += off_y;
-      nbe.block_position[2] += off_z;
-      merged.block_entities.push_back(std::move(nbe));
+      merged.block_entities.push_back(be);
     }
     for (const auto& ent : reg.entities) {
-      Entity nent = ent;
-      nent.position[0] += off_x;
-      nent.position[1] += off_y;
-      nent.position[2] += off_z;
-      merged.entities.push_back(std::move(nent));
+      merged.entities.push_back(ent);
     }
   }
 

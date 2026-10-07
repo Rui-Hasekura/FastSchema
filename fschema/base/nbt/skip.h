@@ -17,8 +17,8 @@
 #define FSCHEMA_BASE_NBT_SKIP_H_
 
 #include "fschema/base/error.h"
-#include "fschema/base/nbt_reader.h"
-#include "fschema/base/nbt_tag.h"
+#include "fschema/base/nbt/reader.h"
+#include "fschema/base/nbt/tag.h"
 
 namespace fschema::base {
 

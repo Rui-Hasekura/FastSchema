@@ -24,7 +24,7 @@
 
 #include "fschema/base/error.h"
 #include "fschema/base/limits.h"
-#include "fschema/base/nbt_reader.h"
+#include "fschema/base/nbt/reader.h"
 #include "fschema/litematic/internal/root.h"
 #include "fschema/litematic/types.h"
 #include "fschema/memory/arena.h"

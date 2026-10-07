@@ -23,7 +23,7 @@
 #include <string_view>
 #include <vector>
 
-#include "fschema/base/nbt_tag.h"
+#include "fschema/base/nbt/tag.h"
 #include "fschema/memory/arena.h"
 
 namespace fschema::schem {

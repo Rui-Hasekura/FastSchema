@@ -17,15 +17,17 @@ load("@rules_cc//cc:defs.bzl", "cc_library", "cc_binary", "cc_test")
 
 cc_library(
     name = "fschema",
-    srcs = glob(["fschema/**/*.cc"]) + glob([
+    srcs = glob([
+        "fschema/**/*.cc",
         "fschema/**/internal/*.h",
-        "fschema/memory/*.h",
+        "fschema/**/*.inc",
+        "fschema/third_party/**/*.h",
     ]),
     hdrs = glob(
         include = ["fschema/**/*.h"],
         exclude = [
             "fschema/**/internal/*.h",
-            "fschema/memory/*.h",
+            "fschema/third_party/**/*.h",
         ],
     ),
     includes = ["."],
@@ -43,6 +45,8 @@ cc_library(
             "-Wall",
             "-Wextra",
             "-Wpedantic",
+            "-Wconversion",
+            "-Wshadow",
         ],
     }),
     visibility = ["//visibility:public"],

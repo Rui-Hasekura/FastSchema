@@ -19,9 +19,9 @@
 #include <string_view>
 #include <utility>
 
-#include "fschema/base/nbt_scope.h"
-#include "fschema/base/nbt_skip.h"
-#include "fschema/base/nbt_tag.h"
+#include "fschema/base/nbt/scope.h"
+#include "fschema/base/nbt/skip.h"
+#include "fschema/base/nbt/tag.h"
 #include "fschema/litematic/types.h"
 
 namespace fschema::litematic::internal {

@@ -43,6 +43,8 @@ namespace fschema {
       return "UnsupportedVersion";
     case ParseError::Code::MissingField:
       return "MissingField";
+    case ParseError::Code::InvalidStructure:
+      return "InvalidStructure";
     case ParseError::Code::BlockStatesTooSmall:
       return "BlockStatesTooSmall";
     case ParseError::Code::PaletteIndexOutOfRange:

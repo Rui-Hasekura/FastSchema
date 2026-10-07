@@ -24,7 +24,7 @@
 #include <string_view>
 #include <vector>
 
-#include "fschema/base/nbt_writer.h"
+#include "fschema/base/nbt/writer.h"
 #include "fschema/ir/internal/codec_utils.h"
 #include "fschema/ir/internal/varint_pack.h"
 #include "fschema/ir/manipulate.h"
@@ -323,6 +323,10 @@ ParseResult<Schema> SchemHandler::DecodeFromParsed(
   // Region
   Region r;
   r.name = "main";
+  r.position = {0, 0, 0};
+  r.size = {static_cast<std::int32_t>(src.width),
+            static_cast<std::int32_t>(src.height),
+            static_cast<std::int32_t>(src.length)};
   r.bounds.origin[0] = 0;
   r.bounds.origin[1] = 0;
   r.bounds.origin[2] = 0;
@@ -352,11 +356,6 @@ ParseResult<Schema> SchemHandler::DecodeFromParsed(
     Entity e;
     e.id = ent.id;
     e.position = ent.pos;
-    if (src.version == schem::Version::kV2) {
-      e.position[0] -= static_cast<double>(src.offset[0]);
-      e.position[1] -= static_cast<double>(src.offset[1]);
-      e.position[2] -= static_cast<double>(src.offset[2]);
-    }
     e.motion = ent.motion;
     e.rotation = ent.rotation;
     e.raw_nbt = ent.data;

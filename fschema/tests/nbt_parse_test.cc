@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "fschema/base/nbt_parse.h"
+#include "fschema/base/nbt/parse.h"
 
 #include <gtest/gtest.h>
 
@@ -30,8 +30,8 @@
 #include "fschema/base/compressor.h"
 #include "fschema/base/error.h"
 #include "fschema/base/limits.h"
-#include "fschema/base/nbt_reader.h"
-#include "fschema/base/nbt_tag.h"
+#include "fschema/base/nbt/reader.h"
+#include "fschema/base/nbt/tag.h"
 #include "fschema/tests/testdata_util.h"
 
 namespace fb = fschema::base;

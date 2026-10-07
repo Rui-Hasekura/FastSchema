@@ -17,7 +17,6 @@
 #define HWY_TARGET_INCLUDE "fschema/schem/internal/simd_block_data.cc"
 
 #include <atomic>
-#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -81,7 +80,7 @@ namespace hn = hwy::HWY_NAMESPACE;
   }
 
   std::vector<std::uint64_t> counts(num_chunks);
-  
+
     auto count_chunk = [&](const tbb::blocked_range<std::size_t>& range) {
     for (std::size_t t = range.begin(); t < range.end(); ++t) {
       std::uint64_t count = 0;
@@ -566,6 +565,12 @@ void DecodeVarintChunksKernelImpl(const std::uint8_t* const* chunk_ptrs,
                 return;
               }
               std::uint8_t b = *p++;
+              if (shift == 28 && b > 0x0F) [[unlikely]] {
+                std::uint32_t expected = 0;
+                error_flag.compare_exchange_strong(
+                    expected, 1, std::memory_order_relaxed);
+                return;
+              }
               value |= (b & 0x7F) << shift;
               if (!(b & 0x80)) break;
               shift += 7;

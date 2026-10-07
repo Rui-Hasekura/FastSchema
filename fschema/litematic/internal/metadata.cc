@@ -18,9 +18,9 @@
 #include <cstdint>
 #include <expected>
 
-#include "fschema/base/nbt_scope.h"
-#include "fschema/base/nbt_skip.h"
-#include "fschema/base/nbt_tag.h"
+#include "fschema/base/nbt/scope.h"
+#include "fschema/base/nbt/skip.h"
+#include "fschema/base/nbt/tag.h"
 
 namespace fschema::litematic::internal {
 

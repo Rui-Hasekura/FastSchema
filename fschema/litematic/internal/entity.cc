@@ -19,10 +19,10 @@
 #include <expected>
 #include <utility>
 
-#include "fschema/base/nbt_primitives.h"
-#include "fschema/base/nbt_scope.h"
-#include "fschema/base/nbt_skip.h"
-#include "fschema/base/nbt_tag.h"
+#include "fschema/base/nbt/primitives.h"
+#include "fschema/base/nbt/scope.h"
+#include "fschema/base/nbt/skip.h"
+#include "fschema/base/nbt/tag.h"
 
 namespace fschema::litematic::internal {
 

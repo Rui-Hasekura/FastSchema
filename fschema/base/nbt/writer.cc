@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "fschema/base/nbt_writer.h"
+#include "fschema/base/nbt/writer.h"
 
 #include <algorithm>
 #include <bit>
