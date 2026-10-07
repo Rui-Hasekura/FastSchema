@@ -53,7 +53,7 @@ But... How fast is it?
 
 Before build it, ensure your environment meets the following requirements:
 
-**CMake**: 3.28 or higher. [click me if need to update](cmake.org/download/)
+**CMake**: 3.28 or higher. [click me if need to update](https://cmake.org/download/)
 
 **C++ Compiler**: Must support C++23. *Clang/GCC are recommended.*
 
