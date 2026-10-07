@@ -404,8 +404,7 @@ ParseResult<memory::NoInitVector<std::uint16_t>> UnpackIndicesFusedImpl(
     std::span<const std::byte> raw_longs,
     std::uint32_t bits_per_block,
     std::uint64_t volume,
-    std::size_t palette_size,
-    memory::Arena& arena) {
+    std::size_t palette_size) {
   const auto long_count = raw_longs.size() / 8;
   auto make_error = [](ParseError::Code code) {
     return ParseError{code, "BlockStates", 0};
@@ -475,10 +474,9 @@ HWY_EXPORT(UnpackIndicesFusedImpl);
 UnpackIndicesFused(std::span<const std::byte> raw_longs,
                    std::uint32_t bits_per_block,
                    std::uint64_t volume,
-                   std::size_t palette_size,
-                   memory::Arena& arena) {
+                   std::size_t palette_size) {
   return HWY_DYNAMIC_DISPATCH(UnpackIndicesFusedImpl)(
-      raw_longs, bits_per_block, volume, palette_size, arena);
+      raw_longs, bits_per_block, volume, palette_size);
 }
 
 }  // namespace fschema::litematic::internal

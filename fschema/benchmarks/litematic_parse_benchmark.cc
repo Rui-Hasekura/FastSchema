@@ -155,7 +155,7 @@ static void BM_UnpackLitematic(benchmark::State& st) {
   for (auto _ : st) {
     fschema::memory::Arena arena;
     auto res = fschema::litematic::internal::UnpackIndicesFused(
-        reg.raw_block_states, bpb, volume, reg.palette.size(), arena);
+        reg.raw_block_states, bpb, volume, reg.palette.size());
     if (!res) {
       st.SkipWithError("Unpack failed");
       return;

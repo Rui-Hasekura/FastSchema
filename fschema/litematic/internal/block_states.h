@@ -39,8 +39,7 @@ namespace fschema::litematic::internal {
 UnpackIndicesFused(std::span<const std::byte> raw_longs,
                    std::uint32_t bits_per_block,
                    std::uint64_t volume,
-                   std::size_t palette_size,
-                   memory::Arena& arena);
+                   std::size_t palette_size);
 
 }  // namespace fschema::litematic::internal
 

@@ -32,8 +32,7 @@ ParseResult<void> EnsureMaterialized(const Region& reg, memory::Arena& arena) {
         litematic::internal::UnpackIndicesFused(reg.lazy_source.raw_bytes,
                                                 reg.lazy_source.bits_per_block,
                                                 volume,
-                                                reg.lazy_source.palette_size,
-                                                arena);
+                                                reg.lazy_source.palette_size);
     if (!res) return std::unexpected(res.error());
     reg.block_indices = std::move(*res);
   } else if (reg.lazy_source.encoding == BlockDataEncoding::kSpongeVarint) {
