@@ -116,7 +116,7 @@ This library is still under development.
 
 It features a high-performance parser, converters(not because the implementation is bad or I lack confidence, but ideally avoid cross-converting if you can), and tools(quite a few, actually).
 
-Documentation is work-in-progress. However, the API is fairly straightforward(at least I think), so you can explore it on your own for now.
+[Basic documentation](https://github.com/Rui-Hasekura/FastSchema/tree/main/fschema/docs/) is now available, though it is still a work in progress. That said, the API is fairly straightforward (at least I think), so you can explore it on your own for now.
 
 [You can find examples here](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/examples).
 
