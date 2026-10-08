@@ -2,7 +2,7 @@
 
 It's a super fast Minecraft schema tool library. Why it's so fast:
 
-### Features
+### 1. Features
 
 - **Decompression**: Integrated with `libdeflate` to save a few milliseconds of WallTime during `zlib-ng` decompression.
 
@@ -12,7 +12,7 @@ It's a super fast Minecraft schema tool library. Why it's so fast:
 
 But... How fast is it?
 
-### Benchmark
+### 2. Benchmark
 
 > **No benchmark comparisons are provided here, as differences in output data structures and parsing semantics make direct performance comparisons potentially misleading.**
 
@@ -24,7 +24,7 @@ But... How fast is it?
 - `.schem` Input Size: 248.778 MiB, Total Blocks: 260.297M, Palette Max: 466
 - `.nbt` Input Size: 279.642 MiB
 
-#### Pure Parsing & Unpacking
+#### 2.1 Pure Parsing & Unpacking
 
 | Types                            | Wall Time | CPU Time | Iterations | Throughput   |
 |:-------------------------------- |:--------- |:-------- |:---------- |:------------ |
@@ -34,7 +34,7 @@ But... How fast is it?
 | Schem Parsing (ImmutableAPI)     | 2.23 ms   | 2.18 ms  | 1195       | 111.261GiB/s |
 | Schem Unpack (MutableAPI)        | 25.3 ms   | 19.8 ms  | 119        | 12.2345GiB/s |
 
-#### Format Conversion
+#### 2.2 Format Conversion
 
 | Types                                  | Wall Time | CPU Time | Iterations | Throughput    |
 |:-------------------------------------- |:--------- |:-------- |:---------- |:------------- |
@@ -47,42 +47,70 @@ But... How fast is it?
 
 > Gzip performance is mostly limited by Deflate itself. `libdeflate` is already highly optimized, and the results are close to the practical limit for this workload on the test machine.
 
-### Installation
+### 3. Installation & Integration
 
-##### Prerequisites
+**Prerequisites**
 
-Before build it, ensure your environment meets the following requirements:
+Before building or integrating, ensure your environment meets the following requirements:
 
-**CMake**: 3.28 or higher. [click me if need to update](https://cmake.org/download/)
+- **CMake**: 3.28 or higher. ([Update](https://cmake.org/download/))
+- **C++ Compiler**: Must support C++23.
+  - Recommended: **Clang** 17+, **GCC** 14+, MSVC 19.38+
+  - Compatible: Clang 16+, GCC 13.1+, MSVC 19.36+
 
-**C++ Compiler**: Must support C++23. *Clang/GCC are recommended.*
+---
 
-- Recommended: **Clang** 17+, **GCC** 14+, MSVC 19.38+
+#### 3.1 Integrate via CMake `FetchContent` (Recommended)
 
-- Compat: Clang 16+, GCC 13.1+, MSVC19.36+
-
-##### Build & Install from Source
-
-```bash
-git clone https://github.com/Rui-Hasekura/FastSchema
-cd FastSchema
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release
-cmake --install build
-```
-
-##### CMake `find_package`
+You can embed FastSchema into your CMake project without installing it globally:
 
 ```cmake
-find_package(fschema REQUIRED)
+include(FetchContent)
+
+FetchContent_Declare(
+ FastSchema
+ GIT_REPOSITORY [https://github.com/Rui-Hasekura/FastSchema.git](https://github.com/Rui-Hasekura/FastSchema.git)
+ GIT_TAG v0.1.0 # Or you can replace with the latest tag
+)
+
+```
+
+##### Optional: Disable tests and benchmarks in parent project
+
+```cmake
+set(FASTSCHEMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(FASTSCHEMA_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
+
+FetchContent_MakeAvailable(FastSchema)
 
 add_executable(your_app main.cc)
 target_link_libraries(your_app PRIVATE fschema::fschema)
 ```
 
-> *Why not FetchContent? Well, we don't have any tags or releases yet...*
+#### 3.2 Build & Install from Source
 
-### How to use
+If you perfer to install FastSchema system-wide or generate packages for distribution:
+
+```bash
+git clone https://github.com/Rui-Hasekura/FastSchema
+cd FastSchema
+
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+cmake --install build
+```
+
+#### Use via CMake `find_package`
+
+After installing, locate FastSchema in your project's `CMakeLists.txt`:
+
+```cmake
+find_package(fschema CONFIG REQUIRED)
+# ...
+target_link_libraries(your_app PRIVATE fschema::fschema)
+```
+
+### 4. How to use
 
 This library is still under development.
 
@@ -92,13 +120,13 @@ Documentation is work-in-progress. However, the API is fairly straightforward(at
 
 [You can find examples here](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/examples).
 
-### License
+### 5. License
 
 Distributed under the **Apache License 2.0**. See [LICENSE](https://github.com/Rui-Hasekura/FastSchema/blob/main/LICENSE) for details.
 
 This project also includes a [NOTICE](https://github.com/Rui-Hasekura/FastSchema/blob/main/NOTICE) file that contains additional attribution notices as required by the license.
 
-### Dependencies
+### 6. Dependencies
 
 #### Core Libraries
 
