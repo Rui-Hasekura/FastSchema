@@ -208,7 +208,6 @@ DecodeSingleByteFastImpl(std::span<const std::byte> data,
 [[nodiscard]] ParseResult<memory::UnInitBuffer<std::uint16_t>>
 Decode2ByteUniformFastImpl(std::span<const std::byte> data,
                            std::uint64_t volume,
-                           std::size_t palette_size,
                            memory::Arena& arena) {
   const auto n = static_cast<std::size_t>(volume);
   const auto* src = reinterpret_cast<const std::uint8_t*>(data.data());
@@ -320,7 +319,6 @@ DecodeSingleByteFastImpl(std::span<const std::byte> data,
 [[nodiscard]] ParseResult<memory::UnInitBuffer<std::uint16_t>>
 Decode2ByteUniformFastImpl(std::span<const std::byte> data,
                            std::uint64_t volume,
-                           std::size_t palette_size,
                            memory::Arena& arena) {
   const auto n = static_cast<std::size_t>(volume);
   const auto* FSCHEMA_RESTRICT src =
@@ -392,7 +390,7 @@ void DecodeVarintChunksKernelImpl(const std::uint8_t* const* chunk_ptrs,
       std::uint16_t* FSCHEMA_RESTRICT dst = out + target_block;
       std::memset(dst, 0, cnt * sizeof(std::uint16_t));
 
-            if (palette_size <= 16384) {
+      if (palette_size <= 16384) {
 #if HWY_TARGET == HWY_AVX2
         std::size_t i = 0;
         // Fast path: check if the next 32 bytes are all zero (all air).
@@ -585,28 +583,22 @@ HWY_EXPORT(DecodeVarintChunksKernelImpl);
 
 [[nodiscard]] ChunkBoundary BuildChunkBoundaries(
     std::span<const std::byte> data,
-    std::uint64_t volume,
     std::size_t num_chunks) {
-  return HWY_DYNAMIC_DISPATCH(BuildChunkBoundariesImpl)(
-      data, num_chunks);
+  return HWY_DYNAMIC_DISPATCH(BuildChunkBoundariesImpl)(data, num_chunks);
 }
 
 [[nodiscard]] ParseResult<memory::UnInitBuffer<std::uint16_t>>
 DecodeSingleByteFast(std::span<const std::byte> data,
                      std::uint64_t volume,
-                     std::size_t palette_size,
                      memory::Arena& arena) {
-  return HWY_DYNAMIC_DISPATCH(DecodeSingleByteFastImpl)(
-      data, volume, arena);
+  return HWY_DYNAMIC_DISPATCH(DecodeSingleByteFastImpl)(data, volume, arena);
 }
 
 [[nodiscard]] ParseResult<memory::UnInitBuffer<std::uint16_t>>
 Decode2ByteUniformFast(std::span<const std::byte> data,
                        std::uint64_t volume,
-                       std::size_t palette_size,
                        memory::Arena& arena) {
-  return HWY_DYNAMIC_DISPATCH(Decode2ByteUniformFastImpl)(
-      data, volume, palette_size, arena);
+  return HWY_DYNAMIC_DISPATCH(Decode2ByteUniformFastImpl)(data, volume, arena);
 }
 
 void DecodeVarintChunks(const std::uint8_t* const* chunk_ptrs,
