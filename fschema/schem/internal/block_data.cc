@@ -90,7 +90,7 @@ DecodeVarintParallel(std::span<const std::byte> data,
     return DecodeVarintScalar(data, volume, palette_size, arena);
   }
 
-  auto boundaries = BuildChunkBoundaries(data, n, num_chunks);
+  auto boundaries = BuildChunkBoundaries(data, num_chunks);
 
   std::uint64_t total_est = 0;
   for (auto c : boundaries.counts) total_est += c;
@@ -166,7 +166,7 @@ DecodeVarintArray(std::span<const std::byte> data,
   }
 
   if (palette_size <= 128 && data.size() >= volume) [[likely]] {
-    auto result = DecodeSingleByteFast(data, volume, palette_size, arena);
+    auto result = DecodeSingleByteFast(data, volume, arena);
     if (result) {
       return result;
     }
@@ -177,7 +177,7 @@ DecodeVarintArray(std::span<const std::byte> data,
 
   if (palette_size > 128 && palette_size <= 16384 && data.size() >= 2 * volume)
       [[likely]] {
-    auto result = Decode2ByteUniformFast(data, volume, palette_size, arena);
+    auto result = Decode2ByteUniformFast(data, volume, arena);
     if (result) {
       return result;
     }

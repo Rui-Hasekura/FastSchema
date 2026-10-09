@@ -49,7 +49,6 @@ namespace hn = hwy::HWY_NAMESPACE;
 
 [[nodiscard]] ChunkBoundary BuildChunkBoundariesImpl(
     std::span<const std::byte> data,
-    std::uint64_t volume,
     std::size_t num_chunks) {
   const auto* base = reinterpret_cast<const std::uint8_t*>(data.data());
   const auto* end = base + data.size();
@@ -151,7 +150,6 @@ namespace hn = hwy::HWY_NAMESPACE;
 [[nodiscard]] ParseResult<memory::UnInitBuffer<std::uint16_t>>
 DecodeSingleByteFastImpl(std::span<const std::byte> data,
                          std::uint64_t volume,
-                         std::size_t palette_size,
                          memory::Arena& arena) {
   const auto n = static_cast<std::size_t>(volume);
   const auto* src = reinterpret_cast<const std::uint8_t*>(data.data());
@@ -162,7 +160,6 @@ DecodeSingleByteFastImpl(std::span<const std::byte> data,
   std::atomic<std::uint32_t> error_flag{0};
 
   const __m256i v_msb_mask = _mm256_set1_epi8(static_cast<char>(0x80));
-  const __m256i v_zero = _mm256_setzero_si256();
 
   const std::size_t n32 = (n / 32) * 32;
   const auto* s = src;
@@ -276,7 +273,6 @@ Decode2ByteUniformFastImpl(std::span<const std::byte> data,
 [[nodiscard]] ParseResult<memory::UnInitBuffer<std::uint16_t>>
 DecodeSingleByteFastImpl(std::span<const std::byte> data,
                          std::uint64_t volume,
-                         std::size_t palette_size,
                          memory::Arena& arena) {
   const auto n = static_cast<std::size_t>(volume);
   const auto* FSCHEMA_RESTRICT src =
@@ -592,7 +588,7 @@ HWY_EXPORT(DecodeVarintChunksKernelImpl);
     std::uint64_t volume,
     std::size_t num_chunks) {
   return HWY_DYNAMIC_DISPATCH(BuildChunkBoundariesImpl)(
-      data, volume, num_chunks);
+      data, num_chunks);
 }
 
 [[nodiscard]] ParseResult<memory::UnInitBuffer<std::uint16_t>>
@@ -601,7 +597,7 @@ DecodeSingleByteFast(std::span<const std::byte> data,
                      std::size_t palette_size,
                      memory::Arena& arena) {
   return HWY_DYNAMIC_DISPATCH(DecodeSingleByteFastImpl)(
-      data, volume, palette_size, arena);
+      data, volume, arena);
 }
 
 [[nodiscard]] ParseResult<memory::UnInitBuffer<std::uint16_t>>

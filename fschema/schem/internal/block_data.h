@@ -51,18 +51,15 @@ DecodeVarintScalar(std::span<const std::byte> data,
 [[nodiscard]] ParseResult<memory::UnInitBuffer<std::uint16_t>>
 DecodeSingleByteFast(std::span<const std::byte> data,
                      std::uint64_t volume,
-                     std::size_t palette_size,
                      memory::Arena& arena);
 
 [[nodiscard]] ParseResult<memory::UnInitBuffer<std::uint16_t>>
 Decode2ByteUniformFast(std::span<const std::byte> data,
                        std::uint64_t volume,
-                       std::size_t palette_size,
                        memory::Arena& arena);
 
 [[nodiscard]] ChunkBoundary BuildChunkBoundaries(
     std::span<const std::byte> data,
-    std::uint64_t volume,
     std::size_t num_chunks);
 
 [[nodiscard]] ParseResult<memory::UnInitBuffer<std::uint16_t>>
