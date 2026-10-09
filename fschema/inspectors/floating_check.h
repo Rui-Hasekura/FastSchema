@@ -126,12 +126,11 @@ struct FloatingCheckResult {
     const std::int32_t sz = bounds.size[2];
     const std::uint16_t* data = r.block_indices.data();
 
+    std::uint64_t li = 0;
     for (std::int32_t y = 0; y < sy; ++y) {
       for (std::int32_t z = 0; z < sz; ++z) {
-        for (std::int32_t x = 0; x < sx; ++x) {
-          const std::uint64_t idx =
-              filters::LinearIndex(filters::LocalPos{x, y, z}, bounds);
-          const std::uint16_t pal = data[idx];
+        for (std::int32_t x = 0; x < sx; ++x, ++li) {
+          const std::uint16_t pal = data[li];
           if (pal >= r.palette.size()) continue;
 
           const auto& name = r.palette[pal].name;

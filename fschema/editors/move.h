@@ -50,9 +50,16 @@ template <filters::Filter F>
   };
 
   std::vector<Entry> entries;
+
+  const std::uint64_t sx = bounds.size[0];
+  const std::uint64_t sz = bounds.size[2];
+  const std::uint64_t y_stride = sx * sz;
+
   v.for_each([&](filters::LocalPos p, std::uint16_t pal) {
     Entry e;
-    e.src_linear = filters::LinearIndex(p, bounds);
+    e.src_linear = static_cast<std::uint64_t>(p.y) * y_stride +
+                   static_cast<std::uint64_t>(p.z) * sx +
+                   static_cast<std::uint64_t>(p.x);
     e.pal = pal;
     e.dst_x = p.x + dx;
     e.dst_y = p.y + dy;
@@ -72,8 +79,10 @@ template <filters::Filter F>
 
   for (const auto& e : entries) {
     if (!e.in_bounds) continue;
-    const std::uint64_t dst_linear = filters::LinearIndex(
-        filters::LocalPos{e.dst_x, e.dst_y, e.dst_z}, bounds);
+    const std::uint64_t dst_linear =
+        static_cast<std::uint64_t>(e.dst_y) * y_stride +
+        static_cast<std::uint64_t>(e.dst_z) * sx +
+        static_cast<std::uint64_t>(e.dst_x);
     data[dst_linear] = e.pal;
   }
   MarkEdited(r);

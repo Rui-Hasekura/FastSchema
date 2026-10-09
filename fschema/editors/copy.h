@@ -59,6 +59,11 @@ template <filters::Filter F>
   }
 
   std::uint16_t* FSCHEMA_RESTRICT dst_data = target.block_indices.data();
+
+  const std::uint64_t dst_sx = dst_bounds.size[0];
+  const std::uint64_t dst_sz = dst_bounds.size[2];
+  const std::uint64_t dst_y_stride = dst_sx * dst_sz;
+
   v.for_each([&](filters::LocalPos p, std::uint16_t pal) {
     const std::int32_t dst_x = p.x + dx;
     const std::int32_t dst_y = p.y + dy;
@@ -66,8 +71,10 @@ template <filters::Filter F>
     if (dst_x < 0 || dst_x >= dst_bounds.size[0]) return;
     if (dst_y < 0 || dst_y >= dst_bounds.size[1]) return;
     if (dst_z < 0 || dst_z >= dst_bounds.size[2]) return;
-    const std::uint64_t dst_linear = filters::LinearIndex(
-        filters::LocalPos{dst_x, dst_y, dst_z}, dst_bounds);
+    const std::uint64_t dst_linear =
+        static_cast<std::uint64_t>(dst_y) * dst_y_stride +
+        static_cast<std::uint64_t>(dst_z) * dst_sx +
+        static_cast<std::uint64_t>(dst_x);
     dst_data[dst_linear] = remap[pal];
   });
 

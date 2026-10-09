@@ -45,8 +45,12 @@ template <filters::Filter F>
   auto mat_res = ir::EnsureMaterialized(r, arena);
   if (!mat_res) return std::unexpected(mat_res.error());
 
-  const std::uint16_t target_idx = ResolveOrAppend(r, block_name);
+  const std::uint64_t target_idx = ResolveOrAppend(r, block_name);
   const auto& bounds = r.bounds;
+
+  const std::uint64_t sx = bounds.size[0];
+  const std::uint64_t sz = bounds.size[2];
+  const std::uint64_t y_stride = sx * sz;
 
   std::vector<std::uint64_t> targets;
   v.for_each([&](filters::LocalPos p, std::uint16_t pal) {
@@ -59,8 +63,9 @@ template <filters::Filter F>
       return;
     }
 
-    const std::uint64_t top_linear =
-        filters::LinearIndex({p.x, ty, p.z}, bounds);
+    const std::uint64_t top_linear = static_cast<std::uint64_t>(ty) * y_stride +
+                                     static_cast<std::uint64_t>(p.z) * sx +
+                                     static_cast<std::uint64_t>(p.x);
     const std::uint16_t top_pal = r.block_indices[top_linear];
 
     if (top_pal >= r.palette.size() ||

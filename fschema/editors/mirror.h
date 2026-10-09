@@ -57,36 +57,49 @@ template <filters::Filter F>
   // Step 2: In-place swap to mirror the block indices.
   std::uint16_t* data = out.block_indices.data();
 
+  const std::uint64_t y_stride = static_cast<std::uint64_t>(sx) * sz;
+
   if (axis == filters::Axis::X) {
     for (std::int32_t y = 0; y < sy; ++y) {
       for (std::int32_t z = 0; z < sz; ++z) {
+        const std::uint64_t row_base =
+            static_cast<std::uint64_t>(y) * y_stride +
+            static_cast<std::uint64_t>(z) * sx;
+        std::uint64_t i1 = row_base;
+        std::uint64_t i2 = row_base + (sx - 1);
         for (std::int32_t x = 0; x < sx / 2; ++x) {
-          const std::uint64_t i1 = filters::LinearIndex({x, y, z}, out.bounds);
-          const std::uint64_t i2 =
-              filters::LinearIndex({sx - 1 - x, y, z}, out.bounds);
           std::swap(data[i1], data[i2]);
+          ++i1;
+          --i2;
         }
       }
     }
   } else if (axis == filters::Axis::Y) {
     for (std::int32_t z = 0; z < sz; ++z) {
       for (std::int32_t x = 0; x < sx; ++x) {
+        const std::uint64_t col_base =
+            static_cast<std::uint64_t>(z) * sx + static_cast<std::uint64_t>(x);
+        std::uint64_t i1 = col_base;
+        std::uint64_t i2 = col_base + (sy - 1) * y_stride;
         for (std::int32_t y = 0; y < sy / 2; ++y) {
-          const std::uint64_t i1 = filters::LinearIndex({x, y, z}, out.bounds);
-          const std::uint64_t i2 =
-              filters::LinearIndex({x, sy - 1 - y, z}, out.bounds);
           std::swap(data[i1], data[i2]);
+          i1 += y_stride;
+          i2 -= y_stride;
         }
       }
     }
   } else {  // Axis::Z
     for (std::int32_t y = 0; y < sy; ++y) {
       for (std::int32_t x = 0; x < sx; ++x) {
+        const std::uint64_t row_base =
+            static_cast<std::uint64_t>(y) * y_stride +
+            static_cast<std::uint64_t>(x);
+        std::uint64_t i1 = row_base;
+        std::uint64_t i2 = row_base + (sz - 1) * sx;
         for (std::int32_t z = 0; z < sz / 2; ++z) {
-          const std::uint64_t i1 = filters::LinearIndex({x, y, z}, out.bounds);
-          const std::uint64_t i2 =
-              filters::LinearIndex({x, y, sz - 1 - z}, out.bounds);
           std::swap(data[i1], data[i2]);
+          i1 += sx;
+          i2 -= sx;
         }
       }
     }

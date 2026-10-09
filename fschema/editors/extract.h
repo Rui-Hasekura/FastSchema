@@ -118,7 +118,8 @@ template <filters::Filter F>
   const std::uint64_t vol = static_cast<std::uint64_t>(bb.size[0]) *
                             static_cast<std::uint64_t>(bb.size[1]) *
                             static_cast<std::uint64_t>(bb.size[2]);
-  out.block_indices.reallocate_uninitialized(static_cast<std::size_t>(vol), &arena);
+  out.block_indices.reallocate_uninitialized(static_cast<std::size_t>(vol),
+                                             &arena);
 
   // Fill with the first palette entry (may or may not be air; the encoder
   // normalizes at serialization time).
@@ -126,17 +127,15 @@ template <filters::Filter F>
     std::fill_n(out.block_indices.data(), vol, static_cast<std::uint16_t>(0));
   }
 
-  const std::int32_t dst_sx = bb.size[0];
-  const std::int32_t dst_sz = bb.size[2];
+  const std::uint64_t dst_sx = bb.size[0];
+  const std::uint64_t dst_sz = bb.size[2];
+  const std::uint64_t dst_y_stride = dst_sx * dst_sz;
   std::uint16_t* FSCHEMA_RESTRICT dst_data = out.block_indices.data();
   v.for_each([&](filters::LocalPos p, std::uint16_t pal) {
-    const std::int32_t lx = p.x - off_x;
-    const std::int32_t ly = p.y - off_y;
-    const std::int32_t lz = p.z - off_z;
     const std::uint64_t dst_linear =
-        static_cast<std::uint64_t>(ly) * dst_sx * dst_sz +
-        static_cast<std::uint64_t>(lz) * dst_sx +
-        static_cast<std::uint64_t>(lx);
+        (static_cast<std::uint64_t>(p.y - off_y)) * dst_y_stride +
+        (static_cast<std::uint64_t>(p.z - off_z)) * dst_sx +
+        static_cast<std::uint64_t>(p.x - off_x);
     dst_data[dst_linear] = remap[pal];
   });
 

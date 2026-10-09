@@ -53,11 +53,15 @@ namespace fschema::editors {
 
   // Scan for non-air bounds
   bool any_non_air = false;
+  const std::uint64_t sx = r.bounds.size[0];
+  const std::uint64_t sz = r.bounds.size[2];
+  const std::uint16_t* FSCHEMA_RESTRICT data = r.block_indices.data();
+
+  std::uint64_t li = 0;
   for (std::int32_t y = 0; y < sy; ++y) {
     for (std::int32_t z = 0; z < sz; ++z) {
-      for (std::int32_t x = 0; x < sx; ++x) {
-        std::uint16_t pal =
-            r.block_indices[filters::LinearIndex({x, y, z}, r.bounds)];
+      for (std::int32_t x = 0; x < sx; ++x, ++li) {
+        std::uint16_t pal = data[li];
         if (pal < r.palette.size() &&
             !base::IsAirVariant(r.palette[pal].name)) {
           any_non_air = true;

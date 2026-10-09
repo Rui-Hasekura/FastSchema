@@ -69,8 +69,8 @@ template <filters::Filter F>
     ir::BoundingBox new_bounds = out.bounds;
 
     // Allocate new buffer for the rotated state.
-    // UnInitBuffer does not value-initialize, which is fine since we overwrite
-    // it fully.
+    // UnInitBuffer does not value-initialize,
+    // which is fine since we overwrite it fully.
     memory::UnInitBuffer<std::uint16_t> new_data(static_cast<std::size_t>(vol),
                                                  &arena);
     const std::uint16_t* src = out.block_indices.data();
@@ -80,16 +80,22 @@ template <filters::Filter F>
       // Rotate in XZ plane. New bounds swap X and Z.
       new_bounds.size[0] = sz;
       new_bounds.size[2] = sx;
+      const std::uint64_t new_sx = sz;
+      const std::uint64_t new_sz = sx;
+      const std::uint64_t new_y_stride = new_sx * new_sz;
+      const std::uint64_t new_z_stride = new_sx;
+
+      std::uint64_t src_idx = 0;
       // 90 deg CW: (x, y, z) -> (z, y, sx - 1 - x)
       for (std::int32_t y = 0; y < sy; ++y) {
         for (std::int32_t z = 0; z < sz; ++z) {
-          for (std::int32_t x = 0; x < sx; ++x) {
-            const std::uint64_t src_idx =
-                filters::LinearIndex({x, y, z}, out.bounds);
+          for (std::int32_t x = 0; x < sx; ++x, ++src_idx) {
             const std::int32_t new_x = z;
             const std::int32_t new_z = sx - 1 - x;
             const std::uint64_t dst_idx =
-                filters::LinearIndex({new_x, y, new_z}, new_bounds);
+                static_cast<std::uint64_t>(y) * new_y_stride +
+                static_cast<std::uint64_t>(new_z) * new_z_stride +
+                static_cast<std::uint64_t>(new_x);
             dst[dst_idx] = src[src_idx];
           }
         }
@@ -98,16 +104,23 @@ template <filters::Filter F>
       // Rotate in YZ plane. New bounds swap Y and Z.
       new_bounds.size[1] = sz;
       new_bounds.size[2] = sy;
+      const std::uint64_t new_sx = sx;
+      const std::uint64_t new_sy = sz;
+      const std::uint64_t new_sz = sy;
+      const std::uint64_t new_y_stride = new_sx * new_sz;
+      const std::uint64_t new_z_stride = new_sx;
+
+      std::uint64_t src_idx = 0;
       // 90 deg CW: (x, y, z) -> (x, z, sy - 1 - y)
       for (std::int32_t y = 0; y < sy; ++y) {
         for (std::int32_t z = 0; z < sz; ++z) {
-          for (std::int32_t x = 0; x < sx; ++x) {
-            const std::uint64_t src_idx =
-                filters::LinearIndex({x, y, z}, out.bounds);
+          for (std::int32_t x = 0; x < sx; ++x, ++src_idx) {
             const std::int32_t new_y = z;
             const std::int32_t new_z = sy - 1 - y;
             const std::uint64_t dst_idx =
-                filters::LinearIndex({x, new_y, new_z}, new_bounds);
+                static_cast<std::uint64_t>(new_y) * new_y_stride +
+                static_cast<std::uint64_t>(new_z) * new_z_stride +
+                static_cast<std::uint64_t>(x);
             dst[dst_idx] = src[src_idx];
           }
         }
@@ -116,16 +129,28 @@ template <filters::Filter F>
       // Rotate in XY plane. New bounds swap X and Y.
       new_bounds.size[0] = sy;
       new_bounds.size[1] = sx;
+      const std::uint64_t new_sx = sy;
+      const std::uint64_t new_sy = sx;
+      const std::uint64_t new_sz = sz;
+      const std::uint64_t new_y_stride = new_sx * new_sz;
+      const std::uint64_t new_z_stride = new_sx;
+
+      const std::uint64_t src_y_stride = static_cast<std::uint64_t>(sx) * sz;
+      const std::uint64_t src_z_stride = sx;
+
       // 90 deg CW: (x, y, z) -> (y, sx - 1 - x, z)
       for (std::int32_t y = 0; y < sy; ++y) {
         for (std::int32_t x = 0; x < sx; ++x) {
+          const std::uint64_t base_src =
+              static_cast<std::uint64_t>(y) * src_y_stride +
+              static_cast<std::uint64_t>(x);
+          const std::uint64_t base_dst =
+              static_cast<std::uint64_t>(sx - 1 - x) * new_y_stride +
+              static_cast<std::uint64_t>(y);
+
           for (std::int32_t z = 0; z < sz; ++z) {
-            const std::uint64_t src_idx =
-                filters::LinearIndex({x, y, z}, out.bounds);
-            const std::int32_t new_x = y;
-            const std::int32_t new_y = sx - 1 - x;
-            const std::uint64_t dst_idx =
-                filters::LinearIndex({new_x, new_y, z}, new_bounds);
+            const std::uint64_t src_idx = base_src + z * src_z_stride;
+            const std::uint64_t dst_idx = base_dst + z * new_z_stride;
             dst[dst_idx] = src[src_idx];
           }
         }
