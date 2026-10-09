@@ -58,6 +58,11 @@ namespace fschema::litematic::internal {
             if (!v) return std::unexpected(v.error());
             tick.block = *v;
             have_block = true;
+          } else if (field == "Fluid" && t == base::TagType::String) {
+            auto v = reader.ReadStringView();
+            if (!v) return std::unexpected(v.error());
+            tick.block = *v;
+            have_block = true;
           } else if (field == "SubTick" && t == base::TagType::Long) {
             auto v = reader.Read<std::int64_t>();
             if (!v) return std::unexpected(v.error());

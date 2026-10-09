@@ -19,6 +19,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <expected>
 #include <span>
 #include <utility>
@@ -160,39 +161,26 @@ DecodeSingleByteFastImpl(std::span<const std::byte> data,
 
   std::atomic<std::uint32_t> error_flag{0};
 
-  // Scalar head: align the source pointer to a 32-byte boundary.
-  // Unaligned loads work, but aligned loads + non-temporal stores are faster.
-  std::size_t i = 0;
-  while ((reinterpret_cast<std::uintptr_t>(src + i) & 31) != 0 && i < n) {
-    if (src[i] & 0x80) {
-      error_flag.store(1, std::memory_order_relaxed);
-    }
-    dst[i] = static_cast<std::uint16_t>(src[i]);
-    ++i;
-  }
-
-  const std::size_t n32 = ((n - i) / 32) * 32 + i;
-  const auto* s = src + i;
-  auto* d = dst + i;
-
   const __m256i v_msb_mask = _mm256_set1_epi8(static_cast<char>(0x80));
   const __m256i v_zero = _mm256_setzero_si256();
 
+  const std::size_t n32 = (n / 32) * 32;
+  const auto* s = src;
+  auto* d = dst;
+
   // Main loop: 32 bytes -> 32 uint16 (64 bytes) per iteration.
   for (; s < src + n32; s += 32, d += 32) {
-    __m256i v32 = _mm256_load_si256(reinterpret_cast<const __m256i*>(s));
+    __m256i v32 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(s));
 
-    // Zero-extend 8x uint8 to 8x uint16 for both halves of the 256-bit reg.
     __m128i lo = _mm256_castsi256_si128(v32);
     __m128i hi = _mm256_extracti128_si256(v32, 1);
     __m256i wide0 = _mm256_cvtepu8_epi16(lo);
     __m256i wide1 = _mm256_cvtepu8_epi16(hi);
 
-    // Non-temporal stores: bypass cache for large output buffers.
+    // dst is guaranteed 64-byte aligned by UnInitBuffer
     _mm256_stream_si256(reinterpret_cast<__m256i*>(d), wide0);
     _mm256_stream_si256(reinterpret_cast<__m256i*>(d + 16), wide1);
 
-    // Check for format errors: any MSB set means it's not a 1-byte varint.
     __m256i msb = _mm256_and_si256(v32, v_msb_mask);
     if (!_mm256_testz_si256(msb, msb)) {
       std::uint32_t expected = 0;
@@ -233,35 +221,18 @@ Decode2ByteUniformFastImpl(std::span<const std::byte> data,
 
   std::atomic<std::uint32_t> error_flag{0};
 
-  // 2-byte varint format: byte0 has MSB set (0x80 | val0), byte1 has MSB clear
-  // (val1). As a little-endian uint16, this looks like: 0x80 val1 val0 0x00.
-  // (Actually: byte0 is low bits, byte1 is high bits. val = (byte1 << 7) |
-  // byte0). We expect the 16-bit value to have exactly the 0x0080 bit pattern
-  // when ANDed with 0x8080.
   const __m256i mask_8080 = _mm256_set1_epi16(static_cast<short>(0x8080));
   const __m256i expected_0080 = _mm256_set1_epi16(static_cast<short>(0x0080));
   const __m256i mask_lo = _mm256_set1_epi16(0x007F);
   const __m256i mask_hi = _mm256_set1_epi16(0x7F00);
 
-  // Scalar head: align source pointer.
-  std::size_t i = 0;
-  while ((reinterpret_cast<std::uintptr_t>(src + i * 2) & 31) != 0 && i < n) {
-    std::uint8_t b0 = src[i * 2];
-    std::uint8_t b1 = src[i * 2 + 1];
-    if ((b0 & 0x80) == 0 || (b1 & 0x80) != 0) {
-      error_flag.store(1, std::memory_order_relaxed);
-    }
-    dst[i] = ((b1 & 0x7F) << 7) | (b0 & 0x7F);
-    ++i;
-  }
-
-  const std::size_t n16 = ((n - i) / 16) * 16 + i;
-  const auto* s = src + i * 2;
-  auto* d = dst + i;
+  const std::size_t n16 = (n / 16) * 16;
+  const auto* s = src;
+  auto* d = dst;
 
   // Main loop: 32 bytes (16x uint16) per iteration.
   for (; s < src + n16 * 2; s += 32, d += 16) {
-    __m256i v = _mm256_load_si256(reinterpret_cast<const __m256i*>(s));
+    __m256i v = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(s));
 
     __m256i msb = _mm256_and_si256(v, mask_8080);
     __m256i is_bad = _mm256_xor_si256(msb, expected_0080);
@@ -271,11 +242,11 @@ Decode2ByteUniformFastImpl(std::span<const std::byte> data,
           expected, 1, std::memory_order_relaxed);
     }
 
-    // Extract value: val = (v & 0x007F) | ((v & 0x7F00) >> 1).
     __m256i lo = _mm256_and_si256(v, mask_lo);
     __m256i hi = _mm256_and_si256(v, mask_hi);
     __m256i res = _mm256_or_si256(lo, _mm256_srli_epi16(hi, 1));
 
+    // dst is guaranteed 64-byte aligned by UnInitBuffer
     _mm256_stream_si256(reinterpret_cast<__m256i*>(d), res);
   }
 
@@ -425,40 +396,9 @@ void DecodeVarintChunksKernelImpl(const std::uint8_t* const* chunk_ptrs,
       std::uint16_t* FSCHEMA_RESTRICT dst = out + target_block;
       std::memset(dst, 0, cnt * sizeof(std::uint16_t));
 
-      if (palette_size <= 16384) {
+            if (palette_size <= 16384) {
 #if HWY_TARGET == HWY_AVX2
         std::size_t i = 0;
-        // Align destination pointer to 32 bytes.
-        while ((reinterpret_cast<std::uintptr_t>(dst + i) & 31) != 0 &&
-               i < cnt) {
-          if (p >= data_end) [[unlikely]] {
-            std::uint32_t expected = 0;
-            error_flag.compare_exchange_strong(
-                expected, 1, std::memory_order_relaxed);
-            return;
-          }
-          std::uint8_t b0 = *p++;
-          std::uint16_t val = b0;
-          if (b0 & 0x80) {
-            if (p >= data_end) [[unlikely]] {
-              std::uint32_t expected = 0;
-              error_flag.compare_exchange_strong(
-                  expected, 1, std::memory_order_relaxed);
-              return;
-            }
-            val = (b0 & 0x7F) | (static_cast<std::uint16_t>(*p++) << 7);
-          }
-          if (val >= palette_size) [[unlikely]] {
-            std::uint32_t expected = 0;
-            error_flag.compare_exchange_strong(
-                expected, 2, std::memory_order_relaxed);
-            return;
-          }
-          if (val != 0) [[likely]] {
-            dst[i] = val;
-          }
-          ++i;
-        }
         // Fast path: check if the next 32 bytes are all zero (all air).
         for (; i + 32 <= cnt && p + 64 <= data_end;) {
           __m256i v0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(p));
@@ -467,7 +407,7 @@ void DecodeVarintChunksKernelImpl(const std::uint8_t* const* chunk_ptrs,
             p += 32;
             i += 32;
           } else {
-            // Decode 32 vars into aligned buffer, then stream store.
+            // Decode 32 vars into aligned buffer, then store.
             alignas(32) std::uint16_t buf16[32];
             std::size_t decoded = 0;
             while (decoded < 32) {
@@ -486,8 +426,9 @@ void DecodeVarintChunksKernelImpl(const std::uint8_t* const* chunk_ptrs,
                 _mm256_load_si256(reinterpret_cast<const __m256i*>(buf16));
             __m256i v2 =
                 _mm256_load_si256(reinterpret_cast<const __m256i*>(buf16 + 16));
-            _mm256_stream_si256(reinterpret_cast<__m256i*>(dst + i), v1);
-            _mm256_stream_si256(reinterpret_cast<__m256i*>(dst + i + 16), v2);
+            // dst + i is not guaranteed aligned, use unaligned store
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(dst + i), v1);
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(dst + i + 16), v2);
             i += 32;
           }
         }

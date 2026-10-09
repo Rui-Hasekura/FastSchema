@@ -42,7 +42,7 @@ class DepthGuard {
 };
 
 template <typename Fn>
-FSCHEMA_ALWAYS_INLINE [[nodiscard]] ParseResult<void> ForEachCompoundField(
+[[nodiscard]] FSCHEMA_ALWAYS_INLINE ParseResult<void> ForEachCompoundField(
     ByteReader& reader,
     Fn&& fn) {
   DepthGuard guard(reader);

@@ -106,8 +106,7 @@ TEST_P(LitematicParseTest, ParsesSuccessfullyAndValidatesStructure) {
     auto unpack_res = fl::internal::UnpackIndicesFused(region.raw_block_states,
                                                        bpb,
                                                        expected_vol,
-                                                       region.palette.size(),
-                                                       *litematic.arena);
+                                                       region.palette.size());
     ASSERT_TRUE(unpack_res.has_value()) << "Unpack failed for region " << i;
 
     EXPECT_EQ(unpack_res->size(), expected_vol)
