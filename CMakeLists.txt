@@ -33,11 +33,28 @@ option(FASTSCHEMA_INSTALL "Generate install target"
        ${PROJECT_IS_TOP_LEVEL})
 
 # Dependencies
+cmake_policy(SET CMP0077 NEW)
+cmake_policy(SET CMP0079 NEW)
+
 include(FetchContent)
+
+# Google Test
+if(FASTSCHEMA_BUILD_TESTS)
+    if(NOT TARGET GTest::gtest_main AND NOT TARGET gtest)
+        FetchContent_Declare(
+            GTest
+            GIT_REPOSITORY https://github.com/google/googletest
+            GIT_TAG v1.18.0
+            OVERRIDE_FIND_PACKAGE
+        )
+        set(gtest_force_shared_crt ON)
+        FetchContent_MakeAvailable(GTest)
+    endif()
+endif()
 
 # Google Abseil
 FetchContent_Declare(abseil
-    GIT_REPOSITORY https://github.com/abseil/abseil-cpp.git
+    GIT_REPOSITORY https://github.com/abseil/abseil-cpp
     GIT_TAG        20260817.0)
 block()
     set(ABSL_BUILD_TESTING OFF)
@@ -49,30 +66,40 @@ block()
     FetchContent_MakeAvailable(abseil)
 endblock()
 
-# Google Highway (static)
+# Google Highway
 FetchContent_Declare(hwy
-    GIT_REPOSITORY https://github.com/google/highway.git
-    GIT_TAG 1.4.0)
+    GIT_REPOSITORY https://github.com/google/highway
+    GIT_TAG 1.4.0
+)
 block()
-    set(HWY_ENABLE_TESTS OFF)
-    set(HWY_ENABLE_EXAMPLES OFF)
+    set(HWY_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
+    set(HWY_ENABLE_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(HWY_ENABLE_CONTRIB OFF CACHE BOOL "" FORCE)
+    if(TARGET gtest OR TARGET GTest::gtest_main)
+        set(HWY_SYSTEM_GTEST ON CACHE BOOL "" FORCE)
+    endif()
     FetchContent_MakeAvailable(hwy)
+    unset(HWY_SYSTEM_GTEST CACHE)
 endblock()
 
-# libdeflate (static)
+# libdeflate
 FetchContent_Declare(libdeflate
-    GIT_REPOSITORY https://github.com/ebiggers/libdeflate.git
+    GIT_REPOSITORY https://github.com/ebiggers/libdeflate
     GIT_TAG v1.26)
 block()
     set(LIBDEFLATE_BUILD_TESTS OFF)
     set(LIBDEFLATE_BUILD_SHARED_LIB OFF)
     set(LIBDEFLATE_BUILD_STATIC_LIB ON)
     FetchContent_MakeAvailable(libdeflate)
+
+    if(TARGET libdeflate)
+        target_include_directories(libdeflate INTERFACE $<BUILD_INTERFACE:${libdeflate_SOURCE_DIR}>)
+    endif()
 endblock()
 
-# Intel oneTBB (shared)
+# Intel oneTBB
 FetchContent_Declare(oneTBB
-    GIT_REPOSITORY https://github.com/oneapi-src/oneTBB.git
+    GIT_REPOSITORY https://github.com/oneapi-src/oneTBB
     GIT_TAG        v2023.1.0)
 block()
     set(TBB_TEST OFF)
@@ -81,24 +108,14 @@ block()
     FetchContent_MakeAvailable(oneTBB)
 endblock()
 
-# Google Test
-if(FASTSCHEMA_BUILD_TESTS)
-    FetchContent_Declare(googletest
-        GIT_REPOSITORY https://github.com/google/googletest.git
-        GIT_TAG v1.18.0)
-    block()
-        set(gtest_force_shared_crt ON)
-        FetchContent_MakeAvailable(googletest)
-    endblock()
-endif()
-
 # Google Benchmark
 if(FASTSCHEMA_BUILD_BENCHMARKS)
     FetchContent_Declare(googlebenchmark
-        GIT_REPOSITORY https://github.com/google/benchmark.git
+        GIT_REPOSITORY https://github.com/google/benchmark
         GIT_TAG v1.9.5)
     block()
         set(BENCHMARK_ENABLE_TESTING OFF)
+        set(BENCHMARK_ENABLE_GTEST_TESTS OFF)
         FetchContent_MakeAvailable(googlebenchmark)
     endblock()
 endif()

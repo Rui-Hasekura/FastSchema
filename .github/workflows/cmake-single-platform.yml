@@ -1,0 +1,43 @@
+# This starter workflow is for a CMake project running on Linux.
+name: CMake on a single platform
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build g++-14
+
+      - name: Configure CMake
+        env:
+          CC: gcc-14
+          CXX: g++-14
+        run: >
+          cmake -B ${{github.workspace}}/build
+          -G Ninja
+          -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+          -DFASTSCHEMA_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+
+      - name: Test
+        working-directory: ${{github.workspace}}/build
+        run: ctest -C ${{env.BUILD_TYPE}} --output-on-failure
