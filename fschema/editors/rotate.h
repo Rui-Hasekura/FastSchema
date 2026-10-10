@@ -54,119 +54,121 @@ template <filters::Filter F>
   if (!extract_res) return std::unexpected(extract_res.error());
   ir::Region out = std::move(*extract_res);
 
-  // Apply 90-degree rotations iteratively to avoid complex single-step math
-  // and bounds-swapping errors.
-  for (int step = 0; step < steps; ++step) {
-    const std::int32_t sx = out.bounds.size[0];
-    const std::int32_t sy = out.bounds.size[1];
-    const std::int32_t sz = out.bounds.size[2];
-    const std::uint64_t vol = static_cast<std::uint64_t>(sx) *
-                              static_cast<std::uint64_t>(sy) *
-                              static_cast<std::uint64_t>(sz);
+  const std::int32_t sx = out.bounds.size[0];
+  const std::int32_t sy = out.bounds.size[1];
+  const std::int32_t sz = out.bounds.size[2];
+  const std::uint64_t vol = static_cast<std::uint64_t>(sx) *
+                            static_cast<std::uint64_t>(sy) *
+                            static_cast<std::uint64_t>(sz);
 
-    if (vol == 0) break;
+  if (vol == 0) return out;
 
-    ir::BoundingBox new_bounds = out.bounds;
-
-    // Allocate new buffer for the rotated state.
-    // UnInitBuffer does not value-initialize,
-    // which is fine since we overwrite it fully.
-    memory::UnInitBuffer<std::uint16_t> new_data(static_cast<std::size_t>(vol),
-                                                 &arena);
-    const std::uint16_t* src = out.block_indices.data();
-    std::uint16_t* dst = new_data.data();
-
+  // Compute new bounds based on axis and steps
+  ir::BoundingBox new_bounds = out.bounds;
+  if (steps == 1 || steps == 3) {
     if (axis == filters::Axis::Y) {
-      // Rotate in XZ plane. New bounds swap X and Z.
       new_bounds.size[0] = sz;
       new_bounds.size[2] = sx;
-      const std::uint64_t new_sx = sz;
-      const std::uint64_t new_sz = sx;
-      const std::uint64_t new_y_stride = new_sx * new_sz;
-      const std::uint64_t new_z_stride = new_sx;
-
-      std::uint64_t src_idx = 0;
-      // 90 deg CW: (x, y, z) -> (z, y, sx - 1 - x)
-      for (std::int32_t y = 0; y < sy; ++y) {
-        for (std::int32_t z = 0; z < sz; ++z) {
-          for (std::int32_t x = 0; x < sx; ++x, ++src_idx) {
-            const std::int32_t new_x = z;
-            const std::int32_t new_z = sx - 1 - x;
-            const std::uint64_t dst_idx =
-                static_cast<std::uint64_t>(y) * new_y_stride +
-                static_cast<std::uint64_t>(new_z) * new_z_stride +
-                static_cast<std::uint64_t>(new_x);
-            dst[dst_idx] = src[src_idx];
-          }
-        }
-      }
     } else if (axis == filters::Axis::X) {
-      // Rotate in YZ plane. New bounds swap Y and Z.
       new_bounds.size[1] = sz;
       new_bounds.size[2] = sy;
-      const std::uint64_t new_sx = sx;
-      const std::uint64_t new_sy = sz;
-      const std::uint64_t new_sz = sy;
-      const std::uint64_t new_y_stride = new_sx * new_sz;
-      const std::uint64_t new_z_stride = new_sx;
-
-      std::uint64_t src_idx = 0;
-      // 90 deg CW: (x, y, z) -> (x, z, sy - 1 - y)
-      for (std::int32_t y = 0; y < sy; ++y) {
-        for (std::int32_t z = 0; z < sz; ++z) {
-          for (std::int32_t x = 0; x < sx; ++x, ++src_idx) {
-            const std::int32_t new_y = z;
-            const std::int32_t new_z = sy - 1 - y;
-            const std::uint64_t dst_idx =
-                static_cast<std::uint64_t>(new_y) * new_y_stride +
-                static_cast<std::uint64_t>(new_z) * new_z_stride +
-                static_cast<std::uint64_t>(x);
-            dst[dst_idx] = src[src_idx];
-          }
-        }
-      }
     } else {  // Axis::Z
-      // Rotate in XY plane. New bounds swap X and Y.
       new_bounds.size[0] = sy;
       new_bounds.size[1] = sx;
-      const std::uint64_t new_sx = sy;
-      const std::uint64_t new_sy = sx;
-      const std::uint64_t new_sz = sz;
-      const std::uint64_t new_y_stride = new_sx * new_sz;
-      const std::uint64_t new_z_stride = new_sx;
+    }
+  }
 
-      const std::uint64_t src_y_stride = static_cast<std::uint64_t>(sx) * sz;
-      const std::uint64_t src_z_stride = sx;
+  const std::uint64_t new_sx = new_bounds.size[0];
+  const std::uint64_t new_sz = new_bounds.size[2];
+  const std::uint64_t new_y_stride = new_sx * new_sz;
+  const std::uint64_t new_z_stride = new_sx;
 
-      // 90 deg CW: (x, y, z) -> (y, sx - 1 - x, z)
-      for (std::int32_t y = 0; y < sy; ++y) {
-        for (std::int32_t x = 0; x < sx; ++x) {
-          const std::uint64_t base_src =
-              static_cast<std::uint64_t>(y) * src_y_stride +
-              static_cast<std::uint64_t>(x);
-          const std::uint64_t base_dst =
-              static_cast<std::uint64_t>(sx - 1 - x) * new_y_stride +
-              static_cast<std::uint64_t>(y);
+  // Allocate new buffer for the rotated state.
+  // UnInitBuffer does not value-initialize, which is fine since we overwrite
+  // it fully.
+  memory::UnInitBuffer<std::uint16_t> new_data(static_cast<std::size_t>(vol),
+                                               &arena);
+  const std::uint16_t* src = out.block_indices.data();
+  std::uint16_t* dst = new_data.data();
 
-          for (std::int32_t z = 0; z < sz; ++z) {
-            const std::uint64_t src_idx = base_src + z * src_z_stride;
-            const std::uint64_t dst_idx = base_dst + z * new_z_stride;
-            dst[dst_idx] = src[src_idx];
+  // Iterate through the source in YZX order to read `src` sequentially.
+  // Then compute the destination coordinates and linear index.
+  std::uint64_t src_idx = 0;
+  for (std::int32_t y = 0; y < sy; ++y) {
+    for (std::int32_t z = 0; z < sz; ++z) {
+      for (std::int32_t x = 0; x < sx; ++x, ++src_idx) {
+        std::int32_t new_x = x;
+        std::int32_t new_y = y;
+        std::int32_t new_z = z;
+
+        if (axis == filters::Axis::Y) {
+          if (steps == 1) {
+            // 90 deg CW: (x, y, z) -> (z, y, sx - 1 - x)
+            new_x = z;
+            new_z = sx - 1 - x;
+          } else if (steps == 2) {
+            // 180 deg: (x, y, z) -> (sx - 1 - x, y, sz - 1 - z)
+            new_x = sx - 1 - x;
+            new_z = sz - 1 - z;
+          } else if (steps == 3) {
+            // 270 deg CW: (x, y, z) -> (sz - 1 - z, y, x)
+            new_x = sz - 1 - z;
+            new_z = x;
+          }
+        } else if (axis == filters::Axis::X) {
+          if (steps == 1) {
+            // 90 deg CW: (x, y, z) -> (x, z, sy - 1 - y)
+            new_y = z;
+            new_z = sy - 1 - y;
+          } else if (steps == 2) {
+            // 180 deg: (x, y, z) -> (x, sy - 1 - y, sz - 1 - z)
+            new_y = sy - 1 - y;
+            new_z = sz - 1 - z;
+          } else if (steps == 3) {
+            // 270 deg CW: (x, y, z) -> (x, sz - 1 - z, y)
+            new_y = sz - 1 - z;
+            new_z = y;
+          }
+        } else {  // Axis::Z
+          if (steps == 1) {
+            // 90 deg CW: (x, y, z) -> (y, sx - 1 - x, z)
+            new_x = y;
+            new_y = sx - 1 - x;
+          } else if (steps == 2) {
+            // 180 deg: (x, y, z) -> (sx - 1 - x, sy - 1 - y, z)
+            new_x = sx - 1 - x;
+            new_y = sy - 1 - y;
+          } else if (steps == 3) {
+            // 270 deg CW: (x, y, z) -> (sy - 1 - y, x, z)
+            new_x = sy - 1 - y;
+            new_y = x;
           }
         }
+
+        const std::uint64_t dst_idx =
+            static_cast<std::uint64_t>(new_y) * new_y_stride +
+            static_cast<std::uint64_t>(new_z) * new_z_stride +
+            static_cast<std::uint64_t>(new_x);
+        dst[dst_idx] = src[src_idx];
       }
     }
-
-    out.bounds = new_bounds;
-    out.position = {
-        new_bounds.origin[0], new_bounds.origin[1], new_bounds.origin[2]};
-    out.size = {new_bounds.size[0], new_bounds.size[1], new_bounds.size[2]};
-    out.block_indices = std::move(new_data);
   }
+
+  out.bounds = new_bounds;
+  out.position = {
+      new_bounds.origin[0],
+      new_bounds.origin[1],
+      new_bounds.origin[2]};
+  out.size = {new_bounds.size[0], new_bounds.size[1], new_bounds.size[2]};
+  out.block_indices = std::move(new_data);
 
   if (mode == StateTransformMode::kTransformStates && steps != 0) {
     internal::TransformPalette(
-        out, internal::AxisOpType::kRotate, axis, steps, arena);
+        out,
+        internal::AxisOpType::kRotate,
+        axis,
+        steps,
+        arena);
   }
 
   return out;
