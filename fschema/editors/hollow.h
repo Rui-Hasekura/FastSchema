@@ -17,14 +17,10 @@
 #define FSCHEMA_EDITORS_HOLLOW_H_
 
 #include <cstdint>
-#include <vector>
 
 #include "fschema/base/error.h"
-#include "fschema/editors/fill.h"
+#include "fschema/base/port.h"
 #include "fschema/editors/palette_utils.h"
-#include "fschema/filters/block_name_filter.h"
-#include "fschema/filters/composite_filter.h"
-#include "fschema/filters/surface_filter.h"
 #include "fschema/filters/view.h"
 #include "fschema/ir/materialize.h"
 #include "fschema/ir/types.h"
@@ -37,8 +33,8 @@ namespace fschema::editors {
 /// This is achieved by selecting all blocks that are NOT exposed to
 /// air AND NOT air themselves, then setting them to air.
 ///
-/// Collects linear indices first, then applies deletions in
-/// a second pass to avoid cascading in-place mutations.
+/// Uses a pre-calculated `exposed[]` mask to avoid repeated 6-neighbor
+/// checks and cascading in-place mutations during the scan.
 template <filters::Filter F>
 [[nodiscard]] ParseResult<void> Hollow(filters::BasicView<F> v,
                                        memory::Arena& arena) {
@@ -46,29 +42,59 @@ template <filters::Filter F>
   auto mat_res = ir::EnsureMaterialized(r, arena);
   if (!mat_res) return std::unexpected(mat_res.error());
 
-  filters::SurfaceFilter surface(r);
-  filters::IsAirFilter is_air(r);
+  const auto& bounds = r.bounds;
+  const std::int32_t sx = bounds.size[0];
+  const std::int32_t sy = bounds.size[1];
+  const std::int32_t sz = bounds.size[2];
+  const std::uint64_t vol = static_cast<std::uint64_t>(sx) * sy * sz;
+  if (vol == 0) return {};
 
-  // Select internal solid blocks: !surface && !air
-  // Uses strongly-constrained operator overloads from composite_filter.h
-  auto internal_filter = !surface && !is_air;
+  // Precompute an `exposed` mask for the entire region.
+  // A block is exposed if it is on the boundary or has at least one air
+  // neighbor. We allocate from the arena to avoid large std::vector heap
+  // allocations.
+  std::uint8_t* exposed = arena.AllocateArray<std::uint8_t>(vol);
 
-  auto internal_view_res = filters::MakeView(r, internal_filter, arena);
-  if (!internal_view_res) return std::unexpected(internal_view_res.error());
-  const auto& internal_view = *internal_view_res;
+  const std::uint64_t y_stride = static_cast<std::uint64_t>(sx) * sz;
+  const std::uint16_t* FSCHEMA_RESTRICT data = r.block_indices.data();
 
-  std::vector<std::uint64_t> to_delete;
-  internal_view.for_each_linear([&](std::uint64_t linear_idx, std::uint16_t) {
-    to_delete.push_back(linear_idx);
-  });
+  std::uint64_t li = 0;
+  for (std::int32_t y = 0; y < sy; ++y) {
+    for (std::int32_t z = 0; z < sz; ++z) {
+      for (std::int32_t x = 0; x < sx; ++x, ++li) {
+        bool is_exp = false;
+        // Check 6 neighbors with short-circuit evaluation. The boundary checks
+        // (x == 0, etc.) guard the r.IsAir() calls to prevent OOB reads.
+        if (x == 0 || r.IsAir(data[li - 1]))
+          is_exp = true;
+        else if (x == sx - 1 || r.IsAir(data[li + 1]))
+          is_exp = true;
+        else if (z == 0 || r.IsAir(data[li - sx]))
+          is_exp = true;
+        else if (z == sz - 1 || r.IsAir(data[li + sx]))
+          is_exp = true;
+        else if (y == 0 || r.IsAir(data[li - y_stride]))
+          is_exp = true;
+        else if (y == sy - 1 || r.IsAir(data[li + y_stride]))
+          is_exp = true;
 
-  if (to_delete.empty()) return {};
+        exposed[li] = is_exp ? 1 : 0;
+      }
+    }
+  }
 
   const std::uint16_t air_idx = ResolveAir(r);
-  std::uint16_t* data = r.block_indices.data();
-  for (std::uint64_t idx : to_delete) {
-    data[idx] = air_idx;
-  }
+  std::uint16_t* FSCHEMA_RESTRICT data_mut = r.block_indices.data();
+
+  // Second pass: iterate over the filtered view and apply deletions.
+  // Because `exposed[]` is pre-calculated based on the original state,
+  // modifying `data_mut` here does not cascade and affect other blocks'
+  // exposure.
+  v.for_each_linear([&](std::uint64_t linear_idx, std::uint16_t pal) {
+    if (pal < r.palette.size() && !exposed[linear_idx] && !r.IsAir(pal)) {
+      data_mut[linear_idx] = air_idx;
+    }
+  });
 
   MarkEdited(r);
   return {};
