@@ -31,9 +31,11 @@ class BlockNameFilter {
  public:
   BlockNameFilter(std::string_view name, const ir::Region& r) : name_(name) {
     matched_.assign(r.palette.size(), 0);
+    any_matched_ = false;
     for (std::size_t i = 0; i < r.palette.size(); ++i) {
       if (r.palette[i].name == name) {
         matched_[i] = 1;
+        any_matched_ = true;
       }
     }
   }
@@ -46,16 +48,12 @@ class BlockNameFilter {
   [[nodiscard]] std::string_view name() const noexcept { return name_; }
 
   /// Returns true if at least one palette entry matches the name.
-  [[nodiscard]] bool any_matched() const noexcept {
-    for (bool b : matched_) {
-      if (b) return true;
-    }
-    return false;
-  }
+  [[nodiscard]] bool any_matched() const noexcept { return any_matched_; }
 
  private:
   std::string_view name_;
   std::vector<std::uint8_t> matched_;  // size = palette.size()
+  bool any_matched_ = false;
 };
 
 /// Filters air-variant blocks (minecraft:air, cave_air, void_air).
