@@ -17,8 +17,10 @@
 #define FSCHEMA_EDITORS_COPY_H_
 
 #include <cstdint>
+#include <string_view>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"
 #include "fschema/base/error.h"
 #include "fschema/base/port.h"
 #include "fschema/editors/palette_utils.h"
@@ -49,13 +51,27 @@ template <filters::Filter F>
   auto mat_res = ir::EnsureMaterialized(target, arena);
   if (!mat_res) return std::unexpected(mat_res.error());
 
-  const auto& src_bounds = src.bounds;
   const auto& dst_bounds = target.bounds;
 
   // Build palette remap: src_palette_idx -> dst_palette_idx (by name).
   std::vector<std::uint16_t> remap(src.palette.size(), 0);
+  absl::flat_hash_map<std::string_view, std::uint16_t> target_lookup;
+  target_lookup.reserve(target.palette.size());
+  for (std::size_t i = 0; i < target.palette.size(); ++i) {
+    target_lookup.try_emplace(target.palette[i].name,
+                              static_cast<std::uint16_t>(i));
+  }
+
   for (std::size_t i = 0; i < src.palette.size(); ++i) {
-    remap[i] = ResolveOrAppend(target, src.palette[i].name);
+    auto it = target_lookup.find(src.palette[i].name);
+    if (it != target_lookup.end()) {
+      remap[i] = it->second;
+    } else {
+      target.lazy_source.palette_pristine = false;
+      std::uint16_t new_idx = AppendPaletteEntry(target, src.palette[i].name);
+      target_lookup.try_emplace(src.palette[i].name, new_idx);
+      remap[i] = new_idx;
+    }
   }
 
   std::uint16_t* FSCHEMA_RESTRICT dst_data = target.block_indices.data();
