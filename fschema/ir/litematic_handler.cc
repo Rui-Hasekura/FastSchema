@@ -192,9 +192,7 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
 
     std::uint16_t air_idx = kAirIdxSentinel;
     for (std::size_t i = 0; i < reg.palette.size(); ++i) {
-      if (reg.palette[i].name == "minecraft:air" ||
-          reg.palette[i].name == "minecraft:cave_air" ||
-          reg.palette[i].name == "minecraft:void_air") {
+      if (base::IsAirVariant(reg.palette[i].name)) {
         air_idx = static_cast<std::uint16_t>(i);
         break;
       }
@@ -459,7 +457,7 @@ ParseResult<Schema> LitematicaHandler::DecodeFromParsed(
                                  reg.palette[0].name == "minecraft:cave_air" ||
                                  reg.palette[0].name == "minecraft:void_air");
     r.lazy_source.palette_pristine = true;
-
+    r.lazy_source.air_at_zero = r.IsAir(0);
     r.block_entities.reserve(reg.tile_entities.size());
     for (auto& te : reg.tile_entities) {
       BlockEntity be;

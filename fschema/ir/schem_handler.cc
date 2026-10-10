@@ -348,7 +348,7 @@ ParseResult<Schema> SchemHandler::DecodeFromParsed(
   r.lazy_source.raw_bytes = src.raw_block_data;
   r.lazy_source.encoding = ir::BlockDataEncoding::kSpongeVarint;
   r.lazy_source.palette_size = src.palette.size();
-  r.lazy_source.air_at_zero = true;
+  r.lazy_source.air_at_zero = r.IsAir(0);
   r.lazy_source.palette_pristine = true;
 
   r.entities.reserve(src.entities.size());
