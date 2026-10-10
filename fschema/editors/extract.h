@@ -77,8 +77,30 @@ template <filters::Filter F>
                                               memory::Arena& arena) {
   const ir::Region& src = v.region();
 
-  auto bounds_opt = ComputeSelectionBounds(v);
-  if (!bounds_opt) {
+  // Pass 1: Compute tight bounding box and mark used palette entries
+  // simultaneously.
+  std::int32_t min_x = std::numeric_limits<std::int32_t>::max();
+  std::int32_t min_y = std::numeric_limits<std::int32_t>::max();
+  std::int32_t min_z = std::numeric_limits<std::int32_t>::max();
+  std::int32_t max_x = std::numeric_limits<std::int32_t>::min();
+  std::int32_t max_y = std::numeric_limits<std::int32_t>::min();
+  std::int32_t max_z = std::numeric_limits<std::int32_t>::min();
+
+  std::vector<std::uint8_t> used(src.palette.size(), 0);
+  bool any = false;
+
+  v.for_each([&](filters::LocalPos p, std::uint16_t pal) {
+    any = true;
+    if (p.x < min_x) min_x = p.x;
+    if (p.y < min_y) min_y = p.y;
+    if (p.z < min_z) min_z = p.z;
+    if (p.x > max_x) max_x = p.x;
+    if (p.y > max_y) max_y = p.y;
+    if (p.z > max_z) max_z = p.z;
+    if (pal < used.size()) used[pal] = 1;
+  });
+
+  if (!any) {
     ir::Region out;
     out.name = "extract";
     out.bounds = {{0, 0, 0}, {0, 0, 0}};
@@ -87,18 +109,22 @@ template <filters::Filter F>
     out.is_materialized = true;
     return out;
   }
-  const ir::BoundingBox& bb = *bounds_opt;
+
+  ir::BoundingBox bb;
+  // Convert local bounds back to world-space bounds
+  bb.origin[0] = src.bounds.origin[0] + min_x;
+  bb.origin[1] = src.bounds.origin[1] + min_y;
+  bb.origin[2] = src.bounds.origin[2] + min_z;
+  bb.size[0] = max_x - min_x + 1;
+  bb.size[1] = max_y - min_y + 1;
+  bb.size[2] = max_z - min_z + 1;
 
   // Local offset from selection origin (relative to source region).
-  const std::int32_t off_x = bb.origin[0] - src.bounds.origin[0];
-  const std::int32_t off_y = bb.origin[1] - src.bounds.origin[1];
-  const std::int32_t off_z = bb.origin[2] - src.bounds.origin[2];
-
-  // First pass: mark used palette entries.
-  std::vector<std::uint8_t> used(src.palette.size(), 0);
-  v.for_each([&](filters::LocalPos, std::uint16_t pal) {
-    if (pal < used.size()) used[pal] = 1;
-  });
+  // min_x is exactly the offset from source region's origin to the selection's
+  // origin.
+  const std::int32_t off_x = min_x;
+  const std::int32_t off_y = min_y;
+  const std::int32_t off_z = min_z;
 
   // Build new palette (subset, original order) and remap.
   std::vector<std::uint16_t> remap(src.palette.size(), 0);
@@ -127,6 +153,7 @@ template <filters::Filter F>
     std::fill_n(out.block_indices.data(), vol, static_cast<std::uint16_t>(0));
   }
 
+  // Pass 2: Copy blocks into the new compact region.
   const std::uint64_t dst_sx = bb.size[0];
   const std::uint64_t dst_sz = bb.size[2];
   const std::uint64_t dst_y_stride = dst_sx * dst_sz;
