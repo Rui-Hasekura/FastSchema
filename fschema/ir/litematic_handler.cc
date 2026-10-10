@@ -114,17 +114,9 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
       if (!mat_res) return std::unexpected(mat_res.error());
 
       if (reg.block_indices.empty()) continue;
-      std::vector<std::uint8_t> is_air(reg.palette.size(), 0);
-      for (std::size_t i = 0; i < reg.palette.size(); ++i) {
-        const auto& n = reg.palette[i].name;
-        if (n == "minecraft:air" || n == "minecraft:cave_air" ||
-            n == "minecraft:void_air") {
-          is_air[i] = 1;
-        }
-      }
       for (std::uint16_t idx : reg.block_indices) {
-        if (idx < is_air.size()) {
-          total_blocks += is_air[idx] ^ 1;
+        if (idx < reg.palette.size()) {
+          total_blocks += reg.IsAir(idx) ? 0 : 1;
         }
       }
     }
@@ -495,7 +487,6 @@ ParseResult<Schema> LitematicaHandler::DecodeFromParsed(
       ent.raw_nbt = src_ent.raw_nbt;
       r.entities.push_back(std::move(ent));
     }
-
 
     r.raw_compound = reg.raw_compound;
 

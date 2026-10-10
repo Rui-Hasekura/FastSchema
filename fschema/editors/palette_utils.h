@@ -67,6 +67,7 @@ namespace fschema::editors {
   bs.name = name;
   bs.prop_encoding = ir::PropertyEncoding::kNone;
   r.palette.push_back(bs);
+  r.is_air_lut.clear();
   return static_cast<std::uint16_t>(r.palette.size() - 1);
 }
 

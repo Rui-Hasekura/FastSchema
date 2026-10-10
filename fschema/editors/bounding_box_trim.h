@@ -62,8 +62,7 @@ namespace fschema::editors {
     for (std::int32_t z = 0; z < sz; ++z) {
       for (std::int32_t x = 0; x < sx; ++x, ++li) {
         std::uint16_t pal = data[li];
-        if (pal < r.palette.size() &&
-            !base::IsAirVariant(r.palette[pal].name)) {
+        if (pal < r.palette.size() && !r.IsAir(pal)) {
           any_non_air = true;
           if (x < min_x) min_x = x;
           if (y < min_y) min_y = y;

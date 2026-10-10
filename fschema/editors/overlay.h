@@ -20,7 +20,6 @@
 #include <string_view>
 #include <vector>
 
-#include "fschema/base/block_utils.h"
 #include "fschema/base/error.h"
 #include "fschema/editors/palette_utils.h"
 #include "fschema/filters/pos.h"
@@ -54,7 +53,7 @@ template <filters::Filter F>
 
   std::vector<std::uint64_t> targets;
   v.for_each([&](filters::LocalPos p, std::uint16_t pal) {
-    if (pal >= r.palette.size() || base::IsAirVariant(r.palette[pal].name)) {
+    if (pal >= r.palette.size() || r.IsAir(pal)) {
       return;
     }
 
@@ -68,8 +67,7 @@ template <filters::Filter F>
                                      static_cast<std::uint64_t>(p.x);
     const std::uint16_t top_pal = r.block_indices[top_linear];
 
-    if (top_pal >= r.palette.size() ||
-        base::IsAirVariant(r.palette[top_pal].name)) {
+    if (top_pal >= r.palette.size() || r.IsAir(top_pal)) {
       targets.push_back(top_linear);
     }
   });

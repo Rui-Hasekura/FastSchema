@@ -19,7 +19,6 @@
 #include <cstdint>
 #include <string_view>
 
-#include "fschema/base/block_utils.h"
 #include "fschema/filters/pos.h"
 #include "fschema/filters/view.h"
 #include "fschema/ir/types.h"
@@ -40,7 +39,7 @@ namespace fschema::filters::internal {
   }
   const std::uint64_t idx = LinearIndex(LocalPos{x, y, z}, b);
   const std::uint16_t pal = r.block_indices[idx];
-  return pal < r.palette.size() && base::IsAirVariant(r.palette[pal].name);
+  return r.IsAir(pal);
 }
 
 /// Returns true if the block has at least one air neighbor among its 6 faces.
@@ -78,8 +77,8 @@ namespace fschema::filters::internal {
   const std::uint64_t idx = LinearIndex(LocalPos{x, y, z}, b);
   const std::uint16_t pal = r.block_indices[idx];
   if (pal >= r.palette.size()) return true;
+  if (r.IsAir(pal)) return true;
   const auto name = r.palette[pal].name;
-  if (base::IsAirVariant(name)) return true;
   // Fluids: still water, flowing water, still lava, flowing lava.
   return name == "minecraft:water" || name == "minecraft:flowing_water" ||
          name == "minecraft:lava" || name == "minecraft:flowing_lava";

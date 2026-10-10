@@ -19,7 +19,6 @@
 #include <cstdint>
 #include <vector>
 
-#include "fschema/base/block_utils.h"
 #include "fschema/filters/internal/neighbors.h"
 #include "fschema/filters/pos.h"
 #include "fschema/ir/types.h"
@@ -38,9 +37,9 @@ class SurfaceFilter {
  public:
   explicit SurfaceFilter(const ir::Region& r) noexcept : region_(&r) {}
 
-  [[nodiscard]] bool operator()(LocalPos p, std::uint16_t idx) const noexcept {
+    [[nodiscard]] bool operator()(LocalPos p, std::uint16_t idx) const noexcept {
     if (idx >= region_->palette.size()) return false;
-    if (base::IsAirVariant(region_->palette[idx].name)) return false;
+    if (region_->IsAir(idx)) return false;
     return filters::internal::IsExposedAt(*region_, p.x, p.y, p.z);
   }
 

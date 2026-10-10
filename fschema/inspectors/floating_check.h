@@ -21,7 +21,6 @@
 #include <string_view>
 #include <vector>
 
-#include "fschema/base/block_utils.h"
 #include "fschema/filters/internal/neighbors.h"
 #include "fschema/filters/pos.h"
 #include "fschema/filters/view.h"
@@ -134,7 +133,7 @@ struct FloatingCheckResult {
           if (pal >= r.palette.size()) continue;
 
           const auto& name = r.palette[pal].name;
-          if (base::IsAirVariant(name)) continue;  // skip air
+          if (r.IsAir(pal)) continue;  // skip air
 
           // A block is floating if all 6 neighbors are air (or out of bounds).
           const bool floating = filters::internal::IsFloatingAt(r, x, y, z);

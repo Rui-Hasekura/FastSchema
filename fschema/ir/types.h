@@ -23,6 +23,7 @@
 #include <string_view>
 #include <vector>
 
+#include "fschema/base/block_utils.h"
 #include "fschema/base/nbt/tag.h"
 #include "fschema/memory/arena.h"
 #include "fschema/memory/uninit_buffer.h"
@@ -168,10 +169,27 @@ struct Region {
   // Indices in `block_indices` refer to this vector.
   std::vector<BlockState> palette;
 
+  // Cached LUT for fast `IsAirVariant` lookups by palette index.
+  mutable std::vector<std::uint8_t> is_air_lut;
+
   // The materialized (decoded) block indices.
   // Memory layout is YZX (Y major, Z middle, X minor) to match disk formats.
   // Mutable: materialized on-demand via `EnsureMaterialized()`.
   mutable memory::UnInitBuffer<std::uint16_t> block_indices;
+
+  // O(1) air block lookup using a cached LUT.
+  // Automatically rebuilds the LUT if the palette size changes.
+  [[nodiscard]] inline bool IsAir(std::uint16_t pal_idx) const noexcept {
+    if (is_air_lut.size() != palette.size()) {
+      is_air_lut.assign(palette.size(), 0);
+      for (std::size_t i = 0; i < palette.size(); ++i) {
+        if (base::IsAirVariant(palette[i].name)) {
+          is_air_lut[i] = 1;
+        }
+      }
+    }
+    return pal_idx < is_air_lut.size() && is_air_lut[pal_idx] != 0;
+  }
 
   // The raw packed data, retained for lazy passthrough during encoding.
   mutable LazyBlockData lazy_source;

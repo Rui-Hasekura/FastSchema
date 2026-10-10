@@ -51,8 +51,9 @@ namespace fschema::editors {
 
   ir::BlockState& bs = r.palette[target_idx];
   bs.name = new_name;
-  bs.raw_properties = {};  // clear properties
+  bs.raw_properties = {};
   bs.prop_encoding = ir::PropertyEncoding::kNone;
+  r.is_air_lut.clear();
   return {};
 }
 
