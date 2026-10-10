@@ -21,6 +21,7 @@
 #include <string_view>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"
 #include "fschema/base/nbt/property.h"
 #include "fschema/filters/internal/neighbors.h"
 #include "fschema/filters/pos.h"
@@ -133,6 +134,20 @@ inline constexpr SupportRule kSupportRules[] = {
     // clang-format on
 };
 
+/// Static HashMap for O(1) rule lookups by block name.
+[[nodiscard]] inline const absl::flat_hash_map<std::string_view, std::int32_t>&
+GetSupportRuleLookup() noexcept {
+  static const absl::flat_hash_map<std::string_view, std::int32_t> lookup = [] {
+    absl::flat_hash_map<std::string_view, std::int32_t> m;
+    m.reserve(std::size(kSupportRules));
+    for (std::size_t i = 0; i < std::size(kSupportRules); ++i) {
+      m.emplace(kSupportRules[i].block_name, static_cast<std::int32_t>(i));
+    }
+    return m;
+  }();
+  return lookup;
+}
+
 /// Extracts a string property value by key from a BlockState
 /// (supports Schem k=v and Litematica NBT).
 /// @return The property value, or empty string_view if not found.
@@ -207,6 +222,13 @@ inline constexpr SupportRule kSupportRules[] = {
   return {0, 0, 0};  // fallback: no offset
 }
 
+/// Pre-extracted properties for a single palette entry.
+struct PalettePropsCache {
+  std::string_view facing;
+  std::string_view face;
+  std::string_view hanging;
+};
+
 /// Scans a region for blocks that require support but lack it.
 ///
 /// Uses `kSupportRules` to determine which blocks need support
@@ -217,15 +239,26 @@ inline constexpr SupportRule kSupportRules[] = {
     const ir::Region& r) {
   std::vector<UnsupportedBlock> result;
 
-  // Build a lookup index: palette_idx -> rule index (or -1).
+  const auto& rule_lookup = GetSupportRuleLookup();
+
+  // 1. Build a lookup index: palette_idx -> rule index (or -1).
   std::vector<std::int32_t> rule_index(r.palette.size(), -1);
   for (std::size_t i = 0; i < r.palette.size(); ++i) {
-    for (std::size_t j = 0; j < std::size(kSupportRules); ++j) {
-      if (r.palette[i].name == kSupportRules[j].block_name) {
-        rule_index[i] = static_cast<std::int32_t>(j);
-        break;
-      }
+    auto it = rule_lookup.find(r.palette[i].name);
+    if (it != rule_lookup.end()) {
+      rule_index[i] = it->second;
     }
+  }
+
+  // 2. Pre-extract required properties for matching palette entries.
+  // This avoids repeated string/NBT parsing in the inner loop.
+  std::vector<PalettePropsCache> props_cache(r.palette.size());
+  for (std::size_t i = 0; i < r.palette.size(); ++i) {
+    if (rule_index[i] < 0) continue;  // Only extract for blocks with rules
+    const auto& bs = r.palette[i];
+    props_cache[i].facing = ExtractFacing(bs);
+    props_cache[i].face = ExtractFace(bs);
+    props_cache[i].hanging = ExtractStringProp(bs, "hanging");
   }
 
   const auto& bounds = r.bounds;
@@ -246,12 +279,10 @@ inline constexpr SupportRule kSupportRules[] = {
         if (r_idx < 0) continue;  // No support rule for this block
 
         const auto& rule = kSupportRules[r_idx];
+        const auto& pc = props_cache[pal];
 
-        // For facing-based directions, extract the facing property.
-        std::string_view facing;
         if (rule.dir == SupportDir::kFacingInv) {
-          facing = ExtractFacing(r.palette[pal]);
-          if (facing.empty()) {
+          if (pc.facing.empty()) {
             // Block has a facing-dependent rule but no facing property.
             // Report it as a data issue.
             result.push_back(UnsupportedBlock{filters::LocalPos{x, y, z},
@@ -276,15 +307,14 @@ inline constexpr SupportRule kSupportRules[] = {
         }
 
         if (rule.dir == SupportDir::kFaceDependent) {
-          const std::string_view face = ExtractFace(r.palette[pal]);
-          if (face.empty()) {
+          if (pc.face.empty()) {
             result.push_back(UnsupportedBlock{filters::LocalPos{x, y, z},
                                               rule.block_name,
                                               "missing face property"});
             continue;
           }
 
-          if (face == "floor") {
+          if (pc.face == "floor") {
             if (!filters::internal::IsSupportCapableAt(r, x, y - 1, z)) {
               result.push_back(UnsupportedBlock{
                   filters::LocalPos{x, y, z}, rule.block_name, rule.issue});
@@ -292,7 +322,7 @@ inline constexpr SupportRule kSupportRules[] = {
             continue;
           }
 
-          if (face == "ceiling") {
+          if (pc.face == "ceiling") {
             if (!filters::internal::IsSupportCapableAt(r, x, y + 1, z)) {
               result.push_back(UnsupportedBlock{
                   filters::LocalPos{x, y, z}, rule.block_name, rule.issue});
@@ -301,15 +331,14 @@ inline constexpr SupportRule kSupportRules[] = {
           }
 
           // face == "wall"
-          const std::string_view facing = ExtractFacing(r.palette[pal]);
-          if (facing.empty()) {
+          if (pc.facing.empty()) {
             result.push_back(UnsupportedBlock{filters::LocalPos{x, y, z},
                                               rule.block_name,
                                               "missing facing property"});
             continue;
           }
           const auto [dx, dy, dz] =
-              SupportOffset(SupportDir::kFacingInv, facing);
+              SupportOffset(SupportDir::kFacingInv, pc.facing);
           if (!filters::internal::IsSupportCapableAt(
                   r, x + dx, y + dy, z + dz)) {
             result.push_back(UnsupportedBlock{
@@ -319,16 +348,14 @@ inline constexpr SupportRule kSupportRules[] = {
         }
 
         if (rule.dir == SupportDir::kHangingDependent) {
-          const std::string_view hanging =
-              ExtractStringProp(r.palette[pal], "hanging");
-          if (hanging.empty()) {
+          if (pc.hanging.empty()) {
             result.push_back(UnsupportedBlock{filters::LocalPos{x, y, z},
                                               rule.block_name,
                                               "missing hanging property"});
             continue;
           }
           const bool ok =
-              (hanging == "true")
+              (pc.hanging == "true")
                   ? filters::internal::IsSupportCapableAt(r, x, y + 1, z)
                   : filters::internal::IsSupportCapableAt(r, x, y - 1, z);
           if (!ok) {
@@ -338,7 +365,7 @@ inline constexpr SupportRule kSupportRules[] = {
           continue;
         }
 
-        const auto [dx, dy, dz] = SupportOffset(rule.dir, facing);
+        const auto [dx, dy, dz] = SupportOffset(rule.dir, pc.facing);
         const std::int32_t nx = x + dx;
         const std::int32_t ny = y + dy;
         const std::int32_t nz = z + dz;
