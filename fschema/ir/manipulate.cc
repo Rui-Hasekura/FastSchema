@@ -156,9 +156,6 @@ ParseResult<Region> MergeRegions(const std::vector<Region>& regions,
   std::memset(merged.block_indices.data(), 0, vol * sizeof(std::uint16_t));
 
   // 4. Copy blocks (YZX order)
-  std::uint16_t* scratch_ptr = nullptr;
-  std::size_t scratch_cap = 0;
-
   const std::int32_t W = merged.bounds.size[0];
   const std::int32_t L = merged.bounds.size[2];
   std::uint16_t* const merged_base = merged.block_indices.data();
@@ -176,37 +173,9 @@ ParseResult<Region> MergeRegions(const std::vector<Region>& regions,
     std::int32_t off_y = reg.bounds.origin[1] - min_y;
     std::int32_t off_z = reg.bounds.origin[2] - min_z;
 
-    const std::size_t reg_n = reg.block_indices.size();
+    const std::uint16_t* FSCHEMA_RESTRICT remap = remaps[r].data();
+    const std::uint16_t* FSCHEMA_RESTRICT src = reg.block_indices.data();
 
-    if (scratch_cap < reg_n) {
-      scratch_ptr = static_cast<std::uint16_t*>(arena.Allocate(
-          reg_n * sizeof(std::uint16_t), alignof(std::uint16_t)));
-      scratch_cap = reg_n;
-    }
-
-    {
-      const std::uint16_t* FSCHEMA_RESTRICT remap = remaps[r].data();
-      const std::uint16_t* FSCHEMA_RESTRICT src = reg.block_indices.data();
-      std::uint16_t* FSCHEMA_RESTRICT dst = scratch_ptr;
-      std::size_t i = 0;
-      for (; i + 4 <= reg_n; i += 4) {
-        const std::uint16_t v0 = src[i + 0];
-        const std::uint16_t v1 = src[i + 1];
-        const std::uint16_t v2 = src[i + 2];
-        const std::uint16_t v3 = src[i + 3];
-        dst[i + 0] = remap[v0];
-        dst[i + 1] = remap[v1];
-        dst[i + 2] = remap[v2];
-        dst[i + 3] = remap[v3];
-      }
-      // Scalar tail
-      for (; i < reg_n; ++i) {
-        dst[i] = remap[src[i]];
-      }
-    }
-
-    const std::size_t row_bytes =
-        static_cast<std::size_t>(sx) * sizeof(std::uint16_t);
     for (int y = 0; y < sy; ++y) {
       const std::uint64_t local_y_base =
           static_cast<std::uint64_t>(y) * (static_cast<std::uint64_t>(sx) * sz);
@@ -216,12 +185,24 @@ ParseResult<Region> MergeRegions(const std::vector<Region>& regions,
           static_cast<std::uint64_t>(off_z) * W +
           static_cast<std::uint64_t>(off_x);
 
-      const std::uint16_t* src_row = scratch_ptr + local_y_base;
-      std::uint16_t* dst_row = merged_base + global_y_base;
       for (int z = 0; z < sz; ++z) {
-        std::memcpy(dst_row, src_row, row_bytes);
-        src_row += sx;  // advance to next z-slice in local (stride = sx)
-        dst_row += W;   // advance to next z-slice in global (stride = W)
+        const std::uint16_t* src_row =
+            src + local_y_base + static_cast<std::uint64_t>(z) * sx;
+        std::uint16_t* dst_row =
+            merged_base + global_y_base + static_cast<std::uint64_t>(z) * W;
+
+        // Direct remap and copy, avoiding the need for a scratch buffer.
+        int x = 0;
+        for (; x + 4 <= sx; x += 4) {
+          dst_row[x + 0] = remap[src_row[x + 0]];
+          dst_row[x + 1] = remap[src_row[x + 1]];
+          dst_row[x + 2] = remap[src_row[x + 2]];
+          dst_row[x + 3] = remap[src_row[x + 3]];
+        }
+        // Scalar tail
+        for (; x < sx; ++x) {
+          dst_row[x] = remap[src_row[x]];
+        }
       }
     }
 
