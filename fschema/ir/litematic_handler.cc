@@ -457,7 +457,8 @@ ParseResult<Schema> LitematicaHandler::DecodeFromParsed(
                                  reg.palette[0].name == "minecraft:cave_air" ||
                                  reg.palette[0].name == "minecraft:void_air");
     r.lazy_source.palette_pristine = true;
-    r.lazy_source.air_at_zero = r.IsAir(0);
+    r.lazy_source.air_at_zero =
+        !reg.palette.empty() && base::IsAirVariant(reg.palette[0].name);
     r.block_entities.reserve(reg.tile_entities.size());
     for (auto& te : reg.tile_entities) {
       BlockEntity be;
