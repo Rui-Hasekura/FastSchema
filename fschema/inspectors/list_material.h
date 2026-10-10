@@ -16,6 +16,10 @@
 #ifndef FSCHEMA_INSPECTORS_LIST_MATERIAL_H_
 #define FSCHEMA_INSPECTORS_LIST_MATERIAL_H_
 
+#include <tbb/blocked_range.h>
+#include <tbb/parallel_reduce.h>
+
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -30,33 +34,53 @@ namespace fschema::inspectors {
 struct MaterialEntry {
   std::uint16_t palette_idx;
   std::string_view name;
-  std::string properties;  // Decoded "k=v,k=v", empty if none
+  std::string properties;  // Decoded "k=v,k=v"; empty if no properties.
   std::uint64_t count;
 };
 
-/// Enumerates palette entries with per-entry block counts.
-///
-/// Converts block properties (Litematica NBT / Schem string) to normalized
-/// strings.
-///
-/// @pre `r.is_materialized` should be true; unmaterialized regions result in 0
-/// counts.
-///
-/// Complexity: O(volume + K) time, O(K) space (K = palette size).
-/// With `use_sort`, additional O(K log K) sorting.
 [[nodiscard]] inline std::vector<MaterialEntry> ListMaterial(
     const ir::Region& r,
     bool use_sort = false) {
-  // Dense array LUT indexed by palette index (O(1) lookup)
-  std::vector<std::uint64_t> counts(r.palette.size(), 0);
-  for (std::uint16_t idx : r.block_indices) {
-    if (idx < counts.size()) [[likely]]
-      ++counts[idx];
+  const std::size_t pal_size = r.palette.size();
+  if (pal_size == 0) return {};
+
+  const std::size_t vol = r.block_indices.size();
+  std::vector<std::uint64_t> counts(pal_size, 0);
+
+  constexpr std::size_t kParallelThreshold = 1 << 18;  // 256K blocks
+
+  if (vol < kParallelThreshold) {
+    for (std::size_t i = 0; i < vol; ++i) {
+      std::uint16_t idx = r.block_indices[i];
+      if (idx < pal_size) [[likely]]
+        ++counts[idx];
+    }
+  } else {
+    // Use local histograms to avoid contention on the shared counts vector.
+    counts = tbb::parallel_reduce(
+        tbb::blocked_range<std::size_t>(0, vol, kParallelThreshold),
+        std::vector<std::uint64_t>(pal_size, 0),
+        [&](const tbb::blocked_range<std::size_t>& range,
+            std::vector<std::uint64_t> local_counts) {
+          for (std::size_t i = range.begin(); i < range.end(); ++i) {
+            std::uint16_t idx = r.block_indices[i];
+            if (idx < pal_size) [[likely]]
+              ++local_counts[idx];
+          }
+          return local_counts;
+        },
+        [pal_size](std::vector<std::uint64_t> a,
+                   const std::vector<std::uint64_t>& b) {
+          for (std::size_t i = 0; i < pal_size; ++i) {
+            a[i] += b[i];
+          }
+          return a;
+        });
   }
 
   std::vector<MaterialEntry> entries;
-  entries.reserve(r.palette.size());
-  for (std::size_t i = 0; i < r.palette.size(); ++i) {
+  entries.reserve(pal_size);
+  for (std::size_t i = 0; i < pal_size; ++i) {
     const auto& bs = r.palette[i];
     std::string props;
     if (bs.prop_encoding == ir::PropertyEncoding::kNbt &&
