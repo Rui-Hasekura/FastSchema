@@ -17,6 +17,7 @@
 #define FSCHEMA_EDITORS_MOVE_H_
 
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 #include "fschema/base/error.h"
@@ -42,11 +43,12 @@ template <filters::Filter F>
   ir::Region& r = v.region();
   const auto& bounds = r.bounds;
 
+  constexpr std::uint64_t kOOB = std::numeric_limits<std::uint64_t>::max();
+
   struct Entry {
     std::uint64_t src_linear;
+    std::uint64_t dst_linear;
     std::uint16_t pal;
-    std::int32_t dst_x, dst_y, dst_z;
-    bool in_bounds;
   };
 
   std::vector<Entry> entries;
@@ -56,17 +58,23 @@ template <filters::Filter F>
   const std::uint64_t y_stride = sx * sz;
 
   v.for_each([&](filters::LocalPos p, std::uint16_t pal) {
+    const std::int32_t dst_x = p.x + dx;
+    const std::int32_t dst_y = p.y + dy;
+    const std::int32_t dst_z = p.z + dz;
+
     Entry e;
     e.src_linear = static_cast<std::uint64_t>(p.y) * y_stride +
                    static_cast<std::uint64_t>(p.z) * sx +
                    static_cast<std::uint64_t>(p.x);
     e.pal = pal;
-    e.dst_x = p.x + dx;
-    e.dst_y = p.y + dy;
-    e.dst_z = p.z + dz;
-    e.in_bounds = e.dst_x >= 0 && e.dst_x < bounds.size[0] && e.dst_y >= 0 &&
-                  e.dst_y < bounds.size[1] && e.dst_z >= 0 &&
-                  e.dst_z < bounds.size[2];
+    if (dst_x >= 0 && dst_x < bounds.size[0] && dst_y >= 0 &&
+        dst_y < bounds.size[1] && dst_z >= 0 && dst_z < bounds.size[2]) {
+      e.dst_linear = static_cast<std::uint64_t>(dst_y) * y_stride +
+                     static_cast<std::uint64_t>(dst_z) * sx +
+                     static_cast<std::uint64_t>(dst_x);
+    } else {
+      e.dst_linear = kOOB;
+    }
     entries.push_back(e);
   });
 
@@ -78,12 +86,9 @@ template <filters::Filter F>
   }
 
   for (const auto& e : entries) {
-    if (!e.in_bounds) continue;
-    const std::uint64_t dst_linear =
-        static_cast<std::uint64_t>(e.dst_y) * y_stride +
-        static_cast<std::uint64_t>(e.dst_z) * sx +
-        static_cast<std::uint64_t>(e.dst_x);
-    data[dst_linear] = e.pal;
+    if (e.dst_linear != kOOB) {
+      data[e.dst_linear] = e.pal;
+    }
   }
   MarkEdited(r);
   return {};
