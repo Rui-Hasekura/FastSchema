@@ -16,6 +16,9 @@
 #ifndef FSCHEMA_EDITORS_ROTATE_H_
 #define FSCHEMA_EDITORS_ROTATE_H_
 
+#include <tbb/blocked_range.h>
+#include <tbb/parallel_for.h>
+
 #include <cstdint>
 #include <utility>
 
@@ -49,7 +52,7 @@ template <filters::Filter F>
     return Extract(v, arena);
   }
 
-  // Step 1: Extract the selection into a pristine region.
+  // Extract the selection into a pristine region.
   auto extract_res = Extract(v, arena);
   if (!extract_res) return std::unexpected(extract_res.error());
   ir::Region out = std::move(*extract_res);
@@ -91,10 +94,12 @@ template <filters::Filter F>
   const std::uint16_t* src = out.block_indices.data();
   std::uint16_t* dst = new_data.data();
 
-  // Iterate through the source in YZX order to read `src` sequentially.
-  // Then compute the destination coordinates and linear index.
-  std::uint64_t src_idx = 0;
-  for (std::int32_t y = 0; y < sy; ++y) {
+  constexpr std::uint64_t kParallelThreshold = 1 << 18;  // 256K blocks
+
+  auto process_y = [&](std::int32_t y) {
+    // Iterate through the source in YZX order to read `src` sequentially.
+    // Then compute the destination coordinates and linear index.
+    std::uint64_t src_idx = static_cast<std::uint64_t>(y) * sx * sz;
     for (std::int32_t z = 0; z < sz; ++z) {
       for (std::int32_t x = 0; x < sx; ++x, ++src_idx) {
         std::int32_t new_x = x;
@@ -152,23 +157,32 @@ template <filters::Filter F>
         dst[dst_idx] = src[src_idx];
       }
     }
+  };
+
+  if (vol < kParallelThreshold) {
+    for (std::int32_t y = 0; y < sy; ++y) {
+      process_y(y);
+    }
+  } else {
+    tbb::parallel_for(
+        tbb::blocked_range<std::int32_t>(0, sy),
+        [&](const tbb::blocked_range<std::int32_t>& range) {
+          for (std::int32_t y = range.begin(); y < range.end(); ++y) {
+            process_y(y);
+          }
+        },
+        tbb::static_partitioner{});
   }
 
   out.bounds = new_bounds;
   out.position = {
-      new_bounds.origin[0],
-      new_bounds.origin[1],
-      new_bounds.origin[2]};
+      new_bounds.origin[0], new_bounds.origin[1], new_bounds.origin[2]};
   out.size = {new_bounds.size[0], new_bounds.size[1], new_bounds.size[2]};
   out.block_indices = std::move(new_data);
 
   if (mode == StateTransformMode::kTransformStates && steps != 0) {
     internal::TransformPalette(
-        out,
-        internal::AxisOpType::kRotate,
-        axis,
-        steps,
-        arena);
+        out, internal::AxisOpType::kRotate, axis, steps, arena);
   }
 
   return out;
