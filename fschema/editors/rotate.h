@@ -34,11 +34,6 @@
 namespace fschema::editors {
 
 // Rotate: rotate the selected blocks by 90-degree increments around an axis.
-//
-// The caller guarantees the structure does not contain blocks that
-// become invalid when rotated (e.g., cactus, flower pots).
-//
-// steps: Number of 90-degree clockwise rotations (1, 2, or 3).
 template <filters::Filter F>
 [[nodiscard]] ParseResult<ir::Region> Rotate(
     const filters::BasicView<F>& v,
@@ -46,13 +41,11 @@ template <filters::Filter F>
     int steps,
     memory::Arena& arena,
     StateTransformMode mode = StateTransformMode::kGeometricOnly) {
-  // Normalize steps to the range [0, 3]
   steps = ((steps % 4) + 4) % 4;
   if (steps == 0) {
     return Extract(v, arena);
   }
 
-  // Extract the selection into a pristine region.
   auto extract_res = Extract(v, arena);
   if (!extract_res) return std::unexpected(extract_res.error());
   ir::Region out = std::move(*extract_res);
@@ -66,7 +59,6 @@ template <filters::Filter F>
 
   if (vol == 0) return out;
 
-  // Compute new bounds based on axis and steps
   ir::BoundingBox new_bounds = out.bounds;
   if (steps == 1 || steps == 3) {
     if (axis == filters::Axis::Y) {
@@ -84,11 +76,10 @@ template <filters::Filter F>
   const std::uint64_t new_sx = new_bounds.size[0];
   const std::uint64_t new_sz = new_bounds.size[2];
   const std::uint64_t new_y_stride = new_sx * new_sz;
-  const std::uint64_t new_z_stride = new_sx;
 
-  // Allocate new buffer for the rotated state.
-  // UnInitBuffer does not value-initialize, which is fine since we overwrite
-  // it fully.
+  const std::uint64_t src_sx = sx;
+  const std::uint64_t src_y_stride = static_cast<std::uint64_t>(sx) * sz;
+
   memory::UnInitBuffer<std::uint16_t> new_data(static_cast<std::size_t>(vol),
                                                &arena);
   const std::uint16_t* src = out.block_indices.data();
@@ -96,76 +87,56 @@ template <filters::Filter F>
 
   constexpr std::uint64_t kParallelThreshold = 1 << 18;  // 256K blocks
 
-  auto process_y = [&](std::int32_t y) {
-    // Iterate through the source in YZX order to read `src` sequentially.
-    // Then compute the destination coordinates and linear index.
-    std::uint64_t src_idx = static_cast<std::uint64_t>(y) * sx * sz;
-    for (std::int32_t z = 0; z < sz; ++z) {
-      for (std::int32_t x = 0; x < sx; ++x, ++src_idx) {
-        std::int32_t new_x = x;
-        std::int32_t new_y = y;
-        std::int32_t new_z = z;
+  auto process_y = [&](std::int32_t dst_y) {
+    const std::uint64_t dst_y_base =
+        static_cast<std::uint64_t>(dst_y) * new_y_stride;
+    for (std::int32_t dst_z = 0; dst_z < new_sz; ++dst_z) {
+      const std::uint64_t dst_z_base =
+          dst_y_base + static_cast<std::uint64_t>(dst_z) * new_sx;
+      for (std::int32_t dst_x = 0; dst_x < new_sx; ++dst_x) {
+        std::uint64_t src_idx = 0;
 
+        // Reverse mapping: find the source index for the current dst block.
         if (axis == filters::Axis::Y) {
           if (steps == 1) {
-            // 90 deg CW: (x, y, z) -> (z, y, sx - 1 - x)
-            new_x = z;
-            new_z = sx - 1 - x;
+            src_idx = dst_y * src_y_stride + dst_x * src_sx + (sx - 1 - dst_z);
           } else if (steps == 2) {
-            // 180 deg: (x, y, z) -> (sx - 1 - x, y, sz - 1 - z)
-            new_x = sx - 1 - x;
-            new_z = sz - 1 - z;
-          } else if (steps == 3) {
-            // 270 deg CW: (x, y, z) -> (sz - 1 - z, y, x)
-            new_x = sz - 1 - z;
-            new_z = x;
+            src_idx = dst_y * src_y_stride + (sz - 1 - dst_z) * src_sx +
+                      (sx - 1 - dst_x);
+          } else {  // steps == 3
+            src_idx = dst_y * src_y_stride + (sz - 1 - dst_x) * src_sx + dst_z;
           }
         } else if (axis == filters::Axis::X) {
           if (steps == 1) {
-            // 90 deg CW: (x, y, z) -> (x, z, sy - 1 - y)
-            new_y = z;
-            new_z = sy - 1 - y;
+            src_idx = (sy - 1 - dst_z) * src_y_stride + dst_y * src_sx + dst_x;
           } else if (steps == 2) {
-            // 180 deg: (x, y, z) -> (x, sy - 1 - y, sz - 1 - z)
-            new_y = sy - 1 - y;
-            new_z = sz - 1 - z;
-          } else if (steps == 3) {
-            // 270 deg CW: (x, y, z) -> (x, sz - 1 - z, y)
-            new_y = sz - 1 - z;
-            new_z = y;
+            src_idx = (sy - 1 - dst_y) * src_y_stride +
+                      (sz - 1 - dst_z) * src_sx + dst_x;
+          } else {  // steps == 3
+            src_idx = dst_z * src_y_stride + (sz - 1 - dst_y) * src_sx + dst_x;
           }
         } else {  // Axis::Z
           if (steps == 1) {
-            // 90 deg CW: (x, y, z) -> (y, sx - 1 - x, z)
-            new_x = y;
-            new_y = sx - 1 - x;
+            src_idx = dst_x * src_y_stride + dst_z * src_sx + (sx - 1 - dst_y);
           } else if (steps == 2) {
-            // 180 deg: (x, y, z) -> (sx - 1 - x, sy - 1 - y, z)
-            new_x = sx - 1 - x;
-            new_y = sy - 1 - y;
-          } else if (steps == 3) {
-            // 270 deg CW: (x, y, z) -> (sy - 1 - y, x, z)
-            new_x = sy - 1 - y;
-            new_y = x;
+            src_idx = (sy - 1 - dst_y) * src_y_stride + dst_z * src_sx +
+                      (sx - 1 - dst_x);
+          } else {  // steps == 3
+            src_idx = (sy - 1 - dst_x) * src_y_stride + dst_z * src_sx + dst_y;
           }
         }
-
-        const std::uint64_t dst_idx =
-            static_cast<std::uint64_t>(new_y) * new_y_stride +
-            static_cast<std::uint64_t>(new_z) * new_z_stride +
-            static_cast<std::uint64_t>(new_x);
-        dst[dst_idx] = src[src_idx];
+        dst[dst_z_base + dst_x] = src[src_idx];
       }
     }
   };
 
   if (vol < kParallelThreshold) {
-    for (std::int32_t y = 0; y < sy; ++y) {
+    for (std::int32_t y = 0; y < new_bounds.size[1]; ++y) {
       process_y(y);
     }
   } else {
     tbb::parallel_for(
-        tbb::blocked_range<std::int32_t>(0, sy),
+        tbb::blocked_range<std::int32_t>(0, new_bounds.size[1]),
         [&](const tbb::blocked_range<std::int32_t>& range) {
           for (std::int32_t y = range.begin(); y < range.end(); ++y) {
             process_y(y);
