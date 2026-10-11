@@ -80,7 +80,8 @@ struct BlockStateKeyEq {
 [[nodiscard]] inline std::vector<std::uint16_t> BuildBToAMap(
     const ir::Region& ra,
     const ir::Region& rb) {
-  std::vector<std::uint16_t> b_to_a(rb.palette.size(), kUnmappedPalette);
+  // Extra slot for indices clamped to map_size by the SIMD path.
+  std::vector<std::uint16_t> b_to_a(rb.palette.size() + 1, kUnmappedPalette);
 
   absl::flat_hash_map<BlockStateKey,
                       std::uint16_t,
@@ -143,6 +144,15 @@ struct BlockStateKeyEq {
 
   constexpr std::uint64_t kParallelThreshold = 1 << 18;  // 256K blocks
 
+#if HWY_TARGET == HWY_AVX2
+  const __m256i mask16 = _mm256_set1_epi32(0x0000FFFF);
+  // uint16_t p2 is always <= 65535. Clamp is only needed if map_size < 65536.
+  const bool needs_clamp = map_size < 65536;
+  const __m256i v_max_pal =
+      needs_clamp ? _mm256_set1_epi16(static_cast<short>(map_size))
+                  : _mm256_setzero_si256();
+#endif
+
   auto process_y = [&](std::int32_t y) {
     const std::uint64_t y_base = static_cast<std::uint64_t>(y) * sx * sz;
     for (std::int32_t z = 0; z < sz; ++z) {
@@ -150,16 +160,16 @@ struct BlockStateKeyEq {
       std::int32_t x = 0;
 
 #if HWY_TARGET == HWY_AVX2
-      const __m256i v_max_pal = _mm256_set1_epi16(static_cast<short>(map_size));
-      const __m256i mask16 = _mm256_set1_epi32(0x0000FFFF);
       for (; x + 16 <= sx; x += 16) {
         const __m256i v_p1 = _mm256_loadu_si256(
             reinterpret_cast<const __m256i*>(r1_data + z_base + x));
         __m256i v_p2 = _mm256_loadu_si256(
             reinterpret_cast<const __m256i*>(r2_data + z_base + x));
 
-        // Clamp out-of-bounds p2 indices to map_size.
-        v_p2 = _mm256_min_epu16(v_p2, v_max_pal);
+        // Cap p2 at map_size; the extra slot holds kUnmappedPalette.
+        if (needs_clamp) {
+          v_p2 = _mm256_min_epu16(v_p2, v_max_pal);
+        }
 
         const __m128i p1_lo = _mm256_castsi256_si128(v_p1);
         const __m128i p1_hi = _mm256_extracti128_si256(v_p1, 1);
