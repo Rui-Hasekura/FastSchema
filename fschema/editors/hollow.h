@@ -16,7 +16,11 @@
 #ifndef FSCHEMA_EDITORS_HOLLOW_H_
 #define FSCHEMA_EDITORS_HOLLOW_H_
 
+#include <tbb/blocked_range.h>
+#include <tbb/parallel_for.h>
+
 #include <cstdint>
+#include <vector>
 
 #include "fschema/base/error.h"
 #include "fschema/base/port.h"
@@ -25,6 +29,7 @@
 #include "fschema/ir/materialize.h"
 #include "fschema/ir/types.h"
 #include "fschema/memory/arena.h"
+#include "fschema/memory/uninit_buffer.h"
 
 namespace fschema::editors {
 
@@ -49,52 +54,99 @@ template <filters::Filter F>
   const std::uint64_t vol = static_cast<std::uint64_t>(sx) * sy * sz;
   if (vol == 0) return {};
 
-  // Precompute an `exposed` mask for the entire region.
-  // A block is exposed if it is on the boundary or has at least one air
-  // neighbor. We allocate from the arena to avoid large std::vector heap
-  // allocations.
-  std::uint8_t* exposed = arena.AllocateArray<std::uint8_t>(vol);
+  memory::UnInitBuffer<std::uint8_t> exposed(static_cast<std::size_t>(vol));
+  std::uint8_t* FSCHEMA_RESTRICT exposed_ptr = exposed.data();
 
   const std::uint64_t y_stride = static_cast<std::uint64_t>(sx) * sz;
   const std::uint16_t* FSCHEMA_RESTRICT data = r.block_indices.data();
+  const std::size_t pal_size = r.palette.size();
 
-  std::uint64_t li = 0;
-  for (std::int32_t y = 0; y < sy; ++y) {
+  // Build a lookup table for air checks.
+  std::vector<std::uint8_t> is_air_lut(pal_size + 1, 0);
+  for (std::size_t i = 0; i < pal_size; ++i) {
+    if (base::IsAirVariant(r.palette[i].name)) {
+      is_air_lut[i] = 1;
+    }
+  }
+  const std::uint8_t* FSCHEMA_RESTRICT is_air = is_air_lut.data();
+
+  constexpr std::uint64_t kParallelThreshold = 1 << 18;  // 256K blocks
+
+  // Compute the exposed mask in parallel.
+  auto compute_y = [&](std::int32_t y) {
+    const std::uint64_t y_base = static_cast<std::uint64_t>(y) * y_stride;
     for (std::int32_t z = 0; z < sz; ++z) {
-      for (std::int32_t x = 0; x < sx; ++x, ++li) {
+      const std::uint64_t z_base = y_base + static_cast<std::uint64_t>(z) * sx;
+      for (std::int32_t x = 0; x < sx; ++x) {
+        const std::uint64_t li = z_base + x;
         bool is_exp = false;
-        // Check 6 neighbors with short-circuit evaluation. The boundary checks
-        // (x == 0, etc.) guard the r.IsAir() calls to prevent OOB reads.
-        if (x == 0 || r.IsAir(data[li - 1]))
+
+        // Check 6 neighbors with short-circuit evaluation.
+        if (x == 0 || is_air[data[li - 1]])
           is_exp = true;
-        else if (x == sx - 1 || r.IsAir(data[li + 1]))
+        else if (x == sx - 1 || is_air[data[li + 1]])
           is_exp = true;
-        else if (z == 0 || r.IsAir(data[li - sx]))
+        else if (z == 0 || is_air[data[li - sx]])
           is_exp = true;
-        else if (z == sz - 1 || r.IsAir(data[li + sx]))
+        else if (z == sz - 1 || is_air[data[li + sx]])
           is_exp = true;
-        else if (y == 0 || r.IsAir(data[li - y_stride]))
+        else if (y == 0 || is_air[data[li - y_stride]])
           is_exp = true;
-        else if (y == sy - 1 || r.IsAir(data[li + y_stride]))
+        else if (y == sy - 1 || is_air[data[li + y_stride]])
           is_exp = true;
 
-        exposed[li] = is_exp ? 1 : 0;
+        exposed_ptr[li] = is_exp ? 1 : 0;
       }
     }
+  };
+
+  if (vol < kParallelThreshold) {
+    for (std::int32_t y = 0; y < sy; ++y) {
+      compute_y(y);
+    }
+  } else {
+    tbb::parallel_for(
+        tbb::blocked_range<std::int32_t>(0, sy),
+        [&](const tbb::blocked_range<std::int32_t>& range) {
+          for (std::int32_t y = range.begin(); y < range.end(); ++y) {
+            compute_y(y);
+          }
+        },
+        tbb::static_partitioner{});
   }
 
   const std::uint16_t air_idx = ResolveAir(r);
   std::uint16_t* FSCHEMA_RESTRICT data_mut = r.block_indices.data();
 
-  // Second pass: iterate over the filtered view and apply deletions.
-  // Because `exposed[]` is pre-calculated based on the original state,
-  // modifying `data_mut` here does not cascade and affect other blocks'
-  // exposure.
-  v.for_each_linear([&](std::uint64_t linear_idx, std::uint16_t pal) {
-    if (pal < r.palette.size() && !exposed[linear_idx] && !r.IsAir(pal)) {
-      data_mut[linear_idx] = air_idx;
+  // Apply deletions in parallel.
+  auto apply_y = [&](std::int32_t y) {
+    const std::uint64_t y_base = static_cast<std::uint64_t>(y) * y_stride;
+    for (std::int32_t z = 0; z < sz; ++z) {
+      const std::uint64_t z_base = y_base + static_cast<std::uint64_t>(z) * sx;
+      for (std::int32_t x = 0; x < sx; ++x) {
+        const std::uint64_t li = z_base + x;
+        const std::uint16_t pal = data_mut[li];
+        if (pal < pal_size && !is_air[pal] && !exposed_ptr[li]) {
+          data_mut[li] = air_idx;
+        }
+      }
     }
-  });
+  };
+
+  if (vol < kParallelThreshold) {
+    for (std::int32_t y = 0; y < sy; ++y) {
+      apply_y(y);
+    }
+  } else {
+    tbb::parallel_for(
+        tbb::blocked_range<std::int32_t>(0, sy),
+        [&](const tbb::blocked_range<std::int32_t>& range) {
+          for (std::int32_t y = range.begin(); y < range.end(); ++y) {
+            apply_y(y);
+          }
+        },
+        tbb::static_partitioner{});
+  }
 
   MarkEdited(r);
   return {};
