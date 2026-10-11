@@ -19,15 +19,10 @@
 #include <cstdint>
 #include <string_view>
 
-#include "fschema/filters/pos.h"
-#include "fschema/filters/view.h"
 #include "fschema/ir/types.h"
 
 namespace fschema::filters::internal {
 
-/// Returns true if the block at (x, y, z) is an air variant.
-///
-/// OOB treated as air.
 [[nodiscard]] inline bool IsAirAt(const ir::Region& r,
                                   std::int32_t x,
                                   std::int32_t y,
@@ -37,34 +32,64 @@ namespace fschema::filters::internal {
       z >= b.size[2]) {
     return true;  // Out of bounds = air
   }
-  const std::uint64_t idx = LinearIndex(LocalPos{x, y, z}, b);
+  const std::uint64_t idx =
+      static_cast<std::uint64_t>(y) *
+          (static_cast<std::uint64_t>(b.size[0]) * b.size[2]) +
+      static_cast<std::uint64_t>(z) * b.size[0] + x;
   const std::uint16_t pal = r.block_indices[idx];
   return r.IsAir(pal);
 }
 
-/// Returns true if the block has at least one air neighbor among its 6 faces.
 [[nodiscard]] inline bool IsExposedAt(const ir::Region& r,
                                       std::int32_t x,
                                       std::int32_t y,
                                       std::int32_t z) noexcept {
-  return IsAirAt(r, x - 1, y, z) || IsAirAt(r, x + 1, y, z) ||
-         IsAirAt(r, x, y - 1, z) || IsAirAt(r, x, y + 1, z) ||
-         IsAirAt(r, x, y, z - 1) || IsAirAt(r, x, y, z + 1);
+  const auto& b = r.bounds;
+  const std::int32_t sx = b.size[0];
+  const std::int32_t sy = b.size[1];
+  const std::int32_t sz = b.size[2];
+  const std::uint64_t y_stride = static_cast<std::uint64_t>(sx) * sz;
+
+  const std::uint64_t idx = static_cast<std::uint64_t>(y) * y_stride +
+                            static_cast<std::uint64_t>(z) * sx + x;
+  const std::uint16_t* data = r.block_indices.data();
+
+  // Short-circuit evaluation with direct pointer arithmetic (no LinearIndex
+  // recompute)
+  if (x == 0 || r.IsAir(data[idx - 1])) return true;
+  if (x == sx - 1 || r.IsAir(data[idx + 1])) return true;
+  if (z == 0 || r.IsAir(data[idx - sx])) return true;
+  if (z == sz - 1 || r.IsAir(data[idx + sx])) return true;
+  if (y == 0 || r.IsAir(data[idx - y_stride])) return true;
+  if (y == sy - 1 || r.IsAir(data[idx + y_stride])) return true;
+
+  return false;
 }
 
-/// Returns true if the block is surrounded by air on all 6 faces.
 [[nodiscard]] inline bool IsFloatingAt(const ir::Region& r,
                                        std::int32_t x,
                                        std::int32_t y,
                                        std::int32_t z) noexcept {
-  return IsAirAt(r, x - 1, y, z) && IsAirAt(r, x + 1, y, z) &&
-         IsAirAt(r, x, y - 1, z) && IsAirAt(r, x, y + 1, z) &&
-         IsAirAt(r, x, y, z - 1) && IsAirAt(r, x, y, z + 1);
+  const auto& b = r.bounds;
+  const std::int32_t sx = b.size[0];
+  const std::int32_t sy = b.size[1];
+  const std::int32_t sz = b.size[2];
+  const std::uint64_t y_stride = static_cast<std::uint64_t>(sx) * sz;
+
+  const std::uint64_t idx = static_cast<std::uint64_t>(y) * y_stride +
+                            static_cast<std::uint64_t>(z) * sx + x;
+  const std::uint16_t* data = r.block_indices.data();
+
+  if (x == 0 || !r.IsAir(data[idx - 1])) return false;
+  if (x == sx - 1 || !r.IsAir(data[idx + 1])) return false;
+  if (z == 0 || !r.IsAir(data[idx - sx])) return false;
+  if (z == sz - 1 || !r.IsAir(data[idx + sx])) return false;
+  if (y == 0 || !r.IsAir(data[idx - y_stride])) return false;
+  if (y == sy - 1 || !r.IsAir(data[idx + y_stride])) return false;
+
+  return true;
 }
 
-/// Returns true if the block is air, a fluid (water/lava), or out-of-bounds.
-///
-/// Fluids do not provide structural support.
 [[nodiscard]] inline bool IsAirLikeAt(const ir::Region& r,
                                       std::int32_t x,
                                       std::int32_t y,
@@ -74,18 +99,18 @@ namespace fschema::filters::internal {
       z >= b.size[2]) {
     return true;
   }
-  const std::uint64_t idx = LinearIndex(LocalPos{x, y, z}, b);
+  const std::uint64_t idx =
+      static_cast<std::uint64_t>(y) *
+          (static_cast<std::uint64_t>(b.size[0]) * b.size[2]) +
+      static_cast<std::uint64_t>(z) * b.size[0] + x;
   const std::uint16_t pal = r.block_indices[idx];
   if (pal >= r.palette.size()) return true;
   if (r.IsAir(pal)) return true;
-  const auto name = r.palette[pal].name;
-  // Fluids: still water, flowing water, still lava, flowing lava.
+  const auto& name = r.palette[pal].name;
   return name == "minecraft:water" || name == "minecraft:flowing_water" ||
          name == "minecraft:lava" || name == "minecraft:flowing_lava";
 }
 
-/// Returns true if the block can provide structural support
-/// (solid, non-fluid, in-bounds). Convenience wrapper around `!IsAirLikeAt`.
 [[nodiscard]] inline bool IsSupportCapableAt(const ir::Region& r,
                                              std::int32_t x,
                                              std::int32_t y,
