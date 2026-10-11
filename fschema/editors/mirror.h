@@ -16,6 +16,9 @@
 #ifndef FSCHEMA_EDITORS_MIRROR_H_
 #define FSCHEMA_EDITORS_MIRROR_H_
 
+#include <tbb/blocked_range.h>
+#include <tbb/parallel_for.h>
+
 #include <cstdint>
 #include <utility>
 
@@ -39,7 +42,7 @@ template <filters::Filter F>
     filters::Axis axis,
     memory::Arena& arena,
     StateTransformMode mode = StateTransformMode::kGeometricOnly) {
-  // Step 1: Extract the selection into a pristine region.
+  // Extract the selection into a pristine region.
   auto extract_res = Extract(v, arena);
   if (!extract_res) return std::unexpected(extract_res.error());
   ir::Region out = std::move(*extract_res);
@@ -54,54 +57,87 @@ template <filters::Filter F>
   // If the region is flat or empty on the mirror axis, it is a no-op.
   if (axis_dim <= 1) return out;
 
-  // Step 2: In-place swap to mirror the block indices.
+  // In-place swap to mirror the block indices.
   std::uint16_t* data = out.block_indices.data();
-
   const std::uint64_t y_stride = static_cast<std::uint64_t>(sx) * sz;
 
-  if (axis == filters::Axis::X) {
-    for (std::int32_t y = 0; y < sy; ++y) {
-      for (std::int32_t z = 0; z < sz; ++z) {
-        const std::uint64_t row_base =
-            static_cast<std::uint64_t>(y) * y_stride +
-            static_cast<std::uint64_t>(z) * sx;
-        std::uint64_t i1 = row_base;
-        std::uint64_t i2 = row_base + (sx - 1);
-        for (std::int32_t x = 0; x < sx / 2; ++x) {
-          std::swap(data[i1], data[i2]);
-          ++i1;
-          --i2;
-        }
-      }
-    }
-  } else if (axis == filters::Axis::Y) {
+  constexpr std::uint64_t kParallelThreshold = 1 << 18;  // 256K blocks
+
+  auto mirror_x = [&](std::int32_t y) {
     for (std::int32_t z = 0; z < sz; ++z) {
-      for (std::int32_t x = 0; x < sx; ++x) {
-        const std::uint64_t col_base =
-            static_cast<std::uint64_t>(z) * sx + static_cast<std::uint64_t>(x);
-        std::uint64_t i1 = col_base;
-        std::uint64_t i2 = col_base + (sy - 1) * y_stride;
-        for (std::int32_t y = 0; y < sy / 2; ++y) {
-          std::swap(data[i1], data[i2]);
-          i1 += y_stride;
-          i2 -= y_stride;
-        }
+      const std::uint64_t row_base = static_cast<std::uint64_t>(y) * y_stride +
+                                     static_cast<std::uint64_t>(z) * sx;
+      std::uint64_t i1 = row_base;
+      std::uint64_t i2 = row_base + (sx - 1);
+      for (std::int32_t x = 0; x < sx / 2; ++x) {
+        std::swap(data[i1], data[i2]);
+        ++i1;
+        --i2;
       }
     }
-  } else {  // Axis::Z
-    for (std::int32_t y = 0; y < sy; ++y) {
-      for (std::int32_t x = 0; x < sx; ++x) {
-        const std::uint64_t row_base =
-            static_cast<std::uint64_t>(y) * y_stride +
-            static_cast<std::uint64_t>(x);
-        std::uint64_t i1 = row_base;
-        std::uint64_t i2 = row_base + (sz - 1) * sx;
-        for (std::int32_t z = 0; z < sz / 2; ++z) {
-          std::swap(data[i1], data[i2]);
-          i1 += sx;
-          i2 -= sx;
-        }
+  };
+
+  auto mirror_y = [&](std::int32_t z) {
+    for (std::int32_t x = 0; x < sx; ++x) {
+      const std::uint64_t col_base =
+          static_cast<std::uint64_t>(z) * sx + static_cast<std::uint64_t>(x);
+      std::uint64_t i1 = col_base;
+      std::uint64_t i2 = col_base + (sy - 1) * y_stride;
+      for (std::int32_t y = 0; y < sy / 2; ++y) {
+        std::swap(data[i1], data[i2]);
+        i1 += y_stride;
+        i2 -= y_stride;
       }
+    }
+  };
+
+  auto mirror_z = [&](std::int32_t y) {
+    for (std::int32_t x = 0; x < sx; ++x) {
+      const std::uint64_t row_base = static_cast<std::uint64_t>(y) * y_stride +
+                                     static_cast<std::uint64_t>(x);
+      std::uint64_t i1 = row_base;
+      std::uint64_t i2 = row_base + (sz - 1) * sx;
+      for (std::int32_t z = 0; z < sz / 2; ++z) {
+        std::swap(data[i1], data[i2]);
+        i1 += sx;
+        i2 -= sx;
+      }
+    }
+  };
+
+  if (sx * sy * sz < kParallelThreshold) {
+    if (axis == filters::Axis::X) {
+      for (std::int32_t y = 0; y < sy; ++y) mirror_x(y);
+    } else if (axis == filters::Axis::Y) {
+      for (std::int32_t z = 0; z < sz; ++z) mirror_y(z);
+    } else {
+      for (std::int32_t y = 0; y < sy; ++y) mirror_z(y);
+    }
+  } else {
+    if (axis == filters::Axis::X) {
+      tbb::parallel_for(
+          tbb::blocked_range<std::int32_t>(0, sy),
+          [&](const tbb::blocked_range<std::int32_t>& range) {
+            for (std::int32_t y = range.begin(); y < range.end(); ++y)
+              mirror_x(y);
+          },
+          tbb::static_partitioner{});
+    } else if (axis == filters::Axis::Y) {
+      tbb::parallel_for(
+          tbb::blocked_range<std::int32_t>(0, sz),
+          [&](const tbb::blocked_range<std::int32_t>& range) {
+            for (std::int32_t z = range.begin(); z < range.end(); ++z)
+              mirror_y(z);
+          },
+          tbb::static_partitioner{});
+    } else {
+      tbb::parallel_for(
+          tbb::blocked_range<std::int32_t>(0, sy),
+          [&](const tbb::blocked_range<std::int32_t>& range) {
+            for (std::int32_t y = range.begin(); y < range.end(); ++y)
+              mirror_z(y);
+          },
+          tbb::static_partitioner{});
     }
   }
 
