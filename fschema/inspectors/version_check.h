@@ -16,6 +16,11 @@
 #ifndef FSCHEMA_INSPECTORS_VERSION_CHECK_H_
 #define FSCHEMA_INSPECTORS_VERSION_CHECK_H_
 
+#include <tbb/blocked_range.h>
+#include <tbb/concurrent_vector.h>
+#include <tbb/parallel_for.h>
+#include <tbb/parallel_reduce.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <limits>
@@ -30,17 +35,68 @@
 
 namespace fschema::inspectors {
 
-/// Represents a block incompatible with a target Minecraft version.
 struct IncompatibleBlock {
   filters::LocalPos pos;
   std::string_view block_name;
   std::string_view reason;
 };
 
-/// Finds all blocks incompatible with the target Java Edition DataVersion.
-///
-/// @param target_version The Minecraft DataVersion to validate against.
-/// @return A list of incompatible block locations and failure reasons.
+namespace internal {
+
+// Returns a bitmask of palette entries used by at least one block.
+[[nodiscard]] inline std::vector<std::uint8_t> ComputeUsedPalette(
+    const filters::View& v) {
+  const ir::Region& r = v.region();
+  const std::size_t pal_size = r.palette.size();
+  std::vector<std::uint8_t> used(pal_size, 0);
+  if (pal_size == 0) return used;
+
+  const std::uint16_t* data = r.block_indices.data();
+  const auto& bounds = r.bounds;
+  const std::int32_t sx = bounds.size[0];
+  const std::int32_t sy = bounds.size[1];
+  const std::int32_t sz = bounds.size[2];
+  const std::uint64_t vol = static_cast<std::uint64_t>(sx) * sy * sz;
+  constexpr std::uint64_t kParallelThreshold = 1 << 18;
+
+  auto process_y = [&](std::int32_t y, std::vector<std::uint8_t>& local_used) {
+    const std::uint64_t y_base = static_cast<std::uint64_t>(y) * sx * sz;
+    for (std::int32_t z = 0; z < sz; ++z) {
+      const std::uint64_t z_base = y_base + static_cast<std::uint64_t>(z) * sx;
+      for (std::int32_t x = 0; x < sx; ++x) {
+        std::uint16_t pal = data[z_base + x];
+        if (pal < pal_size) [[likely]]
+          local_used[pal] = 1;
+      }
+    }
+  };
+
+  if (vol < kParallelThreshold) {
+    for (std::int32_t y = 0; y < sy; ++y) process_y(y, used);
+  } else {
+    used = tbb::parallel_reduce(
+        tbb::blocked_range<std::int32_t>(0, sy),
+        std::vector<std::uint8_t>(pal_size, 0),
+        [&](const tbb::blocked_range<std::int32_t>& range,
+            std::vector<std::uint8_t> local_used) {
+          for (std::int32_t y = range.begin(); y < range.end(); ++y) {
+            process_y(y, local_used);
+          }
+          return local_used;
+        },
+        [pal_size](std::vector<std::uint8_t> a,
+                   const std::vector<std::uint8_t>& b) {
+          for (std::size_t i = 0; i < pal_size; ++i) {
+            a[i] = a[i] | b[i];
+          }
+          return a;
+        });
+  }
+  return used;
+}
+
+}  // namespace internal
+
 [[nodiscard]] inline std::vector<IncompatibleBlock> FindIncompatibleBlocks(
     const filters::View& v,
     std::int32_t target_version) {
@@ -68,16 +124,100 @@ struct IncompatibleBlock {
     }
   }
 
-  v.for_each([&](filters::LocalPos p, std::uint16_t pal) {
-    if (pal < states.size() && states[pal].incompatible) {
-      result.push_back({p, r.palette[pal].name, states[pal].reason});
+  bool any_incompatible = false;
+  std::vector<std::uint8_t> is_target(r.palette.size() + 1, 0);
+  for (std::size_t i = 0; i < r.palette.size(); ++i) {
+    if (states[i].incompatible) {
+      is_target[i] = 1;
+      any_incompatible = true;
     }
-  });
+  }
+  if (!any_incompatible) return result;
 
+  tbb::concurrent_vector<IncompatibleBlock> concurrent_result;
+
+  const auto& bounds = r.bounds;
+  const std::int32_t sx = bounds.size[0];
+  const std::int32_t sy = bounds.size[1];
+  const std::int32_t sz = bounds.size[2];
+  const std::uint16_t* data = r.block_indices.data();
+  const auto& filter = v.filter();
+
+  const std::uint64_t vol = static_cast<std::uint64_t>(sx) * sy * sz;
+  constexpr std::uint64_t kParallelThreshold = 1 << 18;  // 256K blocks
+  constexpr std::size_t kBlockSize = 16;
+
+  auto process_y = [&](std::int32_t y) {
+    const std::uint64_t y_base = static_cast<std::uint64_t>(y) * sx * sz;
+    for (std::int32_t z = 0; z < sz; ++z) {
+      const std::uint64_t z_base = y_base + static_cast<std::uint64_t>(z) * sx;
+      std::int32_t x = 0;
+
+      for (; x + kBlockSize <= sx; x += kBlockSize) {
+        std::uint32_t filter_mask = 0;
+        for (std::size_t i = 0; i < kBlockSize; ++i) {
+          if (filter({x + static_cast<std::int32_t>(i), y, z},
+                     data[z_base + x + i])) {
+            filter_mask |= (1u << i);
+          }
+        }
+        if (filter_mask == 0) continue;
+
+        std::uint16_t final_mask = 0;
+        for (std::size_t i = 0; i < kBlockSize; ++i) {
+          if (filter_mask & (1u << i)) {
+            std::uint16_t pal = data[z_base + x + i];
+            if (pal < is_target.size() && is_target[pal]) {
+              final_mask |= (1u << i);
+            }
+          }
+        }
+
+        if (final_mask != 0) {
+          for (std::size_t i = 0; i < kBlockSize; ++i) {
+            if (final_mask & (1u << i)) {
+              std::uint16_t pal = data[z_base + x + i];
+              concurrent_result.push_back(
+                  {{x + static_cast<std::int32_t>(i), y, z},
+                   r.palette[pal].name,
+                   states[pal].reason});
+            }
+          }
+        }
+      }
+
+      for (; x < sx; ++x) {
+        std::uint16_t pal = data[z_base + x];
+        if (filter({x, y, z}, pal) && pal < is_target.size() &&
+            is_target[pal]) {
+          concurrent_result.push_back(
+              {{x, y, z}, r.palette[pal].name, states[pal].reason});
+        }
+      }
+    }
+  };
+
+  if (vol < kParallelThreshold) {
+    for (std::int32_t y = 0; y < sy; ++y) {
+      process_y(y);
+    }
+  } else {
+    tbb::parallel_for(
+        tbb::blocked_range<std::int32_t>(0, sy),
+        [&](const tbb::blocked_range<std::int32_t>& range) {
+          for (std::int32_t y = range.begin(); y < range.end(); ++y) {
+            process_y(y);
+          }
+        },
+        tbb::static_partitioner{});
+  }
+
+  result.reserve(concurrent_result.size());
+  result.insert(
+      result.end(), concurrent_result.begin(), concurrent_result.end());
   return result;
 }
 
-/// Determines the minimum Minecraft DataVersion required to load the schematic.
 [[nodiscard]] inline std::int32_t GetMinimumRequiredDataVersion(
     const filters::View& v) {
   std::int32_t min_required = 0;
@@ -86,10 +226,7 @@ struct IncompatibleBlock {
 
   if (r.palette.empty()) return 0;
 
-  std::vector<std::uint8_t> used_palette(r.palette.size(), 0);
-  v.for_each([&](filters::LocalPos, std::uint16_t pal) {
-    if (pal < used_palette.size()) used_palette[pal] = 1;
-  });
+  const auto used_palette = internal::ComputeUsedPalette(v);
 
   for (std::size_t i = 0; i < r.palette.size(); ++i) {
     if (!used_palette[i]) continue;
@@ -102,11 +239,6 @@ struct IncompatibleBlock {
   return min_required;
 }
 
-/// Calculates the highest Minecraft DataVersion fully supported
-/// by the schematic.
-///
-/// Returns `std::numeric_limits<std::int32_t>::max()`
-/// if no blocks in the schematic are ever removed.
 [[nodiscard]] inline std::int32_t GetHighestSupportedDataVersion(
     const filters::View& v) {
   constexpr std::int32_t kIntMax = std::numeric_limits<std::int32_t>::max();
@@ -116,12 +248,8 @@ struct IncompatibleBlock {
 
   if (r.palette.empty()) return kIntMax;
 
-  std::vector<std::uint8_t> used_palette(r.palette.size(), 0);
-  v.for_each([&](filters::LocalPos, std::uint16_t pal) {
-    if (pal < used_palette.size()) used_palette[pal] = 1;
-  });
+  const auto used_palette = internal::ComputeUsedPalette(v);
 
-  // Find the earliest version a used block was removed.
   std::int32_t min_removed = kIntMax;
   for (std::size_t i = 0; i < r.palette.size(); ++i) {
     if (!used_palette[i]) continue;
@@ -131,7 +259,6 @@ struct IncompatibleBlock {
     }
   }
 
-  // Early Minecraft version guards (99 / 100).
   if (min_removed == 99 || min_removed == 100) {
     return 0;
   }
@@ -140,8 +267,6 @@ struct IncompatibleBlock {
     return kIntMax;
   }
 
-  // DataVersion is sparse; find the largest valid version strictly less than
-  // `min_removed`.
   auto it = std::lower_bound(
       valid_versions.begin(), valid_versions.end(), min_removed);
   if (it == valid_versions.begin()) {
