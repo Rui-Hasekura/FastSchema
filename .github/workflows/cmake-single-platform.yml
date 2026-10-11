@@ -4,8 +4,18 @@ name: CMake on a single platform
 on:
   push:
     branches: [ "main", "master" ]
+    paths-ignore:
+      - '**.md'
+      - '.clang-format'
+      - 'LICENSE'
+      - 'NOTICE'
   pull_request:
     branches: [ "main", "master" ]
+    paths-ignore:
+      - '**.md'
+      - '.clang-format'
+      - 'LICENSE'
+      - 'NOTICE'
 
 env:
   BUILD_TYPE: Release
