@@ -16,6 +16,10 @@
 #ifndef FSCHEMA_INSPECTORS_FLOATING_CHECK_H_
 #define FSCHEMA_INSPECTORS_FLOATING_CHECK_H_
 
+#include <tbb/blocked_range.h>
+#include <tbb/parallel_for.h>
+
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <string_view>
@@ -29,11 +33,10 @@
 namespace fschema::inspectors {
 
 /// Bitmask selecting which categories of floating blocks/entities to report.
-/// Combinations are OR'd together (e.g., `kFloatingBlocks | kFloatingGravity`).
 enum class FloatingCheckMode : std::uint8_t {
-  kFloatingBlocks = 1 << 0,    // Non-air blocks with all 6 neighbors as air.
-  kFloatingGravity = 1 << 1,   // Gravity-affected blocks that are floating.
-  kFloatingEntities = 1 << 2,  // Entities whose block position is in air.
+  kFloatingBlocks = 1 << 0,
+  kFloatingGravity = 1 << 1,
+  kFloatingEntities = 1 << 2,
 };
 
 [[nodiscard]] constexpr FloatingCheckMode operator|(
@@ -64,7 +67,6 @@ struct FloatingCheckResult {
   std::vector<FloatingEntity> entities;
 };
 
-/// Checks a static list of gravity-affected block names.
 [[nodiscard]] inline bool IsGravityAffected(std::string_view name) noexcept {
   constexpr std::string_view kGravityBlocks[] = {
       "minecraft:sand",
@@ -101,12 +103,6 @@ struct FloatingCheckResult {
   return false;
 }
 
-/// Scans a region for floating blocks and/or floating entities.
-///
-/// @param mode Bitmask of `FloatingCheckMode` values. For example:
-///             `kFloatingBlocks | kFloatingGravity` reports all floating
-///             blocks, with gravity-affected ones flagged.
-/// @pre `r.is_materialized == true`.
 [[nodiscard]] inline FloatingCheckResult FloatingCheck(
     const ir::Region& r,
     FloatingCheckMode mode = FloatingCheckMode::kFloatingBlocks |
@@ -123,41 +119,112 @@ struct FloatingCheckResult {
     const std::int32_t sx = bounds.size[0];
     const std::int32_t sy = bounds.size[1];
     const std::int32_t sz = bounds.size[2];
-    const std::uint16_t* data = r.block_indices.data();
+    const std::uint64_t vol = static_cast<std::uint64_t>(sx) * sy * sz;
+    if (vol > 0) {
+      const std::uint16_t* data = r.block_indices.data();
+      const std::size_t pal_size = r.palette.size();
 
-    std::uint64_t li = 0;
-    for (std::int32_t y = 0; y < sy; ++y) {
-      for (std::int32_t z = 0; z < sz; ++z) {
-        for (std::int32_t x = 0; x < sx; ++x, ++li) {
-          const std::uint16_t pal = data[li];
-          if (pal >= r.palette.size()) continue;
+      // Precompute air lookup table.
+      std::vector<std::uint8_t> is_air_lut(pal_size, 0);
+      for (std::size_t i = 0; i < pal_size; ++i) {
+        if (fschema::base::IsAirVariant(r.palette[i].name)) {
+          is_air_lut[i] = 1;
+        }
+      }
+      const std::uint8_t* is_air = is_air_lut.data();
 
-          const auto& name = r.palette[pal].name;
-          if (r.IsAir(pal)) continue;  // skip air
+      const std::uint64_t y_stride = static_cast<std::uint64_t>(sx) * sz;
 
-          // A block is floating if all 6 neighbors are air (or out of bounds).
-          const bool floating = filters::internal::IsFloatingAt(r, x, y, z);
-          if (!floating) continue;
+      constexpr std::uint64_t kParallelThreshold = 1 << 18;
+      if (vol < kParallelThreshold) {
+        std::uint64_t li = 0;
+        for (std::int32_t y = 0; y < sy; ++y) {
+          for (std::int32_t z = 0; z < sz; ++z) {
+            for (std::int32_t x = 0; x < sx; ++x, ++li) {
+              const std::uint16_t pal = data[li];
+              if (pal >= pal_size || is_air[pal]) continue;
 
-          const bool gravity = IsGravityAffected(name);
+              bool floating = false;
+              if (x == 0 || is_air[data[li - 1]])
+                floating = true;
+              else if (x == sx - 1 || is_air[data[li + 1]])
+                floating = true;
+              else if (z == 0 || is_air[data[li - sx]])
+                floating = true;
+              else if (z == sz - 1 || is_air[data[li + sx]])
+                floating = true;
+              else if (y == 0 || is_air[data[li - y_stride]])
+                floating = true;
+              else if (y == sy - 1 || is_air[data[li + y_stride]])
+                floating = true;
 
-          // Report based on mode: kFloatingBlocks reports all,
-          // kFloatingGravity reports ONLY gravity-affected ones.
-          if ((mode & FloatingCheckMode::kFloatingBlocks) ||
-              (gravity && (mode & FloatingCheckMode::kFloatingGravity))) {
-            result.blocks.push_back(
-                FloatingBlock{filters::LocalPos{x, y, z}, name, gravity});
+              if (floating) {
+                const auto& name = r.palette[pal].name;
+                const bool gravity = IsGravityAffected(name);
+                if ((mode & FloatingCheckMode::kFloatingBlocks) ||
+                    (gravity && (mode & FloatingCheckMode::kFloatingGravity))) {
+                  result.blocks.push_back(
+                      FloatingBlock{filters::LocalPos{x, y, z}, name, gravity});
+                }
+              }
+            }
           }
         }
+      } else {
+        tbb::concurrent_vector<FloatingBlock> concurrent_blocks;
+        tbb::parallel_for(
+            tbb::blocked_range<std::int32_t>(0, sy),
+            [&](const tbb::blocked_range<std::int32_t>& range) {
+              for (std::int32_t y = range.begin(); y < range.end(); ++y) {
+                const std::uint64_t y_base =
+                    static_cast<std::uint64_t>(y) * y_stride;
+                for (std::int32_t z = 0; z < sz; ++z) {
+                  const std::uint64_t z_base =
+                      y_base + static_cast<std::uint64_t>(z) * sx;
+                  for (std::int32_t x = 0; x < sx; ++x) {
+                    const std::uint64_t li = z_base + x;
+                    const std::uint16_t pal = data[li];
+                    if (pal >= pal_size || is_air[pal]) continue;
+
+                    bool floating = false;
+                    if (x == 0 || is_air[data[li - 1]])
+                      floating = true;
+                    else if (x == sx - 1 || is_air[data[li + 1]])
+                      floating = true;
+                    else if (z == 0 || is_air[data[li - sx]])
+                      floating = true;
+                    else if (z == sz - 1 || is_air[data[li + sx]])
+                      floating = true;
+                    else if (y == 0 || is_air[data[li - y_stride]])
+                      floating = true;
+                    else if (y == sy - 1 || is_air[data[li + y_stride]])
+                      floating = true;
+
+                    if (floating) {
+                      const auto& name = r.palette[pal].name;
+                      const bool gravity = IsGravityAffected(name);
+                      if ((mode & FloatingCheckMode::kFloatingBlocks) ||
+                          (gravity &&
+                           (mode & FloatingCheckMode::kFloatingGravity))) {
+                        concurrent_blocks.push_back(FloatingBlock{
+                            filters::LocalPos{x, y, z}, name, gravity});
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            tbb::static_partitioner{});
+        result.blocks.reserve(concurrent_blocks.size());
+        result.blocks.insert(result.blocks.end(),
+                             concurrent_blocks.begin(),
+                             concurrent_blocks.end());
       }
     }
   }
 
   if (check_entities) {
     for (const auto& ent : r.entities) {
-      // An entity is "floating" if the block at its position is air.
-      // Convert world-space double position to region-local integer block
-      // coords.
       const std::int32_t ex =
           static_cast<std::int32_t>(std::floor(ent.position[0])) -
           r.bounds.origin[0];
