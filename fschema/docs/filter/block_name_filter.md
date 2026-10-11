@@ -2,7 +2,7 @@
 
 `fschema/filters/block_name_filter.h` defines `BlockNameFilter` and `IsAirFilter`.
 
-Both are palette-index filters: they ignore `LocalPos` and decide from the palette index alone. Each precomputes a boolean LUT of size `palette.size()` at construction, so the inner loop is a single array lookup.
+Both are palette-index filters: they ignore `LocalPos` and decide from the palette index alone. The palette is scanned once at construction; evaluation is a constant-time lookup per block.
 
 ## BlockNameFilter
 

@@ -30,12 +30,12 @@ Consequences worth knowing:
 ```cpp
 struct DiffEntry {
   filters::LocalPos pos;
-  std::string_view name1;
-  std::string_view name2;
+  std::string_view from_block;
+  std::string_view to_block;
 };
 ```
 
-`pos` is local to `r1` (and therefore to `r2`, since the bounds match). `name1` and `name2` are the palette entry names at that position in each region. If a position's palette index is out of range for its region, the name is `"unknown"`.
+`pos` is local to `r1` (and therefore to `r2`, since the bounds match). `from_block` and `to_block` are the palette entry names at that position in each region. If a position's palette index is out of range for its region, the name is `"unknown"`.
 
 ## Example
 
@@ -49,7 +49,7 @@ if (!diff) {
 }
 
 for (const auto& e : *diff) {
-  // e.pos, e.name1, e.name2
+  // e.pos, e.from_block, e.to_block
 }
 ```
 

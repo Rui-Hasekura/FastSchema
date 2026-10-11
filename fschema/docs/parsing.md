@@ -138,8 +138,8 @@ auto indices = fschema::litematic::internal::UnpackIndicesFused(
 ```
 
 `UnpackIndicesFused` allocates its own buffer and does not take an arena.
-It dispatches to an AVX2 kernel or a Highway fallback. `internal::` is not
-a stable public API, but these two names are the ones the IR layer uses.
+`internal::` is not a stable public API,
+but these two names are the ones the IR layer uses.
 
 Fields without an IR equivalent are only reachable here:
 `pending_block_ticks`, `pending_fluid_ticks`, `pending_block_entities`,

@@ -22,7 +22,7 @@ auto internal_filter = !surface && !is_air;
 
 `SurfaceFilter` selects non-air blocks exposed to air on at least one face. Its complement, restricted to non-air blocks, is the interior.
 
-The view is then created over `internal_filter`, and the resulting linear indices are collected before any writes. This two-pass approach matters: writing air during the scan would change what `SurfaceFilter` sees for subsequent blocks, cascading the hollow effect inward.
+The interior positions are collected before any writes. Writing air during the scan would change what `SurfaceFilter` sees for subsequent blocks, cascading the hollow effect inward.
 
 ```cpp
 ir::Region& r = v.region();

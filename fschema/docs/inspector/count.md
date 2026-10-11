@@ -12,7 +12,7 @@ Counts the selected blocks whose palette entry name equals `name`.
 
 `name` is matched against `BlockState::name`. Properties are not considered; two palette entries with the same name and different properties both match.
 
-The implementation builds a `std::vector<std::uint8_t>` LUT over the palette marking which entries match, then iterates the view and counts hits. The per-block cost is a LUT lookup, not a string comparison.
+Palette entries are matched against `name` once per call; per-block counting is a constant-time lookup.
 
 ```cpp
 namespace fl = fschema::filters;

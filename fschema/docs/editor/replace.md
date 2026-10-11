@@ -23,7 +23,7 @@ template <filters::Filter F, class Mapper>
 
 Replaces every selected block whose palette entry name equals `from` with `to`.
 
-The constructor-side work builds a `std::vector<std::uint8_t>` LUT of size `palette.size()` marking which entries match `from`. The inner loop is a palette-index lookup, not a string comparison.
+Palette entries are matched against `from` once per call; per-block matching is by palette index, not by name.
 
 If no palette entry matches `from`, `any_from` is false and the function returns immediately without iterating or calling `MarkEdited`.
 

@@ -48,7 +48,9 @@ Editors transform region data. Most take a `BasicView<F>` to select blocks and w
 
 Any editor that mutates `Region::block_indices` in place must call `fschema::editors::MarkEdited(r)`. It sets `edited = true` and `palette_pristine = false`. If `palette_pristine` stays true, the encoder may take the passthrough path and re-emit the original packed bytes, discarding the edits.
 
-Some editors also change the palette. `ResolveOrAppend` and `ResolveAir` in `palette_utils.h` handle the lookup and, if the name is absent, append the entry and clear `palette_pristine`. Editors that only call `ResolveOrAppend` and do not touch `block_indices` still need to call `MarkEdited` if they change block data through other means; when in doubt, call it.
+Some editors also change the palette. `ResolveOrAppend` and `ResolveAir` in `palette_utils.h` handle the lookup and, if the name is absent, append the entry and clear `palette_pristine`.
+
+The rule is: if you write to `block_indices`, call `MarkEdited`. Editors that only rewrite the palette, such as `ReplacePaletteEntry`, do not need it; the encoder reads the current palette at serialization time.
 
 ### Built-in Editors
 

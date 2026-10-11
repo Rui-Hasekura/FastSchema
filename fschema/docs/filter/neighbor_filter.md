@@ -53,4 +53,4 @@ view_res->for_each([](fl::LocalPos p, std::uint16_t palette_idx) {
 });
 ```
 
-`NeighborFilter` checks the six face neighbors directly via the YZX strides of the materialized array; it does not reconstruct `LocalPos` for neighbor lookups beyond what `F` needs.
+Neighbor lookups are direct array accesses and do not reconstruct `LocalPos` for each check.

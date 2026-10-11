@@ -31,7 +31,7 @@ is_materialized = true
 
 ## Implementation note
 
-The scan produces local min/max coordinates. Those are wrapped in a `BoxFilter` and passed through `Extract`, which is where palette subsetting and buffer allocation happen. See `extract.md` for the resulting region's invariants.
+The returned region is produced by `Extract` over a `BoxFilter` of the non-air bounds. See `extract.md` for the invariants of the result.
 
 ## Example
 

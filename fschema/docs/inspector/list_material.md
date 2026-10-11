@@ -19,7 +19,7 @@ Enumerates every palette entry with its usage count.
 
 ## Counts
 
-Counts are produced by a dense array indexed by palette index. Indices outside `palette.size()` are ignored.
+Counts are reported per palette index. Indices outside `palette.size()` are ignored.
 
 If the region is not materialized, `r.block_indices` is empty and every count is zero. Call `EnsureMaterialized` first when counts matter.
 
@@ -40,6 +40,8 @@ With `use_sort = true`, entries are sorted by `count` in descending order. Ties 
 ## Complexity
 
 O(volume + K) time and O(K) space, where K is `palette.size()`. With `use_sort`, an additional O(K log K).
+
+The histogram is parallelized for volumes >= 256K blocks; see [`performance.md`](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/performance.md).
 
 ## Example
 

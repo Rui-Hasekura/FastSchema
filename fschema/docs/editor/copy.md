@@ -55,7 +55,7 @@ Sets selected blocks in the source to air, and writes their original palette ind
 
 Out-of-bounds destinations are discarded: the block vanishes, but the source is still cleared. There is no rollback for partially out-of-bounds moves.
 
-Overlapping moves are handled correctly. `Move` collects all selected blocks into a `std::vector<Entry>` before writing anything, so a block that is both a source and a destination sees the original value, not an intermediate one. The implementation then writes air to every source position in one pass, and the destination values in a second pass.
+Overlapping moves are handled correctly: all intended writes are collected before any are applied, so a block that is both a source and a destination sees the original value, not an intermediate one.
 
 ```cpp
 // Move the selection up by 1 block.

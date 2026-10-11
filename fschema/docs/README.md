@@ -12,8 +12,8 @@
 
 - [Tool](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/tool.md)
 
+- [Performance](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/performance.md)
+
 ## Formats
 
 - [Sponge Schematic](https://github.com/SpongePowered/Schematic-Specification)
-
-# 

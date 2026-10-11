@@ -62,9 +62,7 @@ auto mirrored_states = ed::Mirror(
 
 Rotates the selection by `steps * 90` degrees clockwise around `axis`.
 
-`steps` is normalized to `[0, 3]` via `((steps % 4) + 4) % 4`. If the normalized value is `0`, the function returns `Extract(v, arena)` directly.
-
-Rotation is applied iteratively: `steps` passes of a single 90-degree transform, each allocating a new buffer and swapping the bounds along the two non-axis dimensions. This avoids compound index math and bounds-swap errors.
+`steps` is normalized to `[0, 3]`. A value of `0` returns `Extract(v, arena)` directly. Otherwise, the selection is extracted and the block indices are mapped to their rotated positions in a single pass. The output bounds are updated for the new orientation.
 
 The caller guarantees the structure does not contain blocks that become invalid when rotated.
 
@@ -75,6 +73,8 @@ if (!rotated) {
   return;
 }
 ```
+
+For large regions, the rotation is parallelized. See [`performance.md`](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/performance.md) for the shared details.
 
 ## State remapping
 

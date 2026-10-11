@@ -36,6 +36,10 @@ ed::Fill(*view_res, "minecraft:stone");
 
 `Fill` calls `for_each_linear`, so it iterates the region in YZX order and writes by linear index. It does not reconstruct `LocalPos`.
 
+## Performance
+
+For large regions, `Fill` and `Delete` are parallelized and, on AVX2, use non-temporal stores for full 16-block matches. See [`performance.md`](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/performance.md) for the shared details.
+
 ## Delete
 
 Sets every selected block to the air palette index.

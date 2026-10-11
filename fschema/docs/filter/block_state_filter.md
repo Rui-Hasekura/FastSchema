@@ -38,7 +38,7 @@ Matching handles both property encodings:
 
 Entries with `PropertyEncoding::kNone` or empty `raw_properties` never match.
 
-The constructor builds a boolean LUT of size `palette.size()`. The inner loop is a palette-index lookup, so the per-block cost does not depend on how many conditions were passed.
+The palette is scanned once at construction; per-block evaluation is a constant-time lookup, independent of how many conditions were passed.
 
 The `key` and `value` string views in the conditions must outlive the filter.
 
