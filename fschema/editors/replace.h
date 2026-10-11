@@ -19,6 +19,7 @@
 #include <tbb/blocked_range.h>
 #include <tbb/parallel_for.h>
 
+#include <atomic>
 #include <cstdint>
 #include <string_view>
 #include <vector>

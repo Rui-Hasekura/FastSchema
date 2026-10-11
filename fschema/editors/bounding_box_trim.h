@@ -19,6 +19,7 @@
 #include <tbb/blocked_range.h>
 #include <tbb/parallel_reduce.h>
 
+#include <algorithm>
 #include <bit>
 #include <cstdint>
 #include <limits>
