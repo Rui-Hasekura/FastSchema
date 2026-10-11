@@ -37,7 +37,7 @@ class Xoshiro256PP {
     }
   }
 
-  [[nodiscard]] std::uint64_t operator()() noexcept {
+  [[nodiscard]] std::uint64_t operator()() const noexcept {
     const std::uint64_t result = rotl(s_[0] + s_[3], 23) + s_[0];
     const std::uint64_t t = s_[1] << 17;
 
@@ -56,7 +56,7 @@ class Xoshiro256PP {
   static std::uint64_t rotl(const std::uint64_t x, int k) noexcept {
     return (x << k) | (x >> (64 - k));
   }
-  std::uint64_t s_[4];
+  mutable std::uint64_t s_[4];
 };
 
 /// Selects blocks with a given probability.
@@ -80,14 +80,14 @@ class RandomFilter {
   }
 
   [[nodiscard]] bool operator()(LocalPos /*p=*/,
-                                std::uint16_t /*idx=*/) noexcept {
+                                std::uint16_t /*idx=*/) const noexcept {
     if (threshold_ == 0) return false;
     if (threshold_ == std::numeric_limits<std::uint64_t>::max()) return true;
     return rng_() <= threshold_;
   }
 
  private:
-  Xoshiro256PP rng_;
+  mutable Xoshiro256PP rng_;
   std::uint64_t threshold_;
 };
 
