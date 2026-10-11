@@ -16,8 +16,11 @@
 #ifndef FSCHEMA_EDITORS_MOVE_H_
 #define FSCHEMA_EDITORS_MOVE_H_
 
+#include <tbb/blocked_range.h>
+#include <tbb/enumerable_thread_specific.h>
+#include <tbb/parallel_for.h>
+
 #include <cstdint>
-#include <limits>
 #include <vector>
 
 #include "fschema/base/error.h"
@@ -43,53 +46,119 @@ template <filters::Filter F>
   ir::Region& r = v.region();
   const auto& bounds = r.bounds;
 
-  constexpr std::uint64_t kOOB = std::numeric_limits<std::uint64_t>::max();
+  const std::int32_t sx = bounds.size[0];
+  const std::int32_t sy = bounds.size[1];
+  const std::int32_t sz = bounds.size[2];
+  const std::uint64_t vol = static_cast<std::uint64_t>(sx) * sy * sz;
+  if (vol == 0) return {};
 
-  struct Entry {
-    std::uint64_t src_linear;
-    std::uint64_t dst_linear;
+  // Four uint16_t fields, 8 bytes total.
+  struct MoveEntry {
+    std::uint16_t x;
+    std::uint16_t y;
+    std::uint16_t z;
     std::uint16_t pal;
   };
 
-  std::vector<Entry> entries;
+  const F& filter = v.filter();
+  const std::uint16_t* data = r.block_indices.data();
 
-  const std::uint64_t sx = bounds.size[0];
-  const std::uint64_t sz = bounds.size[2];
-  const std::uint64_t y_stride = sx * sz;
-
-  v.for_each([&](filters::LocalPos p, std::uint16_t pal) {
-    const std::int32_t dst_x = p.x + dx;
-    const std::int32_t dst_y = p.y + dy;
-    const std::int32_t dst_z = p.z + dz;
-
-    Entry e;
-    e.src_linear = static_cast<std::uint64_t>(p.y) * y_stride +
-                   static_cast<std::uint64_t>(p.z) * sx +
-                   static_cast<std::uint64_t>(p.x);
-    e.pal = pal;
-    if (dst_x >= 0 && dst_x < bounds.size[0] && dst_y >= 0 &&
-        dst_y < bounds.size[1] && dst_z >= 0 && dst_z < bounds.size[2]) {
-      e.dst_linear = static_cast<std::uint64_t>(dst_y) * y_stride +
-                     static_cast<std::uint64_t>(dst_z) * sx +
-                     static_cast<std::uint64_t>(dst_x);
-    } else {
-      e.dst_linear = kOOB;
-    }
-    entries.push_back(e);
-  });
+  auto collect_range =
+      [&](auto& target_vec, std::int32_t y_begin, std::int32_t y_end) {
+        for (std::int32_t y = y_begin; y < y_end; ++y) {
+          const std::uint64_t y_base = static_cast<std::uint64_t>(y) * sx * sz;
+          for (std::int32_t z = 0; z < sz; ++z) {
+            const std::uint64_t z_base =
+                y_base + static_cast<std::uint64_t>(z) * sx;
+            for (std::int32_t x = 0; x < sx; ++x) {
+              const std::uint64_t src_linear = z_base + x;
+              const std::uint16_t pal = data[src_linear];
+              if (filter({x, y, z}, pal)) {
+                target_vec.push_back({static_cast<std::uint16_t>(x),
+                                      static_cast<std::uint16_t>(y),
+                                      static_cast<std::uint16_t>(z),
+                                      pal});
+              }
+            }
+          }
+        }
+      };
 
   const std::uint16_t air_idx = ResolveAir(r);
-  std::uint16_t* FSCHEMA_RESTRICT data = r.block_indices.data();
+  std::uint16_t* FSCHEMA_RESTRICT data_mut = r.block_indices.data();
 
-  for (const auto& e : entries) {
-    data[e.src_linear] = air_idx;
-  }
+  constexpr std::uint64_t kParallelThreshold = 1 << 18;  // 256K blocks
 
-  for (const auto& e : entries) {
-    if (e.dst_linear != kOOB) {
-      data[e.dst_linear] = e.pal;
+  if (vol < kParallelThreshold) {
+    std::vector<MoveEntry> entries;
+    collect_range(entries, 0, sy);
+
+    // Pass 1: Clear source cells.
+    for (const auto& e : entries) {
+      const std::uint64_t src_linear =
+          static_cast<std::uint64_t>(e.y) * sx * sz +
+          static_cast<std::uint64_t>(e.z) * sx + e.x;
+      data_mut[src_linear] = air_idx;
+    }
+
+    // Pass 2: Write shifted copies to in-bounds destinations.
+    for (const auto& e : entries) {
+      const std::int32_t dst_x = e.x + dx;
+      const std::int32_t dst_y = e.y + dy;
+      const std::int32_t dst_z = e.z + dz;
+      if (dst_x >= 0 && dst_x < sx && dst_y >= 0 && dst_y < sy && dst_z >= 0 &&
+          dst_z < sz) {
+        const std::uint64_t dst_linear =
+            static_cast<std::uint64_t>(dst_y) * sx * sz +
+            static_cast<std::uint64_t>(dst_z) * sx + dst_x;
+        data_mut[dst_linear] = e.pal;
+      }
+    }
+  } else {
+    tbb::enumerable_thread_specific<std::vector<MoveEntry>> tls;
+
+    // Pass 1: Collect matching cells into thread-local vectors.
+    tbb::parallel_for(
+        tbb::blocked_range<std::int32_t>(0, sy),
+        [&](const tbb::blocked_range<std::int32_t>& range) {
+          auto& local = tls.local();
+          local.reserve(static_cast<std::size_t>(range.size()) * sx * sz / 4 +
+                        16);
+          collect_range(local, range.begin(), range.end());
+        },
+        tbb::static_partitioner{});
+
+    // Pass 2: Clear source cells.
+    // Keep this pass serial: it is memory-bound, and parallel iteration would
+    // add TLS-vector traversal overhead without reducing the scattered writes.
+    for (auto it = tls.begin(); it != tls.end(); ++it) {
+      const auto& vec = *it;
+      for (const auto& e : vec) {
+        const std::uint64_t src_linear =
+            static_cast<std::uint64_t>(e.y) * sx * sz +
+            static_cast<std::uint64_t>(e.z) * sx + e.x;
+        data_mut[src_linear] = air_idx;
+      }
+    }
+
+    // Pass 3: Write shifted copies to in-bounds destinations.
+    for (auto it = tls.begin(); it != tls.end(); ++it) {
+      const auto& vec = *it;
+      for (const auto& e : vec) {
+        const std::int32_t dst_x = e.x + dx;
+        const std::int32_t dst_y = e.y + dy;
+        const std::int32_t dst_z = e.z + dz;
+        if (dst_x >= 0 && dst_x < sx && dst_y >= 0 && dst_y < sy &&
+            dst_z >= 0 && dst_z < sz) {
+          const std::uint64_t dst_linear =
+              static_cast<std::uint64_t>(dst_y) * sx * sz +
+              static_cast<std::uint64_t>(dst_z) * sx + dst_x;
+          data_mut[dst_linear] = e.pal;
+        }
+      }
     }
   }
+
   MarkEdited(r);
   return {};
 }
