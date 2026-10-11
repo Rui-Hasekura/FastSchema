@@ -20,6 +20,9 @@
 #include <functional>
 #include <utility>
 
+#include "tbb/blocked_range.h"
+#include "tbb/parallel_reduce.h"
+
 #include "fschema/base/error.h"
 #include "fschema/base/port.h"
 #include "fschema/filters/concepts.h"
@@ -134,11 +137,51 @@ class BasicView {
     }
   }
 
-  /// Counts the number of selected blocks. O(volume) time.
+    /// Counts the number of selected blocks. O(volume) time.
   [[nodiscard]] std::size_t count() const {
-    std::size_t n = 0;
-    for_each([&n](LocalPos, std::uint16_t) { ++n; });
-    return n;
+    const auto& bounds = region_->bounds;
+    const std::int32_t sx = bounds.size[0];
+    const std::int32_t sy = bounds.size[1];
+    const std::int32_t sz = bounds.size[2];
+    const std::uint16_t* FSCHEMA_RESTRICT data = region_->block_indices.data();
+    const std::uint64_t vol = static_cast<std::uint64_t>(sx) * sy * sz;
+    constexpr std::uint64_t kParallelThreshold = 1 << 18;
+
+    if (vol < kParallelThreshold) {
+      std::size_t n = 0;
+      for (std::int32_t y = 0; y < sy; ++y) {
+        const std::uint64_t y_base = static_cast<std::uint64_t>(y) * sx * sz;
+        for (std::int32_t z = 0; z < sz; ++z) {
+          const std::uint64_t z_base =
+              y_base + static_cast<std::uint64_t>(z) * sx;
+          for (std::int32_t x = 0; x < sx; ++x) {
+            if (filter_({x, y, z}, data[z_base + x])) ++n;
+          }
+        }
+      }
+      return n;
+    } else {
+      return tbb::parallel_reduce(
+          tbb::blocked_range<std::int32_t>(0, sy),
+          std::size_t{0},
+          [&](const tbb::blocked_range<std::int32_t>& range,
+              std::size_t local_n) {
+            for (std::int32_t y = range.begin(); y < range.end(); ++y) {
+              const std::uint64_t y_base =
+                  static_cast<std::uint64_t>(y) * sx * sz;
+              for (std::int32_t z = 0; z < sz; ++z) {
+                const std::uint64_t z_base =
+                    y_base + static_cast<std::uint64_t>(z) * sx;
+                for (std::int32_t x = 0; x < sx; ++x) {
+                  if (filter_({x, y, z}, data[z_base + x])) ++local_n;
+                }
+              }
+            }
+            return local_n;
+          },
+          [](std::size_t a, std::size_t b) { return a + b; },
+          tbb::static_partitioner{});
+    }
   }
 
   /// Returns non-const ref even from a const View.
