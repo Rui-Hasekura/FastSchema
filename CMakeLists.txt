@@ -359,8 +359,10 @@ if(FASTSCHEMA_BUILD_TESTS)
         )
         target_compile_definitions(${name} PRIVATE
             FASTSCHEMA_TESTDATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fschema/testdata")
-        target_link_libraries(${name} PRIVATE fschema hwy GTest::gtest_main)
-        gtest_discover_tests(${name})
+        target_link_libraries(${name} PRIVATE fschema hwy GTest::gtest_main TBB::tbb)
+
+        gtest_discover_tests(${name} DISCOVERY_MODE PRE_TEST)
+
         # Copy TBB DLL next to the executable (Windows, shared TBB)
         if(WIN32 AND TARGET TBB::tbb)
             add_custom_command(TARGET ${name} POST_BUILD
@@ -371,9 +373,15 @@ if(FASTSCHEMA_BUILD_TESTS)
         endif()
     endfunction()
 
+    # Parsing
     fschema_add_test(fschema_litematic_parse_test fschema/tests/litematic_parse_test.cc)
     fschema_add_test(fschema_nbt_parse_test    fschema/tests/nbt_parse_test.cc)
     fschema_add_test(fschema_schem_parse_test  fschema/tests/schem_parse_test.cc)
+
+    # Tools
+    fschema_add_test(fschema_filter_test       fschema/tests/filter_test.cc)
+    fschema_add_test(fschema_inspector_test    fschema/tests/inspector_test.cc)
+    fschema_add_test(fschema_editor_test       fschema/tests/editor_test.cc)
 endif()
 
 # Benchmarks (opt-in)
@@ -396,8 +404,16 @@ if(FASTSCHEMA_BUILD_BENCHMARKS)
         endif()
     endfunction()
 
+    # Parsing
     fschema_add_bench(fschema_schem_parse_benchmark      fschema/benchmarks/schem_parse_benchmark.cc)
     fschema_add_bench(fschema_litematic_parse_benchmark  fschema/benchmarks/litematic_parse_benchmark.cc)
     fschema_add_bench(fschema_nbt_parse_benchmark        fschema/benchmarks/nbt_parse_benchmark.cc)
+
+    # Conversion
     fschema_add_bench(fschema_convert_benchmark          fschema/benchmarks/convert_benchmark.cc)
+
+    # Tools
+    fschema_add_bench(fschema_filter_benchmark           fschema/benchmarks/filter_benchmark.cc)
+    fschema_add_bench(fschema_inspector_benchmark        fschema/benchmarks/inspector_benchmark.cc)
+    fschema_add_bench(fschema_editor_benchmark           fschema/benchmarks/editor_benchmark.cc)
 endif()
