@@ -16,6 +16,10 @@
 #ifndef FSCHEMA_INSPECTORS_DIFF_H_
 #define FSCHEMA_INSPECTORS_DIFF_H_
 
+#include <tbb/blocked_range.h>
+#include <tbb/concurrent_vector.h>
+#include <tbb/parallel_for.h>
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -23,6 +27,12 @@
 #include <span>
 #include <string_view>
 #include <vector>
+
+#include "hwy/highway.h"
+
+#if HWY_TARGET == HWY_AVX2
+#  include <immintrin.h>
+#endif
 
 #include "absl/container/flat_hash_map.h"
 #include "fschema/base/error.h"
@@ -32,7 +42,13 @@
 
 namespace fschema::inspectors {
 
-/// Sentinel: a palette entry in r2 that has no match in r1.
+struct DiffEntry {
+  filters::LocalPos pos;
+  std::string_view from_block;
+  std::string_view to_block;
+};
+
+/// Placeholder for a palette entry in r2 with no match in r1.
 constexpr std::uint16_t kUnmappedPalette = 0xFFFF;
 
 namespace {
@@ -89,17 +105,12 @@ struct BlockStateKeyEq {
 
 /// Compares two regions and returns a list of differing blocks.
 ///
-/// Preconditions:
-///   Both regions must have the EXACT same `BoundingBox` (origin and size).
-///
-/// Matching is done by (name, raw_properties), NOT by raw palette index.
-/// This makes it robust to palette reordering between two regions.
-///
-/// Semantics:
-///   - A block in r2 whose palette entry has no match in r1
-///     (`kUnmappedPalette`) is always reported as a difference.
-///   - Property encodings (kNbt / kString) must match. Cross-format
-///     comparisons require normalizing properties first.
+/// Both regions must have the exact same bounding box (origin and size).
+/// Matching is by (name, raw_properties), not by raw palette index, so the
+/// result is robust to palette reordering. A block in r2 whose palette entry
+/// has no match in r1 (`kUnmappedPalette`) is always reported as a difference.
+/// Property encodings (kNbt / kString) must match; cross-format comparisons
+/// require normalizing properties first.
 [[nodiscard]] inline ParseResult<std::vector<DiffEntry>> Diff(
     const ir::Region& r1,
     const ir::Region& r2) {
@@ -115,36 +126,125 @@ struct BlockStateKeyEq {
 
   const auto b_to_a = BuildBToAMap(r1, r2);
 
-  std::vector<DiffEntry> result;
-  const std::uint64_t vol = static_cast<std::uint64_t>(r1.bounds.size[0]) *
-                            static_cast<std::uint64_t>(r1.bounds.size[1]) *
-                            static_cast<std::uint64_t>(r1.bounds.size[2]);
+  tbb::concurrent_vector<DiffEntry> concurrent_result;
 
-  const std::int32_t sx = r1.bounds.size[0];
-  const std::int32_t sz = r1.bounds.size[2];
+  const auto& bounds = r1.bounds;
+  const std::int32_t sx = bounds.size[0];
+  const std::int32_t sy = bounds.size[1];
+  const std::int32_t sz = bounds.size[2];
+  const std::uint64_t vol = static_cast<std::uint64_t>(sx) *
+                            static_cast<std::uint64_t>(sy) *
+                            static_cast<std::uint64_t>(sz);
 
-  for (std::uint64_t i = 0; i < vol; ++i) {
-    const std::uint16_t p1 = r1.block_indices[i];
-    const std::uint16_t p2 = r2.block_indices[i];
+  const std::uint16_t* r1_data = r1.block_indices.data();
+  const std::uint16_t* r2_data = r2.block_indices.data();
+  const std::uint16_t* map_data = b_to_a.data();
+  const std::size_t map_size = b_to_a.size();
 
-    const std::uint16_t p2_mapped =
-        (p2 < b_to_a.size()) ? b_to_a[p2] : kUnmappedPalette;
+  constexpr std::uint64_t kParallelThreshold = 1 << 18;  // 256K blocks
 
-    if (p1 == p2_mapped) continue;
+  auto process_y = [&](std::int32_t y) {
+    const std::uint64_t y_base = static_cast<std::uint64_t>(y) * sx * sz;
+    for (std::int32_t z = 0; z < sz; ++z) {
+      const std::uint64_t z_base = y_base + static_cast<std::uint64_t>(z) * sx;
+      std::int32_t x = 0;
 
-    const std::int32_t y =
-        static_cast<std::int32_t>(i / (static_cast<std::uint64_t>(sx) * sz));
-    const std::uint64_t rem = i % (static_cast<std::uint64_t>(sx) * sz);
-    const std::int32_t z = static_cast<std::int32_t>(rem / sx);
-    const std::int32_t x = static_cast<std::int32_t>(rem % sx);
+#if HWY_TARGET == HWY_AVX2
+      const __m256i v_max_pal = _mm256_set1_epi16(static_cast<short>(map_size));
+      const __m256i mask16 = _mm256_set1_epi32(0x0000FFFF);
+      for (; x + 16 <= sx; x += 16) {
+        const __m256i v_p1 = _mm256_loadu_si256(
+            reinterpret_cast<const __m256i*>(r1_data + z_base + x));
+        __m256i v_p2 = _mm256_loadu_si256(
+            reinterpret_cast<const __m256i*>(r2_data + z_base + x));
 
-    const std::string_view n1 =
-        (p1 < r1.palette.size()) ? r1.palette[p1].name : "unknown";
-    const std::string_view n2 =
-        (p2 < r2.palette.size()) ? r2.palette[p2].name : "unknown";
+        // Clamp out-of-bounds p2 indices to map_size.
+        v_p2 = _mm256_min_epu16(v_p2, v_max_pal);
 
-    result.push_back({{x, y, z}, n1, n2});
+        const __m128i p1_lo = _mm256_castsi256_si128(v_p1);
+        const __m128i p1_hi = _mm256_extracti128_si256(v_p1, 1);
+        const __m128i p2_lo = _mm256_castsi256_si128(v_p2);
+        const __m128i p2_hi = _mm256_extracti128_si256(v_p2, 1);
+
+        const __m256i v_idx_lo = _mm256_cvtepu16_epi32(p2_lo);
+        const __m256i v_idx_hi = _mm256_cvtepu16_epi32(p2_hi);
+
+        // Map r2 palette indices through b_to_a.
+        __m256i v_map_lo = _mm256_i32gather_epi32(
+            reinterpret_cast<const int*>(map_data), v_idx_lo, 2);
+        __m256i v_map_hi = _mm256_i32gather_epi32(
+            reinterpret_cast<const int*>(map_data), v_idx_hi, 2);
+
+        // Mask out high 16 bits since source is uint16_t.
+        v_map_lo = _mm256_and_si256(v_map_lo, mask16);
+        v_map_hi = _mm256_and_si256(v_map_hi, mask16);
+
+        const __m256i v_p1_lo = _mm256_cvtepu16_epi32(p1_lo);
+        const __m256i v_p1_hi = _mm256_cvtepu16_epi32(p1_hi);
+
+        const __m256i v_cmp_lo = _mm256_cmpeq_epi32(v_p1_lo, v_map_lo);
+        const __m256i v_cmp_hi = _mm256_cmpeq_epi32(v_p1_hi, v_map_hi);
+
+        std::uint32_t mmask_lo =
+            static_cast<std::uint32_t>(_mm256_movemask_epi8(v_cmp_lo));
+        std::uint32_t mmask_hi =
+            static_cast<std::uint32_t>(_mm256_movemask_epi8(v_cmp_hi));
+
+        // If either half has mismatches, fall back to scalar extraction.
+        if (mmask_lo != 0xFFFFFFFF || mmask_hi != 0xFFFFFFFF) {
+          for (std::size_t i = 0; i < 16; ++i) {
+            const std::uint16_t p1 = r1_data[z_base + x + i];
+            const std::uint16_t p2 = r2_data[z_base + x + i];
+            const std::uint16_t p2_mapped =
+                (p2 < map_size) ? map_data[p2] : kUnmappedPalette;
+            if (p1 != p2_mapped) {
+              const std::string_view n1 =
+                  (p1 < r1.palette.size()) ? r1.palette[p1].name : "unknown";
+              const std::string_view n2 =
+                  (p2 < r2.palette.size()) ? r2.palette[p2].name : "unknown";
+              concurrent_result.push_back(
+                  {{static_cast<std::int32_t>(x + i), y, z}, n1, n2});
+            }
+          }
+        }
+      }
+#endif
+
+      for (; x < sx; ++x) {
+        const std::uint16_t p1 = r1_data[z_base + x];
+        const std::uint16_t p2 = r2_data[z_base + x];
+        const std::uint16_t p2_mapped =
+            (p2 < map_size) ? map_data[p2] : kUnmappedPalette;
+        if (p1 != p2_mapped) {
+          const std::string_view n1 =
+              (p1 < r1.palette.size()) ? r1.palette[p1].name : "unknown";
+          const std::string_view n2 =
+              (p2 < r2.palette.size()) ? r2.palette[p2].name : "unknown";
+          concurrent_result.push_back({{x, y, z}, n1, n2});
+        }
+      }
+    }
+  };
+
+  if (vol < kParallelThreshold) {
+    for (std::int32_t y = 0; y < sy; ++y) {
+      process_y(y);
+    }
+  } else {
+    tbb::parallel_for(
+        tbb::blocked_range<std::int32_t>(0, sy),
+        [&](const tbb::blocked_range<std::int32_t>& range) {
+          for (std::int32_t y = range.begin(); y < range.end(); ++y) {
+            process_y(y);
+          }
+        },
+        tbb::static_partitioner{});
   }
+
+  std::vector<DiffEntry> result;
+  result.reserve(concurrent_result.size());
+  result.insert(
+      result.end(), concurrent_result.begin(), concurrent_result.end());
   return result;
 }
 
