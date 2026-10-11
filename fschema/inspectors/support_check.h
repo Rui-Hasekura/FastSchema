@@ -16,14 +16,18 @@
 #ifndef FSCHEMA_INSPECTORS_SUPPORT_CHECK_H_
 #define FSCHEMA_INSPECTORS_SUPPORT_CHECK_H_
 
+#include <tbb/blocked_range.h>
+#include <tbb/enumerable_thread_specific.h>
+#include <tbb/parallel_for.h>
+
 #include <array>
 #include <cstdint>
 #include <string_view>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
+#include "fschema/base/block_utils.h"
 #include "fschema/base/nbt/property.h"
-#include "fschema/filters/internal/neighbors.h"
 #include "fschema/filters/pos.h"
 #include "fschema/filters/view.h"
 #include "fschema/ir/types.h"
@@ -241,9 +245,12 @@ struct PalettePropsCache {
 
   const auto& rule_lookup = GetSupportRuleLookup();
 
+  const std::size_t pal_size = r.palette.size();
+  if (pal_size == 0) return result;
+
   // 1. Build a lookup index: palette_idx -> rule index (or -1).
-  std::vector<std::int32_t> rule_index(r.palette.size(), -1);
-  for (std::size_t i = 0; i < r.palette.size(); ++i) {
+  std::vector<std::int32_t> rule_index(pal_size, -1);
+  for (std::size_t i = 0; i < pal_size; ++i) {
     auto it = rule_lookup.find(r.palette[i].name);
     if (it != rule_lookup.end()) {
       rule_index[i] = it->second;
@@ -252,8 +259,8 @@ struct PalettePropsCache {
 
   // 2. Pre-extract required properties for matching palette entries.
   // This avoids repeated string/NBT parsing in the inner loop.
-  std::vector<PalettePropsCache> props_cache(r.palette.size());
-  for (std::size_t i = 0; i < r.palette.size(); ++i) {
+  std::vector<PalettePropsCache> props_cache(pal_size);
+  for (std::size_t i = 0; i < pal_size; ++i) {
     if (rule_index[i] < 0) continue;  // Only extract for blocks with rules
     const auto& bs = r.palette[i];
     props_cache[i].facing = ExtractFacing(bs);
@@ -261,121 +268,168 @@ struct PalettePropsCache {
     props_cache[i].hanging = ExtractStringProp(bs, "hanging");
   }
 
+  // 3. Precompute a support-capability LUT for every palette entry so that
+  // neighbor lookups never branch on block names in the inner loop.
+  std::vector<std::uint8_t> is_support_lut(pal_size, 1);
+  for (std::size_t i = 0; i < pal_size; ++i) {
+    const auto& name = r.palette[i].name;
+    if (base::IsAirVariant(name) || name == "minecraft:water" ||
+        name == "minecraft:flowing_water" || name == "minecraft:lava" ||
+        name == "minecraft:flowing_lava") {
+      is_support_lut[i] = 0;
+    }
+  }
+  const std::uint8_t* is_support = is_support_lut.data();
+  const std::uint16_t* data = r.block_indices.data();
+  const std::int32_t* rule_idx_data = rule_index.data();
+
   const auto& bounds = r.bounds;
   const std::int32_t sx = bounds.size[0];
   const std::int32_t sy = bounds.size[1];
   const std::int32_t sz = bounds.size[2];
-  const std::uint16_t* data = r.block_indices.data();
+  const std::uint64_t vol = static_cast<std::uint64_t>(sx) * sy * sz;
+  if (vol == 0) return result;
 
-  for (std::int32_t y = 0; y < sy; ++y) {
-    const std::uint64_t y_base = static_cast<std::uint64_t>(y) * sx * sz;
-    for (std::int32_t z = 0; z < sz; ++z) {
-      const std::uint64_t z_base = y_base + static_cast<std::uint64_t>(z) * sx;
-      for (std::int32_t x = 0; x < sx; ++x) {
-        const std::uint16_t pal = data[z_base + x];
-        if (pal >= rule_index.size()) continue;
+  const std::uint64_t y_stride = static_cast<std::uint64_t>(sx) * sz;
 
-        const std::int32_t r_idx = rule_index[pal];
-        if (r_idx < 0) continue;  // No support rule for this block
+  auto is_support_at =
+      [&](std::int32_t x, std::int32_t y, std::int32_t z) -> bool {
+    if (x < 0 || x >= sx || y < 0 || y >= sy || z < 0 || z >= sz) return false;
+    const std::uint64_t idx = static_cast<std::uint64_t>(y) * y_stride +
+                              static_cast<std::uint64_t>(z) * sx + x;
+    const std::uint16_t p = data[idx];
+    return p < pal_size ? is_support[p] : false;
+  };
 
-        const auto& rule = kSupportRules[r_idx];
-        const auto& pc = props_cache[pal];
+  // Check a single block; extracted so the serial and parallel paths share
+  // the same logic and the parallel path can drive it from a flat index.
+  auto check_block = [&](std::uint64_t li,
+                         std::int32_t x,
+                         std::int32_t y,
+                         std::int32_t z,
+                         std::vector<UnsupportedBlock>& local_result) {
+    const std::uint16_t pal = data[li];
+    if (pal >= pal_size) return;
 
-        if (rule.dir == SupportDir::kFacingInv) {
-          if (pc.facing.empty()) {
-            // Block has a facing-dependent rule but no facing property.
-            // Report it as a data issue.
-            result.push_back(UnsupportedBlock{filters::LocalPos{x, y, z},
-                                              rule.block_name,
-                                              "missing facing property"});
-            continue;
-          }
-        }
+    const std::int32_t r_idx = rule_idx_data[pal];
+    if (r_idx < 0) return;  // No support rule for this block
 
-        if (rule.dir == SupportDir::kAnyHorizontalOrAbove) {
-          bool supported =
-              filters::internal::IsSupportCapableAt(r, x, y + 1, z) ||  // Above
-              filters::internal::IsSupportCapableAt(r, x - 1, y, z) ||  // West
-              filters::internal::IsSupportCapableAt(r, x + 1, y, z) ||  // East
-              filters::internal::IsSupportCapableAt(r, x, y, z - 1) ||  // North
-              filters::internal::IsSupportCapableAt(r, x, y, z + 1);    // South
-          if (!supported) {
-            result.push_back(UnsupportedBlock{
-                filters::LocalPos{x, y, z}, rule.block_name, rule.issue});
-          }
-          continue;
-        }
+    const auto& rule = kSupportRules[r_idx];
+    const auto& pc = props_cache[pal];
+    bool unsupported = false;
+    std::string_view issue_str = rule.issue;
 
-        if (rule.dir == SupportDir::kFaceDependent) {
-          if (pc.face.empty()) {
-            result.push_back(UnsupportedBlock{filters::LocalPos{x, y, z},
-                                              rule.block_name,
-                                              "missing face property"});
-            continue;
-          }
-
-          if (pc.face == "floor") {
-            if (!filters::internal::IsSupportCapableAt(r, x, y - 1, z)) {
-              result.push_back(UnsupportedBlock{
-                  filters::LocalPos{x, y, z}, rule.block_name, rule.issue});
-            }
-            continue;
-          }
-
-          if (pc.face == "ceiling") {
-            if (!filters::internal::IsSupportCapableAt(r, x, y + 1, z)) {
-              result.push_back(UnsupportedBlock{
-                  filters::LocalPos{x, y, z}, rule.block_name, rule.issue});
-            }
-            continue;
-          }
-
-          // face == "wall"
-          if (pc.facing.empty()) {
-            result.push_back(UnsupportedBlock{filters::LocalPos{x, y, z},
-                                              rule.block_name,
-                                              "missing facing property"});
-            continue;
-          }
+    if (rule.dir == SupportDir::kFacingInv) {
+      if (pc.facing.empty()) {
+        // Block has a facing-dependent rule but no facing property.
+        // Report it as a data issue.
+        unsupported = true;
+        issue_str = "missing facing property";
+      } else {
+        const auto [dx, dy, dz] = SupportOffset(rule.dir, pc.facing);
+        if (!is_support_at(x + dx, y + dy, z + dz)) unsupported = true;
+      }
+    } else if (rule.dir == SupportDir::kAnyHorizontalOrAbove) {
+      const bool supported = is_support_at(x, y + 1, z) ||  // Above
+                             is_support_at(x - 1, y, z) ||  // West
+                             is_support_at(x + 1, y, z) ||  // East
+                             is_support_at(x, y, z - 1) ||  // North
+                             is_support_at(x, y, z + 1);    // South
+      if (!supported) unsupported = true;
+    } else if (rule.dir == SupportDir::kFaceDependent) {
+      if (pc.face.empty()) {
+        unsupported = true;
+        issue_str = "missing face property";
+      } else if (pc.face == "floor") {
+        if (!is_support_at(x, y - 1, z)) unsupported = true;
+      } else if (pc.face == "ceiling") {
+        if (!is_support_at(x, y + 1, z)) unsupported = true;
+      } else {  // face == "wall"
+        if (pc.facing.empty()) {
+          unsupported = true;
+          issue_str = "missing facing property";
+        } else {
           const auto [dx, dy, dz] =
               SupportOffset(SupportDir::kFacingInv, pc.facing);
-          if (!filters::internal::IsSupportCapableAt(
-                  r, x + dx, y + dy, z + dz)) {
-            result.push_back(UnsupportedBlock{
-                filters::LocalPos{x, y, z}, rule.block_name, rule.issue});
-          }
-          continue;
-        }
-
-        if (rule.dir == SupportDir::kHangingDependent) {
-          if (pc.hanging.empty()) {
-            result.push_back(UnsupportedBlock{filters::LocalPos{x, y, z},
-                                              rule.block_name,
-                                              "missing hanging property"});
-            continue;
-          }
-          const bool ok =
-              (pc.hanging == "true")
-                  ? filters::internal::IsSupportCapableAt(r, x, y + 1, z)
-                  : filters::internal::IsSupportCapableAt(r, x, y - 1, z);
-          if (!ok) {
-            result.push_back(UnsupportedBlock{
-                filters::LocalPos{x, y, z}, rule.block_name, rule.issue});
-          }
-          continue;
-        }
-
-        const auto [dx, dy, dz] = SupportOffset(rule.dir, pc.facing);
-        const std::int32_t nx = x + dx;
-        const std::int32_t ny = y + dy;
-        const std::int32_t nz = z + dz;
-
-        // Check if the neighbor at the offset position can provide support.
-        if (!filters::internal::IsSupportCapableAt(r, nx, ny, nz)) {
-          result.push_back(UnsupportedBlock{
-              filters::LocalPos{x, y, z}, rule.block_name, rule.issue});
+          if (!is_support_at(x + dx, y + dy, z + dz)) unsupported = true;
         }
       }
+    } else if (rule.dir == SupportDir::kHangingDependent) {
+      if (pc.hanging.empty()) {
+        unsupported = true;
+        issue_str = "missing hanging property";
+      } else {
+        const bool ok = (pc.hanging == "true") ? is_support_at(x, y + 1, z)
+                                               : is_support_at(x, y - 1, z);
+        if (!ok) unsupported = true;
+      }
+    } else {
+      const auto [dx, dy, dz] = SupportOffset(rule.dir, pc.facing);
+      if (!is_support_at(x + dx, y + dy, z + dz)) unsupported = true;
+    }
+
+    if (unsupported) {
+      local_result.push_back(UnsupportedBlock{
+          filters::LocalPos{x, y, z}, rule.block_name, issue_str});
+    }
+  };
+
+  constexpr std::uint64_t kParallelThreshold = 1 << 18;
+  // 16K blocks per chunk: small enough for even load balancing across
+  // threads, large enough to amortize TBB scheduling overhead.
+  constexpr std::uint64_t kChunkSize = 1 << 14;
+
+  if (vol < kParallelThreshold) {
+    for (std::uint64_t li = 0; li < vol; ++li) {
+      const std::uint32_t y = static_cast<std::uint32_t>(li / y_stride);
+      const std::uint64_t rem = li % y_stride;
+      const std::uint32_t z = static_cast<std::uint32_t>(rem / sx);
+      const std::uint32_t x = static_cast<std::uint32_t>(rem % sx);
+      check_block(li, x, y, z, result);
+    }
+  } else {
+    // Thread-local result buffers avoid atomic/lock overhead on the hot
+    // push_back path; they are merged after the parallel region.
+    tbb::enumerable_thread_specific<std::vector<UnsupportedBlock>> tls;
+
+    tbb::parallel_for(
+        tbb::blocked_range<std::uint64_t>(0, vol, kChunkSize),
+        [&](const tbb::blocked_range<std::uint64_t>& range) {
+          auto& local_result = tls.local();
+
+          // Seed the (li, x, y, z) cursor at the chunk start, then walk
+          // linearly so the inner loop has no per-iteration division.
+          std::uint64_t li = range.begin();
+          std::uint32_t y = static_cast<std::uint32_t>(li / y_stride);
+          std::uint64_t rem = li % y_stride;
+          std::uint32_t z = static_cast<std::uint32_t>(rem / sx);
+          std::uint32_t x = static_cast<std::uint32_t>(rem % sx);
+
+          for (std::uint64_t i = range.begin(); i < range.end(); ++i) {
+            check_block(li, x, y, z, local_result);
+
+            ++li;
+            ++x;
+            if (x == sx) {
+              x = 0;
+              ++z;
+              if (z == sz) {
+                z = 0;
+                ++y;
+              }
+            }
+          }
+        },
+        tbb::static_partitioner{});
+
+    // Merge thread-local buffers into the final result.
+    std::size_t total_size = 0;
+    for (const auto& vec : tls) {
+      total_size += vec.size();
+    }
+    result.reserve(total_size);
+    for (const auto& vec : tls) {
+      result.insert(result.end(), vec.begin(), vec.end());
     }
   }
 
