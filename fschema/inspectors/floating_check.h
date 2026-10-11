@@ -144,19 +144,15 @@ struct FloatingCheckResult {
               const std::uint16_t pal = data[li];
               if (pal >= pal_size || is_air[pal]) continue;
 
-              bool floating = false;
-              if (x == 0 || is_air[data[li - 1]])
-                floating = true;
-              else if (x == sx - 1 || is_air[data[li + 1]])
-                floating = true;
-              else if (z == 0 || is_air[data[li - sx]])
-                floating = true;
-              else if (z == sz - 1 || is_air[data[li + sx]])
-                floating = true;
-              else if (y == 0 || is_air[data[li - y_stride]])
-                floating = true;
-              else if (y == sy - 1 || is_air[data[li + y_stride]])
-                floating = true;
+              // A block is floating if ALL 6 neighbors are air
+              // (or out of bounds).
+              bool floating = true;
+              if (x != 0 && !is_air[data[li - 1]]) floating = false;
+              if (x != sx - 1 && !is_air[data[li + 1]]) floating = false;
+              if (z != 0 && !is_air[data[li - sx]]) floating = false;
+              if (z != sz - 1 && !is_air[data[li + sx]]) floating = false;
+              if (y != 0 && !is_air[data[li - y_stride]]) floating = false;
+              if (y != sy - 1 && !is_air[data[li + y_stride]]) floating = false;
 
               if (floating) {
                 const auto& name = r.palette[pal].name;
@@ -186,19 +182,17 @@ struct FloatingCheckResult {
                     const std::uint16_t pal = data[li];
                     if (pal >= pal_size || is_air[pal]) continue;
 
-                    bool floating = false;
-                    if (x == 0 || is_air[data[li - 1]])
-                      floating = true;
-                    else if (x == sx - 1 || is_air[data[li + 1]])
-                      floating = true;
-                    else if (z == 0 || is_air[data[li - sx]])
-                      floating = true;
-                    else if (z == sz - 1 || is_air[data[li + sx]])
-                      floating = true;
-                    else if (y == 0 || is_air[data[li - y_stride]])
-                      floating = true;
-                    else if (y == sy - 1 || is_air[data[li + y_stride]])
-                      floating = true;
+                    // A block is floating if ALL 6 neighbors are air
+                    // (or out of bounds).
+                    bool floating = true;
+                    if (x != 0 && !is_air[data[li - 1]]) floating = false;
+                    if (x != sx - 1 && !is_air[data[li + 1]]) floating = false;
+                    if (z != 0 && !is_air[data[li - sx]]) floating = false;
+                    if (z != sz - 1 && !is_air[data[li + sx]]) floating = false;
+                    if (y != 0 && !is_air[data[li - y_stride]])
+                      floating = false;
+                    if (y != sy - 1 && !is_air[data[li + y_stride]])
+                      floating = false;
 
                     if (floating) {
                       const auto& name = r.palette[pal].name;

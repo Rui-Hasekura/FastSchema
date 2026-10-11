@@ -80,12 +80,14 @@ namespace fschema::filters::internal {
                             static_cast<std::uint64_t>(z) * sx + x;
   const std::uint16_t* data = r.block_indices.data();
 
-  if (x == 0 || !r.IsAir(data[idx - 1])) return false;
-  if (x == sx - 1 || !r.IsAir(data[idx + 1])) return false;
-  if (z == 0 || !r.IsAir(data[idx - sx])) return false;
-  if (z == sz - 1 || !r.IsAir(data[idx + sx])) return false;
-  if (y == 0 || !r.IsAir(data[idx - y_stride])) return false;
-  if (y == sy - 1 || !r.IsAir(data[idx + y_stride])) return false;
+  // A block is floating if ALL 6 neighbors are air (or out of bounds).
+  // If any neighbor is in bounds and NOT air, it's not floating.
+  if (x != 0 && !r.IsAir(data[idx - 1])) return false;
+  if (x != sx - 1 && !r.IsAir(data[idx + 1])) return false;
+  if (z != 0 && !r.IsAir(data[idx - sx])) return false;
+  if (z != sz - 1 && !r.IsAir(data[idx + sx])) return false;
+  if (y != 0 && !r.IsAir(data[idx - y_stride])) return false;
+  if (y != sy - 1 && !r.IsAir(data[idx + y_stride])) return false;
 
   return true;
 }
