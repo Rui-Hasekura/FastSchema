@@ -19,7 +19,7 @@
 #include <cstdint>
 #include <vector>
 
-#include "fschema/filters/internal/neighbors.h"
+#include "fschema/base/block_utils.h"
 #include "fschema/filters/pos.h"
 #include "fschema/ir/types.h"
 
@@ -35,16 +35,45 @@ namespace fschema::filters {
 /// 2. Air blocks are never selected (they are not "surface").
 class SurfaceFilter {
  public:
-  explicit SurfaceFilter(const ir::Region& r) noexcept : region_(&r) {}
+  explicit SurfaceFilter(const ir::Region& r) noexcept : region_(&r) {
+    // Precompute thread-safe local LUT to avoid data races in r.IsAir()
+    is_air_lut_.assign(r.palette.size(), 0);
+    for (std::size_t i = 0; i < r.palette.size(); ++i) {
+      if (fschema::base::IsAirVariant(r.palette[i].name)) {
+        is_air_lut_[i] = 1;
+      }
+    }
+  }
 
-    [[nodiscard]] bool operator()(LocalPos p, std::uint16_t idx) const noexcept {
-    if (idx >= region_->palette.size()) return false;
-    if (region_->IsAir(idx)) return false;
-    return filters::internal::IsExposedAt(*region_, p.x, p.y, p.z);
+  [[nodiscard]] bool operator()(LocalPos p, std::uint16_t idx) const noexcept {
+    const auto& r = *region_;
+    if (idx >= r.palette.size() || is_air_lut_[idx]) return false;
+
+    const auto& b = r.bounds;
+    const std::int32_t sx = b.size[0];
+    const std::int32_t sy = b.size[1];
+    const std::int32_t sz = b.size[2];
+    const std::uint64_t y_stride = static_cast<std::uint64_t>(sx) * sz;
+
+    const std::uint64_t li = static_cast<std::uint64_t>(p.y) * y_stride +
+                             static_cast<std::uint64_t>(p.z) * sx + p.x;
+    const std::uint16_t* data = r.block_indices.data();
+    const std::uint8_t* is_air = is_air_lut_.data();
+
+    // Inline 6-neighbor check with pointer arithmetic
+    if (p.x == 0 || is_air[data[li - 1]]) return true;
+    if (p.x == sx - 1 || is_air[data[li + 1]]) return true;
+    if (p.z == 0 || is_air[data[li - sx]]) return true;
+    if (p.z == sz - 1 || is_air[data[li + sx]]) return true;
+    if (p.y == 0 || is_air[data[li - y_stride]]) return true;
+    if (p.y == sy - 1 || is_air[data[li + y_stride]]) return true;
+
+    return false;
   }
 
  private:
   const ir::Region* region_;
+  std::vector<std::uint8_t> is_air_lut_;
 };
 
 }  // namespace fschema::filters
