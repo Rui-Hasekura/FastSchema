@@ -44,6 +44,7 @@ jobs:
           -G Ninja
           -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
           -DFASTSCHEMA_BUILD_TESTS=ON
+          -DFASTSCHEMA_BUILD_BENCHMARKS=ON
 
       - name: Build
         run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
