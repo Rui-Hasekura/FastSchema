@@ -16,6 +16,7 @@
 #include "fschema/ir/internal/varint_pack.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -105,7 +106,8 @@ FSCHEMA_HOT std::size_t PackVarintInto(std::byte* out,
     const std::size_t nchunks = (n + kChunk - 1) / kChunk;
     tbb::parallel_for(std::size_t{0}, nchunks, [&](std::size_t c) {
       const std::size_t b = c * kChunk;
-      PackRange(out + b, indices.subspan(b, std::min(kChunk, n - b)), pal);
+      [[maybe_unused]] const std::size_t written =
+          PackRange(out + b, indices.subspan(b, std::min(kChunk, n - b)), pal);
     });
     return n;
   }
@@ -119,7 +121,9 @@ FSCHEMA_HOT std::size_t PackVarintInto(std::byte* out,
   for (std::size_t c = 0; c < nchunks; ++c) off[c + 1] += off[c];
   tbb::parallel_for(std::size_t{0}, nchunks, [&](std::size_t c) {
     const std::size_t b = c * kChunk;
-    PackRange(out + off[c], indices.subspan(b, std::min(kChunk, n - b)), pal);
+    [[maybe_unused]] const std::size_t written = PackRange(
+        out + off[c], indices.subspan(b, std::min(kChunk, n - b)), pal);
+    assert(written == off[c + 1] - off[c]);
   });
   return static_cast<std::size_t>(off[nchunks]);
 }

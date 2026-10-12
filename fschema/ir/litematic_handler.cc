@@ -17,6 +17,7 @@
 
 #include <array>
 #include <bit>
+#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -323,7 +324,11 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
       const std::size_t packed_bytes =
           internal::LitematicLongCount(pack_src.size(), bpb) * 8;
       auto packed = std::make_unique_for_overwrite<std::byte[]>(packed_bytes);
-      internal::PackIndicesLitematicInto(packed.get(), pack_src, bpb);
+
+      [[maybe_unused]] const std::size_t written =
+          internal::PackIndicesLitematicInto(packed.get(), pack_src, bpb);
+      assert(written == packed_bytes);
+
       writer.WriteLongArrayFieldBE(
           "BlockStates",
           std::span<const std::byte>(packed.get(), packed_bytes));
