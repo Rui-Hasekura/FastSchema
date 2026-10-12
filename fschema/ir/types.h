@@ -87,19 +87,6 @@ struct BlockEntity {
   std::span<const std::byte> raw_nbt;
 };
 
-// TODO: implement v2 -> v3 biome conversion (v3 is a 3D superset of v2)
-enum class BiomeLayout : std::uint8_t {
-  kNone = 0,
-  k2D = 1,  // Sponge Schematic v2
-  k3D = 2,  // Sponge Schematic v3
-};
-
-struct BiomeData {
-  std::vector<std::string_view> palette;
-  memory::UnInitBuffer<std::uint16_t> indices;
-  BiomeLayout layout = BiomeLayout::kNone;
-};
-
 // An axis-aligned 3D bounding box representing a region's spatial extents.
 struct BoundingBox {
   // The world-space origin (minimum corner) of the box.

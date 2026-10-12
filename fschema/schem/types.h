@@ -84,9 +84,6 @@ struct Schematic {
   std::vector<BlockEntity> block_entities;
   std::vector<Entity> entities;
 
-  std::vector<std::string_view> biome_palette;
-  std::span<const std::byte> raw_biome_data;
-
   std::unique_ptr<std::vector<std::byte>> owner;
   std::unique_ptr<memory::Arena> arena;
   std::span<const std::byte> raw_compound;
@@ -95,14 +92,6 @@ struct Schematic {
 [[nodiscard]] inline std::uint64_t VolumeOf(const Schematic& s) noexcept {
   return static_cast<std::uint64_t>(s.width) *
          static_cast<std::uint64_t>(s.height) *
-         static_cast<std::uint64_t>(s.length);
-}
-
-[[nodiscard]] inline std::uint64_t BiomeVolumeOf(const Schematic& s) noexcept {
-  if (s.version == Version::kV3) {
-    return VolumeOf(s);
-  }
-  return static_cast<std::uint64_t>(s.width) *
          static_cast<std::uint64_t>(s.length);
 }
 

@@ -33,12 +33,6 @@ namespace fschema::schem::internal {
     base::ByteReader& reader,
     std::vector<BlockState>& palette);
 
-// Parses a biome palette Compound.
-// Keys are biome resource location strings, values are Int indices.
-[[nodiscard]] ParseResult<void> ParseBiomePalette(
-    base::ByteReader& reader,
-    std::vector<std::string_view>& palette);
-
 }  // namespace fschema::schem::internal
 
 #endif  // FSCHEMA_SCHEM_INTERNAL_PALETTE_H_

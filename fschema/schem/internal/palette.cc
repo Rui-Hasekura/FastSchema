@@ -78,46 +78,4 @@ struct PaletteEntry {
   return {};
 }
 
-[[nodiscard]] ParseResult<void> ParseBiomePalette(
-    base::ByteReader& reader,
-    std::vector<std::string_view>& palette) {
-  std::vector<PaletteEntry> entries;
-  entries.reserve(32);
-  std::int32_t max_index = -1;
-
-  auto r = ForEachCompoundField(
-      reader, [&](std::string_view name, base::TagType t) -> ParseResult<void> {
-        if (t != base::TagType::kInt) {
-          return base::SkipPayload(reader, t);
-        }
-        auto v = reader.Read<std::int32_t>();
-        if (!v) return std::unexpected(v.error());
-        if (*v < 0) [[unlikely]] {
-          return std::unexpected(reader.Error(ParseError::Code::kNegativeIndex));
-        }
-        entries.push_back({name, *v});
-        if (*v > max_index) max_index = *v;
-        return {};
-      });
-  if (!r) return std::unexpected(r.error());
-
-  if (max_index < 0) {
-    palette.clear();
-    return {};
-  }
-
-  if (static_cast<std::size_t>(max_index + 1) >
-      reader.limits().max_palette_size) [[unlikely]] {
-    return std::unexpected(
-        ParseError{ParseError::Code::kOversizedPayload, "BiomePalette", 0});
-  }
-
-  palette.resize(static_cast<std::size_t>(max_index + 1));
-  for (const auto& entry : entries) {
-    palette[static_cast<std::size_t>(entry.index)] = entry.key;
-  }
-
-  return {};
-}
-
 }  // namespace fschema::schem::internal
