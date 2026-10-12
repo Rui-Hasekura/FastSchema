@@ -379,14 +379,14 @@ template <typename DTag, typename ErrorFn>
         ExtractBlock(raw_data, long_count, bits_per_block, tail_idx, bit_mask);
     if (idx >= palette_size) [[unlikely]] {
       return std::unexpected(ParseError{
-          ParseError::Code::PaletteIndexOutOfRange, "BlockStates", 0});
+          ParseError::Code::kPaletteIndexOutOfRange, "BlockStates", 0});
     }
     out[tail_idx] = idx;
   }
 
   if (error_flag.load(std::memory_order_relaxed) != 0) [[unlikely]] {
     return std::unexpected(
-        ParseError{ParseError::Code::PaletteIndexOutOfRange, "BlockStates", 0});
+        ParseError{ParseError::Code::kPaletteIndexOutOfRange, "BlockStates", 0});
   }
 
   return {};
