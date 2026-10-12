@@ -122,42 +122,6 @@ namespace fschema::schem::internal {
   return {};
 }
 
-[[nodiscard]] static ParseResult<void> ParseBiomesContainer(
-    base::ByteReader& reader,
-    Schematic& out) {
-  std::span<const std::byte> biome_data_raw;
-  bool have_palette = false;
-  bool have_data = false;
-
-  auto result = ForEachCompoundField(
-      reader, [&](std::string_view name, base::TagType t) -> ParseResult<void> {
-        if (name == "Palette" && t == base::TagType::kCompound) {
-          auto r = ParseBiomePalette(reader, out.biome_palette);
-          if (!r) return std::unexpected(r.error());
-          have_palette = true;
-        } else if (name == "Data" && t == base::TagType::kByteArray) {
-          auto len = reader.ReadLength(reader.limits().max_array_elements);
-          if (!len) return std::unexpected(len.error());
-          auto span = reader.PeekRaw(*len);
-          if (!span) return std::unexpected(span.error());
-          biome_data_raw = *span;
-          reader.Advance(*len);
-          have_data = true;
-        } else {
-          return base::SkipPayload(reader, t);
-        }
-        return {};
-      });
-  if (!result) return std::unexpected(result.error());
-
-  if (!have_palette || !have_data) {
-    return {};
-  }
-
-  out.raw_biome_data = biome_data_raw;
-  return {};
-}
-
 [[nodiscard]] static ParseResult<void>
 ParseSchematicFields(base::ByteReader& reader, Schematic& out, bool is_v3) {
   bool have_version = false;
@@ -167,7 +131,6 @@ ParseSchematicFields(base::ByteReader& reader, Schematic& out, bool is_v3) {
   bool have_length = false;
 
   std::span<const std::byte> v2_block_data_raw;
-  std::span<const std::byte> v2_biome_data_raw;
   bool v2_have_block_data = false;
 
   const std::size_t schematic_start = reader.pos();
@@ -227,9 +190,7 @@ ParseSchematicFields(base::ByteReader& reader, Schematic& out, bool is_v3) {
           if (!r) [[unlikely]]
             return std::unexpected(r.error());
         } else if (is_v3 && name == "Biomes" && t == base::TagType::kCompound) {
-          auto r = ParseBiomesContainer(reader, out);
-          if (!r) [[unlikely]]
-            return std::unexpected(r.error());
+          return base::SkipPayload(reader, t);
         } else if (!is_v3 && name == "Palette" &&
                    t == base::TagType::kCompound) {
           auto r = ParseBlockPalette(reader, out.palette);
@@ -254,23 +215,10 @@ ParseSchematicFields(base::ByteReader& reader, Schematic& out, bool is_v3) {
               reader, out.block_entities, /*is_v3=*/false, *out.arena);
           if (!r) [[unlikely]]
             return std::unexpected(r.error());
-        } else if (!is_v3 && name == "BiomePalette" &&
-                   t == base::TagType::kCompound) {
-          auto r = ParseBiomePalette(reader, out.biome_palette);
-          if (!r) [[unlikely]]
-            return std::unexpected(r.error());
-        } else if (!is_v3 && name == "BiomePaletteMax" &&
-                   t == base::TagType::kInt) {
-          auto v = reader.Read<std::int32_t>();
-          if (!v) return std::unexpected(v.error());
-        } else if (!is_v3 && name == "BiomeData" &&
-                   t == base::TagType::kByteArray) {
-          auto len = reader.ReadLength(reader.limits().max_array_elements);
-          if (!len) return std::unexpected(len.error());
-          auto span = reader.PeekRaw(*len);
-          if (!span) return std::unexpected(span.error());
-          v2_biome_data_raw = *span;
-          reader.Advance(*len);
+        } else if (!is_v3 &&
+                   (name == "BiomePalette" || name == "BiomePaletteMax" ||
+                    name == "BiomeData")) {
+          return base::SkipPayload(reader, t);
         } else if (name == "Entities" && t == base::TagType::kList) {
           auto r = ParseEntities(reader, out.entities, is_v3, *out.arena);
           if (!r) return std::unexpected(r.error());
@@ -311,10 +259,6 @@ ParseSchematicFields(base::ByteReader& reader, Schematic& out, bool is_v3) {
 
   if (!is_v3 && v2_have_block_data) {
     out.raw_block_data = v2_block_data_raw;
-  }
-
-  if (!is_v3 && !v2_biome_data_raw.empty()) {
-    out.raw_biome_data = v2_biome_data_raw;
   }
 
   out.raw_compound = reader.SpanFrom(schematic_start);
