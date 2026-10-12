@@ -97,20 +97,6 @@ inline constexpr std::string_view kSchemV3Skip[] = {"Version",
   return out;
 }
 
-[[nodiscard]] inline ParseResult<void> CaptureAsExtension(
-    base::ByteReader& reader,
-    std::string_view name,
-    base::TagType tag_type,
-    std::size_t field_start,
-    ir::SourceFormat source_format,
-    std::vector<ir::Extension>& out) {
-  auto skip_res = base::SkipPayload(reader, tag_type);
-  if (!skip_res) return std::unexpected(skip_res.error());
-
-  out.push_back(ir::Extension{name, tag_type, reader.SpanFrom(field_start)});
-  return {};
-}
-
 [[nodiscard]] ParseResult<void> FilterAndWriteFields(
     std::span<const std::byte> raw_nbt,
     std::span<const std::string_view> skip_names,
