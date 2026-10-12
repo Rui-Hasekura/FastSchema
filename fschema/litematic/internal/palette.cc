@@ -32,11 +32,11 @@ namespace fschema::litematic::internal {
   if (!header) return std::unexpected(header.error());
   auto [elem_type, count] = *header;
 
-  if (elem_type == base::TagType::End || count == 0) return {};
-  if (elem_type != base::TagType::Compound)
-    return std::unexpected(reader.Error(ParseError::Code::InvalidTagId));
+  if (elem_type == base::TagType::kEnd || count == 0) return {};
+  if (elem_type != base::TagType::kCompound)
+    return std::unexpected(reader.Error(ParseError::Code::kInvalidTagId));
   if (count > reader.limits().max_palette_size)
-    return std::unexpected(reader.Error(ParseError::Code::OversizedPayload));
+    return std::unexpected(reader.Error(ParseError::Code::kOversizedPayload));
 
   palette.clear();
   palette.reserve(count);
@@ -44,7 +44,7 @@ namespace fschema::litematic::internal {
   // List scope (counts toward NBT depth).
   base::DepthGuard list_guard(reader);
   if (reader.depth() > reader.limits().max_nbt_depth) [[unlikely]] {
-    return std::unexpected(reader.Error(ParseError::Code::DepthLimitExceeded));
+    return std::unexpected(reader.Error(ParseError::Code::kDepthLimitExceeded));
   }
 
   for (std::size_t i = 0; i < count; ++i) {
@@ -54,14 +54,14 @@ namespace fschema::litematic::internal {
     auto result = ForEachCompoundField(
         reader,
         [&](std::string_view name, base::TagType t) -> ParseResult<void> {
-          if (name == "Name" && t == base::TagType::String) {
+          if (name == "Name" && t == base::TagType::kString) {
             auto v = reader.ReadStringView();
             if (!v) return std::unexpected(v.error());
             entry.name = *v;
             have_name = true;
-          } else if (name == "Properties" && t == base::TagType::Compound) {
+          } else if (name == "Properties" && t == base::TagType::kCompound) {
             const auto start = reader.pos();
-            auto s = base::SkipPayload(reader, base::TagType::Compound);
+            auto s = base::SkipPayload(reader, base::TagType::kCompound);
             if (!s) return std::unexpected(s.error());
             entry.properties = reader.SpanFrom(start);
           } else {
@@ -72,7 +72,7 @@ namespace fschema::litematic::internal {
     if (!result) return std::unexpected(result.error());
 
     if (!have_name) [[unlikely]] {
-      return std::unexpected(reader.Error(ParseError::Code::MissingField));
+      return std::unexpected(reader.Error(ParseError::Code::kMissingField));
     }
     palette.push_back(std::move(entry));
   }

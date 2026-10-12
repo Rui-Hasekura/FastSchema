@@ -77,7 +77,10 @@ struct TestFile {
   return out;
 }
 
-static std::vector<TestFile> files = LoadTestFiles();
+[[nodiscard]] const std::vector<TestFile>& GetFiles() {
+  static const std::vector<TestFile> files = LoadTestFiles();
+  return files;
+}
 
 void PrintErrorFn(const fschema::ParseError& e) {
   std::println("  [ParseError] {} at path=\"{}\" offset={}",
@@ -146,6 +149,7 @@ void PrintErrorFn(const fschema::ParseError& e) {
 }
 
 static void BM_ParseSchem(benchmark::State& st) {
+  const auto& files = GetFiles();
   if (files.empty()) {
     st.SkipWithError("No test files loaded");
     return;
@@ -200,6 +204,7 @@ static void BM_ParseSchem(benchmark::State& st) {
 }
 
 static void BM_UnpackSchem(benchmark::State& st) {
+  const auto& files = GetFiles();
   if (files.empty()) {
     st.SkipWithError("No test files loaded");
     return;
@@ -251,6 +256,8 @@ int main(int argc, char* argv[]) {
   std::println("Highway supported: 0x{:x}", hwy::SupportedTargets());
 
   bool all_ok = true;
+  const auto& files = GetFiles();
+
   if (files.empty()) {
     std::println("  [fatal] No valid .schem test files found.");
     all_ok = false;

@@ -59,7 +59,7 @@ ParseResult<std::vector<std::byte>> SchemHandler::Encode(
 
   if (ir.regions.empty()) {
     return std::unexpected(
-        ParseError{ParseError::Code::MissingField, "Regions", 0});
+        ParseError{ParseError::Code::kMissingField, "Regions", 0});
   }
   if (ir.regions.size() == 1) {
     target_region = &ir.regions[0];
@@ -67,7 +67,7 @@ ParseResult<std::vector<std::byte>> SchemHandler::Encode(
     switch (options.multi_region) {
       case EncodeOptions::MultiRegionStrategy::kStrictSingle:
         return std::unexpected(
-            ParseError{ParseError::Code::UnsupportedVersion, "MultiRegion", 0});
+            ParseError{ParseError::Code::kUnsupportedVersion, "MultiRegion", 0});
       case EncodeOptions::MultiRegionStrategy::kExtractFirst:
         target_region = &ir.regions[0];
         break;
@@ -80,7 +80,7 @@ ParseResult<std::vector<std::byte>> SchemHandler::Encode(
         }
         if (!target_region)
           return std::unexpected(
-              ParseError{ParseError::Code::MissingField, "ExtractRegion", 0});
+              ParseError{ParseError::Code::kMissingField, "ExtractRegion", 0});
         break;
       case EncodeOptions::MultiRegionStrategy::kMergeBoundingBox: {
         merge_arena = std::make_unique<memory::Arena>();
@@ -97,7 +97,7 @@ ParseResult<std::vector<std::byte>> SchemHandler::Encode(
   if (options.target_version != 0 && options.target_version != 2 &&
       options.target_version != 3) {
     return std::unexpected(
-        ParseError{ParseError::Code::UnsupportedVersion, "TargetVersion", 0});
+        ParseError{ParseError::Code::kUnsupportedVersion, "TargetVersion", 0});
   }
   bool is_v3 = (options.target_version == 0 || options.target_version == 3);
   bool use_ext = ShouldUseExtensions(ir, is_v3);
@@ -146,7 +146,7 @@ ParseResult<std::vector<std::byte>> SchemHandler::Encode(
     if (val < std::numeric_limits<std::int16_t>::min() ||
         val > std::numeric_limits<std::int16_t>::max()) {
       return std::unexpected(ParseError{
-          ParseError::Code::OversizedPayload, "DimensionOverflow", 0});
+          ParseError::Code::kOversizedPayload, "DimensionOverflow", 0});
     }
     return {};
   };
@@ -227,7 +227,7 @@ ParseResult<std::vector<std::byte>> SchemHandler::Encode(
 
   // Block entities
   writer.BeginListField("BlockEntities",
-                        base::TagType::Compound,
+                        base::TagType::kCompound,
                         target_region->block_entities.size());
   for (const auto& be : target_region->block_entities) {
     writer.BeginListElementCompound();
@@ -267,11 +267,11 @@ ParseResult<std::vector<std::byte>> SchemHandler::Encode(
 
   // Entities
   writer.BeginListField(
-      "Entities", base::TagType::Compound, target_region->entities.size());
+      "Entities", base::TagType::kCompound, target_region->entities.size());
   for (const auto& ent : target_region->entities) {
     writer.BeginListElementCompound();
     writer.WriteStringField("Id", ent.id);
-    writer.BeginListField("Pos", base::TagType::Double, 3);
+    writer.BeginListField("Pos", base::TagType::kDouble, 3);
     writer.WriteListElementDouble(ent.position[0]);
     writer.WriteListElementDouble(ent.position[1]);
     writer.WriteListElementDouble(ent.position[2]);
@@ -279,12 +279,12 @@ ParseResult<std::vector<std::byte>> SchemHandler::Encode(
     if (is_v3) {
       writer.BeginCompoundField("Data");
     }
-    writer.BeginListField("Motion", base::TagType::Double, 3);
+    writer.BeginListField("Motion", base::TagType::kDouble, 3);
     writer.WriteListElementDouble(ent.motion[0]);
     writer.WriteListElementDouble(ent.motion[1]);
     writer.WriteListElementDouble(ent.motion[2]);
     writer.EndListField();
-    writer.BeginListField("Rotation", base::TagType::Float, 2);
+    writer.BeginListField("Rotation", base::TagType::kFloat, 2);
     writer.WriteListElementFloat(ent.rotation[0]);
     writer.WriteListElementFloat(ent.rotation[1]);
     writer.EndListField();

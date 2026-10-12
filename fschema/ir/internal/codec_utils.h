@@ -76,13 +76,13 @@ inline constexpr std::string_view kSchemV3Skip[] = {"Version",
   if (nbt.empty()) return out;
   out.reserve(nbt.size());
   fschema::base::ByteReader reader(nbt, limits);
-  reader.push_depth();
+  reader.PushDepth();
   for (;;) {
     std::string_view key;
     auto tag_result = reader.ReadCompoundEntryHeaderView(key);
     if (!tag_result) break;
-    if (*tag_result == fschema::base::TagType::End) break;
-    if (*tag_result != fschema::base::TagType::String) {
+    if (*tag_result == fschema::base::TagType::kEnd) break;
+    if (*tag_result != fschema::base::TagType::kString) {
       (void)fschema::base::SkipPayload(reader, *tag_result);
       continue;
     }
@@ -93,7 +93,7 @@ inline constexpr std::string_view kSchemV3Skip[] = {"Version",
     out += "=";
     out += *value;
   }
-  reader.pop_depth();
+  reader.PopDepth();
   return out;
 }
 

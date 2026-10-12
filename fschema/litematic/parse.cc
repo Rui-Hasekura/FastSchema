@@ -39,7 +39,7 @@ namespace fschema::litematic {
 
   if (!decompressed || decompressed->empty()) {
     return std::unexpected(
-        ParseError::At(ParseError::Code::Truncated, std::string{}, 0));
+        ParseError::At(ParseError::Code::kTruncated, std::string{}, 0));
   }
   out.owner = std::move(decompressed);
 

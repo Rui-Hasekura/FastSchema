@@ -111,7 +111,7 @@ TEST_P(EditorTest, FillModifiesBlocks) {
   auto fill_res = ed::Fill(*view_res, target_block);
   ASSERT_TRUE(fill_res.has_value()) << "Fill failed";
 
-  view_res->for_each([&](filt::LocalPos p, std::uint16_t pal_idx) {
+  view_res->ForEach([&](filt::LocalPos p, std::uint16_t pal_idx) {
     ASSERT_LT(pal_idx, region_->palette.size());
     EXPECT_EQ(region_->palette[pal_idx].name, target_block);
   });
@@ -177,7 +177,7 @@ TEST_P(EditorTest, RotateFourTimesReturnsOriginal) {
                                             current.bounds.size[1] - 1,
                                             current.bounds.size[2] - 1},
                             *schema_->arena);
-    auto rot_res = ed::Rotate(*v, filt::Axis::Y, 1, *schema_->arena);
+    auto rot_res = ed::Rotate(*v, filt::Axis::kY, 1, *schema_->arena);
     ASSERT_TRUE(rot_res.has_value());
     current = std::move(*rot_res);
   }

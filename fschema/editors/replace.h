@@ -187,7 +187,7 @@ template <filters::Filter F, class Mapper>
                                         Mapper mapper) {
   ir::Region& r = v.region();
   std::uint16_t* FSCHEMA_RESTRICT data = r.block_indices.data();
-  v.for_each_linear([&](std::uint64_t linear_idx, std::uint16_t pal) {
+  v.ForEachLinear([&](std::uint64_t linear_idx, std::uint16_t pal) {
     const std::uint16_t new_pal = mapper(pal);
     if (new_pal != pal) {
       data[linear_idx] = new_pal;

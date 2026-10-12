@@ -52,7 +52,7 @@ FSCHEMA_HOT ParseResult<void> FilterAndWriteFields(
     const std::size_t field_start = reader.pos();
     auto tag = reader.ReadCompoundEntryHeaderView(name);
     if (!tag) return std::unexpected(tag.error());
-    if (*tag == fschema::base::TagType::End) break;
+    if (*tag == fschema::base::TagType::kEnd) break;
     auto skip = fschema::base::SkipPayload(reader, *tag);
     if (!skip) return std::unexpected(skip.error());
     if (!IsSkipName(name, skip_names)) {
@@ -73,9 +73,9 @@ FSCHEMA_HOT ParseResult<void> FilterAndWriteTileEntityFields(
     const std::size_t field_start = reader.pos();
     auto tag = reader.ReadCompoundEntryHeaderView(name);
     if (!tag) return std::unexpected(tag.error());
-    if (*tag == fschema::base::TagType::End) break;
+    if (*tag == fschema::base::TagType::kEnd) break;
 
-    if (name == "components" && *tag == fschema::base::TagType::Compound) {
+    if (name == "components" && *tag == fschema::base::TagType::kCompound) {
       const std::size_t comp_start = reader.pos();
       auto skip = fschema::base::SkipPayload(reader, *tag);
       if (!skip) return std::unexpected(skip.error());

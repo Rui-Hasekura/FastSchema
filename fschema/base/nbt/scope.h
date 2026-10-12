@@ -28,9 +28,9 @@ namespace fschema::base {
 class DepthGuard {
  public:
   explicit DepthGuard(ByteReader& reader) noexcept : reader_(reader) {
-    reader_.push_depth();
+    reader_.PushDepth();
   }
-  ~DepthGuard() noexcept { reader_.pop_depth(); }
+  ~DepthGuard() noexcept { reader_.PopDepth(); }
 
   DepthGuard(const DepthGuard&) = delete;
   DepthGuard& operator=(const DepthGuard&) = delete;
@@ -47,13 +47,13 @@ template <typename Fn>
     Fn&& fn) {
   DepthGuard guard(reader);
   if (reader.depth() > reader.limits().max_nbt_depth) [[unlikely]] {
-    return std::unexpected(reader.Error(ParseError::Code::DepthLimitExceeded));
+    return std::unexpected(reader.Error(ParseError::Code::kDepthLimitExceeded));
   }
   for (;;) {
     std::string_view name;
     auto tag = reader.ReadCompoundEntryHeaderView(name);
     if (!tag) return std::unexpected(tag.error());
-    if (*tag == TagType::End) [[unlikely]] break;
+    if (*tag == TagType::kEnd) [[unlikely]] break;
     auto result = fn(name, *tag);
     if (!result) return std::unexpected(result.error());
   }

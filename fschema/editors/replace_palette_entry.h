@@ -39,12 +39,12 @@ namespace fschema::editors {
     std::string_view new_name) {
   if (target_idx == 0) [[unlikely]] {
     return std::unexpected(
-        ParseError{ParseError::Code::PaletteIndexOutOfRange,
+        ParseError{ParseError::Code::kPaletteIndexOutOfRange,
                    "ReplacePaletteEntry: index 0 is protected (air slot)",
                    0});
   }
   if (target_idx >= r.palette.size()) [[unlikely]] {
-    return std::unexpected(ParseError{ParseError::Code::PaletteIndexOutOfRange,
+    return std::unexpected(ParseError{ParseError::Code::kPaletteIndexOutOfRange,
                                       "ReplacePaletteEntry: index out of range",
                                       0});
   }

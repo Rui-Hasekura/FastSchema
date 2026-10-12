@@ -37,9 +37,9 @@ template <typename T, std::size_t N>
   auto [elem_type, count] = *header;
 
   std::array<T, N> result{};
-  if (elem_type == TagType::End || count == 0) return result;
+  if (elem_type == TagType::kEnd || count == 0) return result;
   if (elem_type != expected_type) {
-    return std::unexpected(reader.Error(ParseError::Code::InvalidTagId));
+    return std::unexpected(reader.Error(ParseError::Code::kInvalidTagId));
   }
   if (count != N) {
     // Length mismatch: consume the values but discard.
@@ -60,11 +60,11 @@ template <typename T, std::size_t N>
 }  // namespace
 
 ParseResult<std::array<double, 3>> ReadVec3DoubleList(ByteReader& reader) {
-  return ReadVecList<double, 3>(reader, TagType::Double);
+  return ReadVecList<double, 3>(reader, TagType::kDouble);
 }
 
 ParseResult<std::array<float, 2>> ReadVec2FloatList(ByteReader& reader) {
-  return ReadVecList<float, 2>(reader, TagType::Float);
+  return ReadVecList<float, 2>(reader, TagType::kFloat);
 }
 
 }  // namespace fschema::base

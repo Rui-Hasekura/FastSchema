@@ -239,7 +239,7 @@ void BM_Mirror(benchmark::State& st) {
   if (!ls.view) return;
 
   for (auto _ : st) {
-    auto res = ed::Mirror(*ls.view, filt::Axis::X, *ls.schema->arena);
+    auto res = ed::Mirror(*ls.view, filt::Axis::kX, *ls.schema->arena);
     benchmark::DoNotOptimize(res);
   }
   st.SetBytesProcessed(static_cast<std::int64_t>(ls.original_blocks.size()) *
@@ -253,7 +253,7 @@ void BM_Rotate(benchmark::State& st) {
   if (!ls.view) return;
 
   for (auto _ : st) {
-    auto res = ed::Rotate(*ls.view, filt::Axis::Y, 1, *ls.schema->arena);
+    auto res = ed::Rotate(*ls.view, filt::Axis::kY, 1, *ls.schema->arena);
     benchmark::DoNotOptimize(res);
   }
   st.SetBytesProcessed(static_cast<std::int64_t>(ls.original_blocks.size()) *

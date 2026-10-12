@@ -44,25 +44,25 @@ namespace fschema::schem::internal {
       reader, [&](std::string_view name, base::TagType t) -> ParseResult<void> {
         const std::size_t payload_start = reader.pos();
 
-        if (name == "Name" && t == base::TagType::String) {
+        if (name == "Name" && t == base::TagType::kString) {
           auto v = reader.ReadStringView();
           if (!v) return std::unexpected(v.error());
           meta.name = *v;
           return {};
         }
-        if (name == "Author" && t == base::TagType::String) {
+        if (name == "Author" && t == base::TagType::kString) {
           auto v = reader.ReadStringView();
           if (!v) return std::unexpected(v.error());
           meta.author = *v;
           return {};
         }
 
-        if (name == "Date" && t == base::TagType::Long) {
+        if (name == "Date" && t == base::TagType::kLong) {
           auto v = reader.Read<std::int64_t>();
           if (!v) return std::unexpected(v.error());
           meta.date = *v;
-        } else if (name == "RequiredMods" && t == base::TagType::List) {
-          auto s = base::SkipPayload(reader, base::TagType::List);
+        } else if (name == "RequiredMods" && t == base::TagType::kList) {
+          auto s = base::SkipPayload(reader, base::TagType::kList);
           if (!s) return std::unexpected(s.error());
           meta.required_mods = reader.SpanFrom(payload_start);
         } else {
@@ -86,20 +86,20 @@ namespace fschema::schem::internal {
 
   auto result = ForEachCompoundField(
       reader, [&](std::string_view name, base::TagType t) -> ParseResult<void> {
-        if (name == "Palette" && t == base::TagType::Compound) {
+        if (name == "Palette" && t == base::TagType::kCompound) {
           auto r = ParseBlockPalette(reader, out.palette);
           if (!r) return std::unexpected(r.error());
           have_palette = true;
-        } else if (name == "Data" && t == base::TagType::ByteArray) {
+        } else if (name == "Data" && t == base::TagType::kByteArray) {
           auto len = reader.ReadLength(reader.limits().max_array_elements);
           if (!len) return std::unexpected(len.error());
 
           auto span = reader.PeekRaw(*len);
           if (!span) return std::unexpected(span.error());
           block_data_raw = *span;
-          reader.advance(*len);
+          reader.Advance(*len);
           have_data = true;
-        } else if (name == "BlockEntities" && t == base::TagType::List) {
+        } else if (name == "BlockEntities" && t == base::TagType::kList) {
           auto r = ParseBlockEntities(
               reader, out.block_entities, /*is_v3=*/true, *out.arena);
           if (!r) return std::unexpected(r.error());
@@ -112,11 +112,11 @@ namespace fschema::schem::internal {
 
   if (!have_palette) [[unlikely]] {
     return std::unexpected(ParseError::At(
-        ParseError::Code::MissingField, "Blocks/Palette", reader.pos()));
+        ParseError::Code::kMissingField, "Blocks/Palette", reader.pos()));
   }
   if (!have_data) [[unlikely]] {
     return std::unexpected(ParseError::At(
-        ParseError::Code::MissingField, "Blocks/Data", reader.pos()));
+        ParseError::Code::kMissingField, "Blocks/Data", reader.pos()));
   }
   out.raw_block_data = block_data_raw;
   return {};
@@ -131,17 +131,17 @@ namespace fschema::schem::internal {
 
   auto result = ForEachCompoundField(
       reader, [&](std::string_view name, base::TagType t) -> ParseResult<void> {
-        if (name == "Palette" && t == base::TagType::Compound) {
+        if (name == "Palette" && t == base::TagType::kCompound) {
           auto r = ParseBiomePalette(reader, out.biome_palette);
           if (!r) return std::unexpected(r.error());
           have_palette = true;
-        } else if (name == "Data" && t == base::TagType::ByteArray) {
+        } else if (name == "Data" && t == base::TagType::kByteArray) {
           auto len = reader.ReadLength(reader.limits().max_array_elements);
           if (!len) return std::unexpected(len.error());
           auto span = reader.PeekRaw(*len);
           if (!span) return std::unexpected(span.error());
           biome_data_raw = *span;
-          reader.advance(*len);
+          reader.Advance(*len);
           have_data = true;
         } else {
           return base::SkipPayload(reader, t);
@@ -176,103 +176,103 @@ ParseSchematicFields(base::ByteReader& reader, Schematic& out, bool is_v3) {
       reader, [&](std::string_view name, base::TagType t) -> ParseResult<void> {
         const std::size_t payload_start = reader.pos();
 
-        if (name == "Version" && t == base::TagType::Int) {
+        if (name == "Version" && t == base::TagType::kInt) {
           auto v = reader.Read<std::int32_t>();
           if (!v) return std::unexpected(v.error());
           if (*v < 2 || *v > 3) {
             return std::unexpected(
-                reader.Error(ParseError::Code::UnsupportedVersion));
+                reader.Error(ParseError::Code::kUnsupportedVersion));
           }
           out.version = static_cast<Version>(*v);
           have_version = true;
-        } else if (name == "DataVersion" && t == base::TagType::Int) {
+        } else if (name == "DataVersion" && t == base::TagType::kInt) {
           auto v = reader.Read<std::int32_t>();
           if (!v) return std::unexpected(v.error());
           out.data_version = *v;
           have_data_version = true;
-        } else if (name == "Metadata" && t == base::TagType::Compound) {
+        } else if (name == "Metadata" && t == base::TagType::kCompound) {
           auto r = ParseMetadata(reader, out);
           if (!r) return std::unexpected(r.error());
-        } else if (name == "Width" && t == base::TagType::Short) {
+        } else if (name == "Width" && t == base::TagType::kShort) {
           auto v = reader.Read<std::int16_t>();
           if (!v) return std::unexpected(v.error());
           out.width =
               static_cast<std::uint32_t>(static_cast<std::uint16_t>(*v));
           have_width = true;
-        } else if (name == "Height" && t == base::TagType::Short) {
+        } else if (name == "Height" && t == base::TagType::kShort) {
           auto v = reader.Read<std::int16_t>();
           if (!v) return std::unexpected(v.error());
           out.height =
               static_cast<std::uint32_t>(static_cast<std::uint16_t>(*v));
           have_height = true;
-        } else if (name == "Length" && t == base::TagType::Short) {
+        } else if (name == "Length" && t == base::TagType::kShort) {
           auto v = reader.Read<std::int16_t>();
           if (!v) return std::unexpected(v.error());
           out.length =
               static_cast<std::uint32_t>(static_cast<std::uint16_t>(*v));
           have_length = true;
-        } else if (name == "Offset" && t == base::TagType::IntArray) {
+        } else if (name == "Offset" && t == base::TagType::kIntArray) {
           auto len = reader.ReadLength(reader.limits().max_array_elements);
           if (!len) return std::unexpected(len.error());
           if (*len != 3) [[unlikely]] {
             return std::unexpected(
-                reader.Error(ParseError::Code::InvalidStructure));
+                reader.Error(ParseError::Code::kInvalidStructure));
           }
           for (int i = 0; i < 3; ++i) {
             auto v = reader.Read<std::int32_t>();
             if (!v) return std::unexpected(v.error());
             out.offset[i] = *v;
           }
-        } else if (is_v3 && name == "Blocks" && t == base::TagType::Compound) {
+        } else if (is_v3 && name == "Blocks" && t == base::TagType::kCompound) {
           auto r = ParseBlocksContainer(reader, out);
           if (!r) [[unlikely]]
             return std::unexpected(r.error());
-        } else if (is_v3 && name == "Biomes" && t == base::TagType::Compound) {
+        } else if (is_v3 && name == "Biomes" && t == base::TagType::kCompound) {
           auto r = ParseBiomesContainer(reader, out);
           if (!r) [[unlikely]]
             return std::unexpected(r.error());
         } else if (!is_v3 && name == "Palette" &&
-                   t == base::TagType::Compound) {
+                   t == base::TagType::kCompound) {
           auto r = ParseBlockPalette(reader, out.palette);
           if (!r) [[unlikely]]
             return std::unexpected(r.error());
-        } else if (!is_v3 && name == "PaletteMax" && t == base::TagType::Int) {
+        } else if (!is_v3 && name == "PaletteMax" && t == base::TagType::kInt) {
           auto v = reader.Read<std::int32_t>();
           if (!v) [[unlikely]]
             return std::unexpected(v.error());
         } else if (!is_v3 && name == "BlockData" &&
-                   t == base::TagType::ByteArray) {
+                   t == base::TagType::kByteArray) {
           auto len = reader.ReadLength(reader.limits().max_array_elements);
           if (!len) return std::unexpected(len.error());
           auto span = reader.PeekRaw(*len);
           if (!span) return std::unexpected(span.error());
           v2_block_data_raw = *span;
-          reader.advance(*len);
+          reader.Advance(*len);
           v2_have_block_data = true;
         } else if (!is_v3 && name == "BlockEntities" &&
-                   t == base::TagType::List) {
+                   t == base::TagType::kList) {
           auto r = ParseBlockEntities(
               reader, out.block_entities, /*is_v3=*/false, *out.arena);
           if (!r) [[unlikely]]
             return std::unexpected(r.error());
         } else if (!is_v3 && name == "BiomePalette" &&
-                   t == base::TagType::Compound) {
+                   t == base::TagType::kCompound) {
           auto r = ParseBiomePalette(reader, out.biome_palette);
           if (!r) [[unlikely]]
             return std::unexpected(r.error());
         } else if (!is_v3 && name == "BiomePaletteMax" &&
-                   t == base::TagType::Int) {
+                   t == base::TagType::kInt) {
           auto v = reader.Read<std::int32_t>();
           if (!v) return std::unexpected(v.error());
         } else if (!is_v3 && name == "BiomeData" &&
-                   t == base::TagType::ByteArray) {
+                   t == base::TagType::kByteArray) {
           auto len = reader.ReadLength(reader.limits().max_array_elements);
           if (!len) return std::unexpected(len.error());
           auto span = reader.PeekRaw(*len);
           if (!span) return std::unexpected(span.error());
           v2_biome_data_raw = *span;
-          reader.advance(*len);
-        } else if (name == "Entities" && t == base::TagType::List) {
+          reader.Advance(*len);
+        } else if (name == "Entities" && t == base::TagType::kList) {
           auto r = ParseEntities(reader, out.entities, is_v3, *out.arena);
           if (!r) return std::unexpected(r.error());
         } else {
@@ -285,29 +285,29 @@ ParseSchematicFields(base::ByteReader& reader, Schematic& out, bool is_v3) {
 
   if (!have_version) [[unlikely]] {
     return std::unexpected(ParseError::At(
-        ParseError::Code::MissingField, "Version", reader.pos()));
+        ParseError::Code::kMissingField, "Version", reader.pos()));
   }
   if (!have_data_version) [[unlikely]] {
     return std::unexpected(ParseError::At(
-        ParseError::Code::MissingField, "DataVersion", reader.pos()));
+        ParseError::Code::kMissingField, "DataVersion", reader.pos()));
   }
   if (!have_width) [[unlikely]] {
     return std::unexpected(
-        ParseError::At(ParseError::Code::MissingField, "Width", reader.pos()));
+        ParseError::At(ParseError::Code::kMissingField, "Width", reader.pos()));
   }
   if (!have_height) [[unlikely]] {
     return std::unexpected(
-        ParseError::At(ParseError::Code::MissingField, "Height", reader.pos()));
+        ParseError::At(ParseError::Code::kMissingField, "Height", reader.pos()));
   }
   if (!have_length) [[unlikely]] {
     return std::unexpected(
-        ParseError::At(ParseError::Code::MissingField, "Length", reader.pos()));
+        ParseError::At(ParseError::Code::kMissingField, "Length", reader.pos()));
   }
 
   const std::uint64_t volume = VolumeOf(out);
   if (volume > reader.limits().max_volume_per_region) [[unlikely]] {
     return std::unexpected(
-        ParseError{ParseError::Code::VolumeOverflow, "Width*Height*Length", 0});
+        ParseError{ParseError::Code::kVolumeOverflow, "Width*Height*Length", 0});
   }
 
   if (!is_v3 && v2_have_block_data) {
@@ -328,8 +328,8 @@ ParseSchematicFields(base::ByteReader& reader, Schematic& out, bool is_v3) {
   if (!root_tag) {
     return std::unexpected(root_tag.error());
   }
-  if (*root_tag != static_cast<std::uint8_t>(base::TagType::Compound)) {
-    return std::unexpected(reader.Error(ParseError::Code::InvalidTagId));
+  if (*root_tag != static_cast<std::uint8_t>(base::TagType::kCompound)) {
+    return std::unexpected(reader.Error(ParseError::Code::kInvalidTagId));
   }
 
   auto root_name = reader.ReadStringView();
@@ -345,7 +345,7 @@ ParseSchematicFields(base::ByteReader& reader, Schematic& out, bool is_v3) {
 
   auto result = ForEachCompoundField(
       reader, [&](std::string_view name, base::TagType t) -> ParseResult<void> {
-        if (name == "Schematic" && t == base::TagType::Compound) {
+        if (name == "Schematic" && t == base::TagType::kCompound) {
           auto r = ParseSchematicFields(reader, out, /*is_v3=*/true);
           if (!r) return std::unexpected(r.error());
           found_schematic = true;
@@ -358,7 +358,7 @@ ParseSchematicFields(base::ByteReader& reader, Schematic& out, bool is_v3) {
 
   if (!found_schematic) [[unlikely]] {
     return std::unexpected(ParseError::At(
-        ParseError::Code::MissingField, "Schematic", reader.pos()));
+        ParseError::Code::kMissingField, "Schematic", reader.pos()));
   }
 
   return {};

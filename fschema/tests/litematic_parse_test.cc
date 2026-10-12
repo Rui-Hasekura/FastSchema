@@ -151,7 +151,7 @@ TEST(LitematicParseNegativeTest, NullBytesInput) {
   auto result = fl::ParseLitematic(std::move(null_owner));
 
   EXPECT_FALSE(result.has_value());
-  EXPECT_EQ(result.error().code, fschema::ParseError::Code::Truncated);
+  EXPECT_EQ(result.error().code, fschema::ParseError::Code::kTruncated);
 }
 
 TEST(LitematicParseNegativeTest, EmptyBytesInput) {
@@ -159,7 +159,7 @@ TEST(LitematicParseNegativeTest, EmptyBytesInput) {
   auto result = fl::ParseLitematic(std::move(empty_owner));
 
   EXPECT_FALSE(result.has_value());
-  EXPECT_EQ(result.error().code, fschema::ParseError::Code::Truncated);
+  EXPECT_EQ(result.error().code, fschema::ParseError::Code::kTruncated);
 }
 
 TEST(LitematicUnpackNegativeTest, FileNotFound) {

@@ -82,7 +82,7 @@ class BasicView {
       : region_(&other.region()), filter_(std::move(other).filter()) {}
 
   template <class Fn>
-  void for_each(Fn&& fn) const {
+  void ForEach(Fn&& fn) const {
     const auto& bounds = region_->bounds;
     const std::int32_t sx = bounds.size[0];
     const std::int32_t sy = bounds.size[1];
@@ -113,7 +113,7 @@ class BasicView {
   /// It avoids the overhead of reconstructing `LocalPos` and recomputing
   /// `LinearIndex` inside the callback.
   template <class Fn>
-  void for_each_linear(Fn&& fn) const {
+  void ForEachLinear(Fn&& fn) const {
     const auto& bounds = region_->bounds;
     const std::int32_t sx = bounds.size[0];
     const std::int32_t sy = bounds.size[1];
@@ -138,7 +138,7 @@ class BasicView {
   }
 
     /// Counts the number of selected blocks. O(volume) time.
-  [[nodiscard]] std::size_t count() const {
+  [[nodiscard]] std::size_t Count() const {
     const auto& bounds = region_->bounds;
     const std::int32_t sx = bounds.size[0];
     const std::int32_t sy = bounds.size[1];

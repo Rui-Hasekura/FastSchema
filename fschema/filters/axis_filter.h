@@ -32,21 +32,21 @@ struct AxisFilter {
 
   [[nodiscard]] constexpr bool operator()(LocalPos p, std::uint16_t /*idx=*/)
       const noexcept {
-    const std::int32_t v = (axis == Axis::X)   ? p.x
-                           : (axis == Axis::Y) ? p.y
+    const std::int32_t v = (axis == Axis::kX)   ? p.x
+                           : (axis == Axis::kY) ? p.y
                                                : p.z;
     switch (op) {
-      case Cmp::Lt:
+      case Cmp::kLt:
         return v < threshold;
-      case Cmp::Le:
+      case Cmp::kLe:
         return v <= threshold;
-      case Cmp::Ge:
+      case Cmp::kGe:
         return v >= threshold;
-      case Cmp::Gt:
+      case Cmp::kGt:
         return v > threshold;
-      case Cmp::Eq:
+      case Cmp::kEq:
         return v == threshold;
-      case Cmp::Ne:
+      case Cmp::kNe:
         return v != threshold;
     }
     return false;

@@ -57,12 +57,12 @@ namespace fschema::base {
   auto header = reader.ReadListHeader();
   if (!header) return std::unexpected(header.error());
   auto [elem_type, count] = *header;
-  if (elem_type == TagType::End || count == 0) {
+  if (elem_type == TagType::kEnd || count == 0) {
     return NbtList{elem_type, {}};
   }
 
   if (count > reader.limits().max_nbt_list_elements) [[unlikely]] {
-    return std::unexpected(reader.Error(ParseError::Code::OversizedPayload));
+    return std::unexpected(reader.Error(ParseError::Code::kOversizedPayload));
   }
 
   NbtList list;
@@ -71,7 +71,7 @@ namespace fschema::base {
 
   DepthGuard guard(reader);
   if (reader.depth() > reader.limits().max_nbt_depth) [[unlikely]] {
-    return std::unexpected(reader.Error(ParseError::Code::DepthLimitExceeded));
+    return std::unexpected(reader.Error(ParseError::Code::kDepthLimitExceeded));
   }
 
   for (std::size_t i = 0; i < count; ++i) {
@@ -85,62 +85,62 @@ namespace fschema::base {
 [[nodiscard]] ParseResult<NbtPayload> ParsePayload(ByteReader& reader,
                                                    TagType tag_type) {
   switch (tag_type) {
-    case TagType::End:
+    case TagType::kEnd:
       return std::monostate{};
-    case TagType::Byte:
+    case TagType::kByte:
       return reader.Read<std::int8_t>();
-    case TagType::Short:
+    case TagType::kShort:
       return reader.Read<std::int16_t>();
-    case TagType::Int:
+    case TagType::kInt:
       return reader.Read<std::int32_t>();
-    case TagType::Long:
+    case TagType::kLong:
       return reader.Read<std::int64_t>();
-    case TagType::Float:
+    case TagType::kFloat:
       return reader.Read<float>();
-    case TagType::Double:
+    case TagType::kDouble:
       return reader.Read<double>();
-    case TagType::ByteArray: {
+    case TagType::kByteArray: {
       auto arr =
           reader.ReadArraySpan<std::int8_t>(reader.limits().max_array_elements);
       if (!arr) return std::unexpected(arr.error());
       return *arr;
     }
-    case TagType::String: {
+    case TagType::kString: {
       auto str = reader.ReadStringView();
       if (!str) return std::unexpected(str.error());
       return *str;
     }
-    case TagType::List: {
+    case TagType::kList: {
       auto list_result = ParseList(reader);
       if (!list_result) return std::unexpected(list_result.error());
       return std::make_unique<NbtList>(std::move(*list_result));
     }
-    case TagType::Compound: {
+    case TagType::kCompound: {
       auto comp_result = ParseCompound(reader);
       if (!comp_result) return std::unexpected(comp_result.error());
       return std::make_unique<NbtCompound>(std::move(*comp_result));
     }
-    case TagType::IntArray: {
+    case TagType::kIntArray: {
       auto len_res = reader.ReadLength(reader.limits().max_array_elements);
       if (!len_res) return std::unexpected(len_res.error());
       const std::size_t total = *len_res * sizeof(std::int32_t);
       auto raw_res = reader.PeekRaw(total);
       if (!raw_res) return std::unexpected(raw_res.error());
-      reader.advance(total);
+      reader.Advance(total);
       return *raw_res;
     }
-    case TagType::LongArray: {
+    case TagType::kLongArray: {
       auto len_res = reader.ReadLength(reader.limits().max_array_elements);
       if (!len_res) return std::unexpected(len_res.error());
       const std::size_t total = *len_res * sizeof(std::int64_t);
       auto raw_res = reader.PeekRaw(total);
       if (!raw_res) return std::unexpected(raw_res.error());
-      reader.advance(total);
+      reader.Advance(total);
       return *raw_res;
     }
     default:
       [[unlikely]] return std::unexpected(
-          reader.Error(ParseError::Code::InvalidTagId));
+          reader.Error(ParseError::Code::kInvalidTagId));
   }
 }
 
@@ -148,7 +148,7 @@ namespace fschema::base {
   auto tag_raw = reader.Read<std::uint8_t>();
   if (!tag_raw) return std::unexpected(tag_raw.error());
   if (!IsValidTagType(*tag_raw)) [[unlikely]] {
-    return std::unexpected(reader.Error(ParseError::Code::InvalidTagId));
+    return std::unexpected(reader.Error(ParseError::Code::kInvalidTagId));
   }
 
   auto tag_type = static_cast<TagType>(*tag_raw);

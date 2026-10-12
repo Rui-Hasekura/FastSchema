@@ -47,26 +47,26 @@ namespace fschema::schem::internal {
 
   auto result = ForEachCompoundField(
       reader, [&](std::string_view name, base::TagType t) -> ParseResult<void> {
-        if (name == "Id" && t == base::TagType::String) {
+        if (name == "Id" && t == base::TagType::kString) {
           auto v = reader.ReadStringView();
           if (!v) return std::unexpected(v.error());
           be.id = *v;
           id = *v;
-        } else if (name == "Pos" && t == base::TagType::IntArray) {
+        } else if (name == "Pos" && t == base::TagType::kIntArray) {
           auto len = reader.ReadLength(3);
           if (!len) return std::unexpected(len.error());
           if (*len != 3) {
             return std::unexpected(
-                reader.Error(ParseError::Code::InvalidTagId));
+                reader.Error(ParseError::Code::kInvalidTagId));
           }
           for (int i = 0; i < 3; ++i) {
             auto v = reader.Read<std::int32_t>();
             if (!v) return std::unexpected(v.error());
             be.pos[i] = *v;
           }
-        } else if (is_v3 && name == "Data" && t == base::TagType::Compound) {
+        } else if (is_v3 && name == "Data" && t == base::TagType::kCompound) {
           const auto data_start = reader.pos();
-          auto s = base::SkipPayload(reader, base::TagType::Compound);
+          auto s = base::SkipPayload(reader, base::TagType::kCompound);
           if (!s) return std::unexpected(s.error());
           data_payload = reader.SpanFrom(data_start);
         } else {
@@ -108,11 +108,11 @@ namespace fschema::schem::internal {
   auto header = reader.ReadListHeader();
   if (!header) return std::unexpected(header.error());
   auto [elem_type, count] = *header;
-  if (elem_type == base::TagType::End || count == 0) return {};
-  if (elem_type != base::TagType::Compound)
-    return std::unexpected(reader.Error(ParseError::Code::InvalidTagId));
+  if (elem_type == base::TagType::kEnd || count == 0) return {};
+  if (elem_type != base::TagType::kCompound)
+    return std::unexpected(reader.Error(ParseError::Code::kInvalidTagId));
   if (count > reader.limits().max_tile_entities)
-    return std::unexpected(reader.Error(ParseError::Code::OversizedPayload));
+    return std::unexpected(reader.Error(ParseError::Code::kOversizedPayload));
 
   out.clear();
   out.reserve(count);

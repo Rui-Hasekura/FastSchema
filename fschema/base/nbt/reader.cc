@@ -35,7 +35,7 @@ ByteReader::ByteReader(std::span<const std::byte> buffer,
 
 // State
 [[nodiscard]] std::size_t ByteReader::pos() const noexcept { return pos_; }
-[[nodiscard]] std::size_t ByteReader::remaining() const noexcept {
+[[nodiscard]] std::size_t ByteReader::Remaining() const noexcept {
   return buffer_.size() - pos_;
 }
 [[nodiscard]] std::size_t ByteReader::depth() const noexcept { return depth_; }
@@ -43,9 +43,9 @@ ByteReader::ByteReader(std::span<const std::byte> buffer,
   return limits_;
 }
 
-void ByteReader::advance(std::size_t num_bytes) noexcept { pos_ += num_bytes; }
-void ByteReader::push_depth() noexcept { ++depth_; }
-void ByteReader::pop_depth() noexcept { --depth_; }
+void ByteReader::Advance(std::size_t num_bytes) noexcept { pos_ += num_bytes; }
+void ByteReader::PushDepth() noexcept { ++depth_; }
+void ByteReader::PopDepth() noexcept { --depth_; }
 
 [[nodiscard]] ParseError ByteReader::Error(
     ParseError::Code code) const noexcept {
@@ -61,10 +61,10 @@ void ByteReader::pop_depth() noexcept { --depth_; }
   }
   const auto length = static_cast<std::int64_t>(*raw);
   if (length < 0) [[unlikely]] {
-    return std::unexpected(Error(ParseError::Code::NegativeLength));
+    return std::unexpected(Error(ParseError::Code::kNegativeLength));
   }
   if (static_cast<std::uint64_t>(length) > max_allowed) [[unlikely]] {
-    return std::unexpected(Error(ParseError::Code::OversizedPayload));
+    return std::unexpected(Error(ParseError::Code::kOversizedPayload));
   }
   return static_cast<std::size_t>(length);
 }
@@ -77,10 +77,10 @@ void ByteReader::pop_depth() noexcept { --depth_; }
   }
   const auto length = static_cast<std::size_t>(*raw_len);
   if (length > limits_.max_string_bytes) [[unlikely]] {
-    return std::unexpected(Error(ParseError::Code::OversizedPayload));
+    return std::unexpected(Error(ParseError::Code::kOversizedPayload));
   }
-  if (remaining() < length) [[unlikely]] {
-    return std::unexpected(Error(ParseError::Code::Truncated));
+  if (Remaining() < length) [[unlikely]] {
+    return std::unexpected(Error(ParseError::Code::kTruncated));
   }
   std::string str(reinterpret_cast<const char*>(buffer_.data() + pos_), length);
   pos_ += length;
@@ -96,10 +96,10 @@ ByteReader::ReadStringView() noexcept {
   }
   const auto length = static_cast<std::size_t>(*raw_len);
   if (length > limits_.max_string_bytes) [[unlikely]] {
-    return std::unexpected(Error(ParseError::Code::OversizedPayload));
+    return std::unexpected(Error(ParseError::Code::kOversizedPayload));
   }
-  if (remaining() < length) [[unlikely]] {
-    return std::unexpected(Error(ParseError::Code::Truncated));
+  if (Remaining() < length) [[unlikely]] {
+    return std::unexpected(Error(ParseError::Code::kTruncated));
   }
   std::string_view sv(reinterpret_cast<const char*>(buffer_.data() + pos_),
                       length);
@@ -110,8 +110,8 @@ ByteReader::ReadStringView() noexcept {
 // Span truncate
 [[nodiscard]] ParseResult<std::span<const std::byte>> ByteReader::PeekRaw(
     std::size_t length) noexcept {
-  if (remaining() < length) [[unlikely]] {
-    return std::unexpected(Error(ParseError::Code::Truncated));
+  if (Remaining() < length) [[unlikely]] {
+    return std::unexpected(Error(ParseError::Code::kTruncated));
   }
   return buffer_.subspan(pos_, length);
 }
@@ -125,9 +125,9 @@ ByteReader::ReadStringView() noexcept {
   }
   const auto tag = static_cast<TagType>(*raw_tag);
   if (!IsValidTagType(*raw_tag)) [[unlikely]] {
-    return std::unexpected(Error(ParseError::Code::InvalidTagId));
+    return std::unexpected(Error(ParseError::Code::kInvalidTagId));
   }
-  if (tag == TagType::End) {
+  if (tag == TagType::kEnd) {
     return tag;
   }
 
@@ -148,9 +148,9 @@ ByteReader::ReadStringView() noexcept {
   }
   const auto tag = static_cast<TagType>(*raw_tag);
   if (!IsValidTagType(*raw_tag)) [[unlikely]] {
-    return std::unexpected(Error(ParseError::Code::InvalidTagId));
+    return std::unexpected(Error(ParseError::Code::kInvalidTagId));
   }
-  if (tag == TagType::End) {
+  if (tag == TagType::kEnd) {
     return tag;
   }
 
@@ -169,7 +169,7 @@ ByteReader::ReadListHeader() {
     return std::unexpected(raw_tag.error());
   }
   if (!IsValidTagType(*raw_tag)) [[unlikely]] {
-    return std::unexpected(Error(ParseError::Code::InvalidTagId));
+    return std::unexpected(Error(ParseError::Code::kInvalidTagId));
   }
   const auto element_type = static_cast<TagType>(*raw_tag);
 
@@ -179,7 +179,7 @@ ByteReader::ReadListHeader() {
   }
   const auto length = static_cast<std::int64_t>(*raw_len);
   if (length < 0) {
-    return std::unexpected(Error(ParseError::Code::NegativeLength));
+    return std::unexpected(Error(ParseError::Code::kNegativeLength));
   }
   return std::make_pair(element_type, static_cast<std::size_t>(length));
 }

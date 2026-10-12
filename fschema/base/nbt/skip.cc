@@ -38,11 +38,11 @@ ParseResult<void> SkipList(ByteReader& reader) {
   auto header = reader.ReadListHeader();
   if (!header) return std::unexpected(header.error());
   auto [elem_type, count] = *header;
-  if (elem_type == TagType::End || count == 0) return {};
+  if (elem_type == TagType::kEnd || count == 0) return {};
 
   DepthGuard guard(reader);
   if (reader.depth() > reader.limits().max_nbt_depth) [[unlikely]] {
-    return std::unexpected(reader.Error(ParseError::Code::DepthLimitExceeded));
+    return std::unexpected(reader.Error(ParseError::Code::kDepthLimitExceeded));
   }
   for (std::size_t i = 0; i < count; ++i) {
     auto r = SkipPayload(reader, elem_type);
@@ -54,10 +54,10 @@ ParseResult<void> SkipList(ByteReader& reader) {
 [[nodiscard]] ParseResult<void> SkipScalar(ByteReader& reader,
                                            TagType tag_type) {
   const auto size = FixedPayloadSize(tag_type);
-  if (reader.remaining() < size) [[unlikely]] {
-    return std::unexpected(reader.Error(ParseError::Code::Truncated));
+  if (reader.Remaining() < size) [[unlikely]] {
+    return std::unexpected(reader.Error(ParseError::Code::kTruncated));
   }
-  reader.advance(size);
+  reader.Advance(size);
   return {};
 }
 
@@ -67,10 +67,10 @@ ParseResult<void> SkipList(ByteReader& reader) {
     return std::unexpected(len_raw.error());
   }
   const auto len = static_cast<std::size_t>(*len_raw);
-  if (reader.remaining() < len) [[unlikely]] {
-    return std::unexpected(reader.Error(ParseError::Code::Truncated));
+  if (reader.Remaining() < len) [[unlikely]] {
+    return std::unexpected(reader.Error(ParseError::Code::kTruncated));
   }
-  reader.advance(len);
+  reader.Advance(len);
   return {};
 }
 
@@ -82,38 +82,38 @@ ParseResult<void> SkipList(ByteReader& reader) {
     return std::unexpected(len.error());
   }
   const auto total = (*len) * elem_size;
-  if (reader.remaining() < total) [[unlikely]] {
-    return std::unexpected(reader.Error(ParseError::Code::Truncated));
+  if (reader.Remaining() < total) [[unlikely]] {
+    return std::unexpected(reader.Error(ParseError::Code::kTruncated));
   }
-  reader.advance(total);
+  reader.Advance(total);
   return {};
 }
 
 [[nodiscard]] ParseResult<void> SkipPayload(ByteReader& reader,
                                             TagType tag_type) {
   switch (tag_type) {
-    case TagType::End:
+    case TagType::kEnd:
       return {};
-    case TagType::Byte:
-    case TagType::Short:
-    case TagType::Int:
-    case TagType::Long:
-    case TagType::Float:
-    case TagType::Double:
+    case TagType::kByte:
+    case TagType::kShort:
+    case TagType::kInt:
+    case TagType::kLong:
+    case TagType::kFloat:
+    case TagType::kDouble:
       return SkipScalar(reader, tag_type);
-    case TagType::ByteArray:
-    case TagType::IntArray:
-    case TagType::LongArray:
+    case TagType::kByteArray:
+    case TagType::kIntArray:
+    case TagType::kLongArray:
       return SkipArray(reader, tag_type);
-    case TagType::String:
+    case TagType::kString:
       return SkipString(reader);
-    case TagType::List:
+    case TagType::kList:
       return SkipList(reader);
-    case TagType::Compound:
+    case TagType::kCompound:
       return SkipCompound(reader);
     default: [[unlikely]] {
       return std::unexpected(
-          reader.Error(ParseError::Code::InvalidTagId));
+          reader.Error(ParseError::Code::kInvalidTagId));
     }
   }
 }

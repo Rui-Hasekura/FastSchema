@@ -30,23 +30,23 @@ namespace fschema::litematic::internal {
 
   auto result = ForEachCompoundField(
       reader, [&](std::string_view name, base::TagType t) -> ParseResult<void> {
-        if (name == "components" && t == base::TagType::Compound) {
+        if (name == "components" && t == base::TagType::kCompound) {
           return ForEachCompoundField(
               reader,
               [&](std::string_view cn, base::TagType ct) -> ParseResult<void> {
-                if ((cn == "id" || cn == "Id") && ct == base::TagType::String) {
+                if ((cn == "id" || cn == "Id") && ct == base::TagType::kString) {
                   auto v = reader.ReadStringView();
                   if (!v) return std::unexpected(v.error());
                   te.id = *v;
-                } else if (cn == "x" && ct == base::TagType::Int) {
+                } else if (cn == "x" && ct == base::TagType::kInt) {
                   auto v = reader.Read<std::int32_t>();
                   if (!v) return std::unexpected(v.error());
                   te.block_position[0] = *v;
-                } else if (cn == "y" && ct == base::TagType::Int) {
+                } else if (cn == "y" && ct == base::TagType::kInt) {
                   auto v = reader.Read<std::int32_t>();
                   if (!v) return std::unexpected(v.error());
                   te.block_position[1] = *v;
-                } else if (cn == "z" && ct == base::TagType::Int) {
+                } else if (cn == "z" && ct == base::TagType::kInt) {
                   auto v = reader.Read<std::int32_t>();
                   if (!v) return std::unexpected(v.error());
                   te.block_position[2] = *v;
@@ -56,19 +56,19 @@ namespace fschema::litematic::internal {
                 return {};
               });
         } else if ((name == "id" || name == "Id") &&
-                   t == base::TagType::String) {
+                   t == base::TagType::kString) {
           auto v = reader.ReadStringView();
           if (!v) return std::unexpected(v.error());
           te.id = *v;
-        } else if (name == "x" && t == base::TagType::Int) {
+        } else if (name == "x" && t == base::TagType::kInt) {
           auto v = reader.Read<std::int32_t>();
           if (!v) return std::unexpected(v.error());
           te.block_position[0] = *v;
-        } else if (name == "y" && t == base::TagType::Int) {
+        } else if (name == "y" && t == base::TagType::kInt) {
           auto v = reader.Read<std::int32_t>();
           if (!v) return std::unexpected(v.error());
           te.block_position[1] = *v;
-        } else if (name == "z" && t == base::TagType::Int) {
+        } else if (name == "z" && t == base::TagType::kInt) {
           auto v = reader.Read<std::int32_t>();
           if (!v) return std::unexpected(v.error());
           te.block_position[2] = *v;
@@ -90,11 +90,11 @@ namespace fschema::litematic::internal {
   if (!header) return std::unexpected(header.error());
   auto [elem_type, count] = *header;
 
-  if (elem_type == base::TagType::End || count == 0) return {};
-  if (elem_type != base::TagType::Compound)
-    return std::unexpected(reader.Error(ParseError::Code::InvalidTagId));
+  if (elem_type == base::TagType::kEnd || count == 0) return {};
+  if (elem_type != base::TagType::kCompound)
+    return std::unexpected(reader.Error(ParseError::Code::kInvalidTagId));
   if (count > reader.limits().max_tile_entities)
-    return std::unexpected(reader.Error(ParseError::Code::OversizedPayload));
+    return std::unexpected(reader.Error(ParseError::Code::kOversizedPayload));
 
   tile_entities.clear();
   tile_entities.reserve(count);

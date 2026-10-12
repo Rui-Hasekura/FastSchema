@@ -47,21 +47,20 @@ struct LocalPos {
 // match the array indices of `BoundingBox::size`/`origin`.
 // This allows direct array indexing in generic logic:
 //   `const auto& size = bounds.size[static_cast<int>(axis)];`
-enum class Axis : std::uint8_t { X = 0, Y = 1, Z = 2 };
+enum class Axis : std::uint8_t { kX = 0, kY = 1, kZ = 2 };
 
 // Comparison operations used by spatial filters (e.g., `AxisFilter`).
 enum class Cmp : std::uint8_t {
-  Lt,  // <
-  Le,  // <=
-  Ge,  // >=
-  Gt,  // >
-  Eq,  // ==
-  Ne,  // !=
+  kLt,  // <
+  kLe,  // <=
+  kGe,  // >=
+  kGt,  // >
+  kEq,  // ==
+  kNe,  // !=
 };
 
-// High-performance hash functor for `LocalPos` using XXH3.
-
-// `LocalPos` is exactly 12 bytes (3x int32). Small enough for XXH3.
+// Hash functor for `LocalPos` using Hash64WithSeed.
+// `LocalPos` is exactly 12 bytes (3x int32_t). Small enough for Hash64WithSeed.
 struct LocalPosHash {
   [[nodiscard]] std::size_t operator()(const LocalPos& p) const noexcept {
     return static_cast<std::size_t>(

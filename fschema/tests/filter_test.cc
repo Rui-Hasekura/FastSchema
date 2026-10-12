@@ -125,7 +125,7 @@ TEST_P(FilterTest, BoxFilterSelectsCorrectRegion) {
   ASSERT_TRUE(view_res.has_value());
 
   std::size_t count = 0;
-  view_res->for_each([&](filt::LocalPos p, std::uint16_t) {
+  view_res->ForEach([&](filt::LocalPos p, std::uint16_t) {
     ASSERT_LE(p.x, b.size[0] / 2);
     ASSERT_LE(p.y, b.size[1] / 2);
     ASSERT_LE(p.z, b.size[2] / 2);
@@ -149,7 +149,7 @@ TEST_P(FilterTest, SphereFilterSelectsCorrectRegion) {
   auto view_res = filt::MakeView(*region_, sphere, *schema_->arena);
   ASSERT_TRUE(view_res.has_value());
 
-  view_res->for_each([&](filt::LocalPos p, std::uint16_t) {
+  view_res->ForEach([&](filt::LocalPos p, std::uint16_t) {
     std::int64_t dx = p.x - cx;
     std::int64_t dy = p.y - cy;
     std::int64_t dz = p.z - cz;
@@ -161,11 +161,11 @@ TEST_P(FilterTest, AxisFilterSelectsCorrectRegion) {
   const auto& b = region_->bounds;
   if (b.size[1] <= 1) GTEST_SKIP();
 
-  filt::AxisFilter axis{filt::Axis::Y, filt::Cmp::Ge, b.size[1] / 2};
+  filt::AxisFilter axis{filt::Axis::kY, filt::Cmp::kGe, b.size[1] / 2};
   auto view_res = filt::MakeView(*region_, axis, *schema_->arena);
   ASSERT_TRUE(view_res.has_value());
 
-  view_res->for_each(
+  view_res->ForEach(
       [&](filt::LocalPos p, std::uint16_t) { EXPECT_GE(p.y, b.size[1] / 2); });
 }
 
@@ -178,7 +178,7 @@ TEST_P(FilterTest, BlockNameFilterMatchesCorrectName) {
   auto view_res = filt::MakeView(*region_, filter, *schema_->arena);
   ASSERT_TRUE(view_res.has_value());
 
-  view_res->for_each([&](filt::LocalPos, std::uint16_t pal_idx) {
+  view_res->ForEach([&](filt::LocalPos, std::uint16_t pal_idx) {
     ASSERT_LT(pal_idx, region_->palette.size());
     EXPECT_EQ(region_->palette[pal_idx].name, target_name);
   });
@@ -189,7 +189,7 @@ TEST_P(FilterTest, IsAirFilterMatchesOnlyAir) {
   auto view_res = filt::MakeView(*region_, filter, *schema_->arena);
   ASSERT_TRUE(view_res.has_value());
 
-  view_res->for_each([&](filt::LocalPos, std::uint16_t pal_idx) {
+  view_res->ForEach([&](filt::LocalPos, std::uint16_t pal_idx) {
     ASSERT_LT(pal_idx, region_->palette.size());
     EXPECT_TRUE(fschema::base::IsAirVariant(region_->palette[pal_idx].name));
   });
@@ -201,7 +201,7 @@ TEST_P(FilterTest, SurfaceFilterMatchesExposedBlocks) {
   ASSERT_TRUE(view_res.has_value());
 
   const auto& b = region_->bounds;
-  view_res->for_each([&](filt::LocalPos p, std::uint16_t pal_idx) {
+  view_res->ForEach([&](filt::LocalPos p, std::uint16_t pal_idx) {
     ASSERT_LT(pal_idx, region_->palette.size());
     EXPECT_FALSE(region_->IsAir(pal_idx));
 
@@ -235,7 +235,7 @@ TEST_P(FilterTest, NeighborFilterDetectsAdjacentAir) {
   ASSERT_TRUE(view_res.has_value());
 
   const auto& b = region_->bounds;
-  view_res->for_each([&](filt::LocalPos p, std::uint16_t) {
+  view_res->ForEach([&](filt::LocalPos p, std::uint16_t) {
     // NeighborFilter should only match blocks adjacent to air.
     bool has_air_neighbor = false;
     if (p.x > 0)
@@ -267,14 +267,14 @@ TEST_P(FilterTest, RandomFilterProb1SelectsAll) {
 
   std::size_t total_blocks = region_->bounds.size[0] * region_->bounds.size[1] *
                              region_->bounds.size[2];
-  EXPECT_EQ(view_res->count(), total_blocks);
+  EXPECT_EQ(view_res->Count(), total_blocks);
 }
 
 TEST_P(FilterTest, RandomFilterProb0SelectsNone) {
   filt::RandomFilter filter(0.0);
   auto view_res = filt::MakeView(*region_, filter, *schema_->arena);
   ASSERT_TRUE(view_res.has_value());
-  EXPECT_EQ(view_res->count(), 0u);
+  EXPECT_EQ(view_res->Count(), 0u);
 }
 
 TEST_P(FilterTest, CompositeFilterAndLogic) {
@@ -288,7 +288,7 @@ TEST_P(FilterTest, CompositeFilterAndLogic) {
   auto view_res = filt::MakeView(*region_, composite, *schema_->arena);
   ASSERT_TRUE(view_res.has_value());
 
-  view_res->for_each([&](filt::LocalPos p, std::uint16_t pal_idx) {
+  view_res->ForEach([&](filt::LocalPos p, std::uint16_t pal_idx) {
     ASSERT_EQ(p.x, 0);
     EXPECT_TRUE(region_->IsAir(pal_idx));
   });

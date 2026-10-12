@@ -33,8 +33,8 @@ namespace fschema::litematic::internal {
   {
     auto root_tag = reader.Read<std::uint8_t>();
     if (!root_tag) return std::unexpected(root_tag.error());
-    if (*root_tag != static_cast<std::uint8_t>(base::TagType::Compound)) {
-      return std::unexpected(reader.Error(ParseError::Code::InvalidTagId));
+    if (*root_tag != static_cast<std::uint8_t>(base::TagType::kCompound)) {
+      return std::unexpected(reader.Error(ParseError::Code::kInvalidTagId));
     }
     auto root_name = reader.ReadStringView();
     if (!root_name) return std::unexpected(root_name.error());
@@ -48,30 +48,30 @@ namespace fschema::litematic::internal {
 
   auto result = ForEachCompoundField(
       reader, [&](std::string_view name, base::TagType t) -> ParseResult<void> {
-        if (name == "Version" && t == base::TagType::Int) {
+        if (name == "Version" && t == base::TagType::kInt) {
           auto v = reader.Read<std::int32_t>();
           if (!v) return std::unexpected(v.error());
           if (*v < 5 || *v > 7) {
             return std::unexpected(
-                reader.Error(ParseError::Code::UnsupportedVersion));
+                reader.Error(ParseError::Code::kUnsupportedVersion));
           }
           out.version = static_cast<Version>(*v);
           have_version = true;
         } else if ((name == "DataVersion" || name == "MinecraftDataVersion") &&
-                   t == base::TagType::Int) {
+                   t == base::TagType::kInt) {
           auto v = reader.Read<std::int32_t>();
           if (!v) return std::unexpected(v.error());
           out.data_version = *v;
           have_data_version = true;
-        } else if (name == "SubVersion" && t == base::TagType::Int) {
+        } else if (name == "SubVersion" && t == base::TagType::kInt) {
           auto v = reader.Read<std::int32_t>();
           if (!v) return std::unexpected(v.error());
-        } else if (name == "Metadata" && t == base::TagType::Compound) {
+        } else if (name == "Metadata" && t == base::TagType::kCompound) {
           auto r = ParseMetadata(reader, out);
           if (!r) [[unlikely]]
             return std::unexpected(r.error());
           have_metadata = true;
-        } else if (name == "Regions" && t == base::TagType::Compound) {
+        } else if (name == "Regions" && t == base::TagType::kCompound) {
           auto r = ParseRegions(reader, out);
           if (!r) [[unlikely]]
             return std::unexpected(r.error());
@@ -85,19 +85,19 @@ namespace fschema::litematic::internal {
 
   if (!have_version) [[unlikely]] {
     return std::unexpected(ParseError::At(
-        ParseError::Code::MissingField, "Version", reader.pos()));
+        ParseError::Code::kMissingField, "Version", reader.pos()));
   }
   if (!have_data_version) [[unlikely]] {
     return std::unexpected(ParseError::At(
-        ParseError::Code::MissingField, "DataVersion", reader.pos()));
+        ParseError::Code::kMissingField, "DataVersion", reader.pos()));
   }
   if (!have_metadata) [[unlikely]] {
     return std::unexpected(ParseError::At(
-        ParseError::Code::MissingField, "Metadata", reader.pos()));
+        ParseError::Code::kMissingField, "Metadata", reader.pos()));
   }
   if (!have_regions) [[unlikely]] {
     return std::unexpected(ParseError::At(
-        ParseError::Code::MissingField, "Regions", reader.pos()));
+        ParseError::Code::kMissingField, "Regions", reader.pos()));
   }
   return {};
 }

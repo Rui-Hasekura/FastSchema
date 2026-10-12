@@ -80,7 +80,7 @@ template <filters::Filter F>
   const std::uint64_t dst_sz = dst_bounds.size[2];
   const std::uint64_t dst_y_stride = dst_sx * dst_sz;
 
-  v.for_each([&](filters::LocalPos p, std::uint16_t pal) {
+  v.ForEach([&](filters::LocalPos p, std::uint16_t pal) {
     const std::int32_t dst_x = p.x + dx;
     const std::int32_t dst_y = p.y + dy;
     const std::int32_t dst_z = p.z + dz;

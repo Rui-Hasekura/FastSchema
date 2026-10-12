@@ -168,7 +168,7 @@ void BM_AxisFilter(benchmark::State& st) {
   const auto& region = schemas[st.range(0)].schema->regions[0];
   const auto& b = region.bounds;
 
-  filt::AxisFilter axis{filt::Axis::Y, filt::Cmp::Ge, b.size[1] / 2};
+  filt::AxisFilter axis{filt::Axis::kY, filt::Cmp::kGe, b.size[1] / 2};
   RunFilterBenchmark(st, axis);
 }
 

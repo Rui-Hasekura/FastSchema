@@ -29,36 +29,37 @@ namespace fschema {
 
 [[nodiscard]] std::string_view ToString(ParseError::Code code) noexcept {
   switch (code) {
-    case ParseError::Code::Truncated:
+    case ParseError::Code::kTruncated:
       return "Truncated";
-    case ParseError::Code::InvalidTagId:
+    case ParseError::Code::kInvalidTagId:
       return "InvalidTagId";
-    case ParseError::Code::NegativeLength:
+    case ParseError::Code::kNegativeLength:
       return "NegativeLength";
-    case ParseError::Code::DepthLimitExceeded:
+    case ParseError::Code::kDepthLimitExceeded:
       return "DepthLimitExceeded";
-    case ParseError::Code::OversizedPayload:
+    case ParseError::Code::kOversizedPayload:
       return "OversizedPayload";
-    case ParseError::Code::UnsupportedVersion:
+    case ParseError::Code::kUnsupportedVersion:
       return "UnsupportedVersion";
-    case ParseError::Code::MissingField:
+    case ParseError::Code::kMissingField:
       return "MissingField";
-    case ParseError::Code::InvalidStructure:
+    case ParseError::Code::kInvalidStructure:
       return "InvalidStructure";
-    case ParseError::Code::BlockStatesTooSmall:
+    case ParseError::Code::kBlockStatesTooSmall:
       return "BlockStatesTooSmall";
-    case ParseError::Code::PaletteIndexOutOfRange:
+    case ParseError::Code::kPaletteIndexOutOfRange:
       return "PaletteIndexOutOfRange";
-    case ParseError::Code::VolumeOverflow:
+    case ParseError::Code::kVolumeOverflow:
       return "VolumeOverflow";
-    case ParseError::Code::VarintOverflow:
+    case ParseError::Code::kVarintOverflow:
       return "VarintOverflow";
-    case ParseError::Code::BlockDataTooSmall:
+    case ParseError::Code::kBlockDataTooSmall:
       return "BlockDataTooSmall";
-    case ParseError::Code::NegativeIndex:
+    case ParseError::Code::kNegativeIndex:
       return "NegativeIndex";
+    default:
+      return "Unknown";
   }
-  return "Unknown";
 }
 
 }  // namespace fschema

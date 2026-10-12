@@ -32,18 +32,18 @@ namespace fschema::litematic::internal {
   if (!header) return std::unexpected(header.error());
   auto [elem_type, count] = *header;
 
-  if (elem_type == base::TagType::End || count == 0) return {};
-  if (elem_type != base::TagType::Compound)
-    return std::unexpected(reader.Error(ParseError::Code::InvalidTagId));
+  if (elem_type == base::TagType::kEnd || count == 0) return {};
+  if (elem_type != base::TagType::kCompound)
+    return std::unexpected(reader.Error(ParseError::Code::kInvalidTagId));
   if (count > reader.limits().max_pending_ticks)
-    return std::unexpected(reader.Error(ParseError::Code::OversizedPayload));
+    return std::unexpected(reader.Error(ParseError::Code::kOversizedPayload));
 
   out.clear();
   out.reserve(count);
 
   base::DepthGuard list_guard(reader);
   if (reader.depth() > reader.limits().max_nbt_depth) [[unlikely]] {
-    return std::unexpected(reader.Error(ParseError::Code::DepthLimitExceeded));
+    return std::unexpected(reader.Error(ParseError::Code::kDepthLimitExceeded));
   }
 
   for (std::size_t i = 0; i < count; ++i) {
@@ -53,37 +53,37 @@ namespace fschema::litematic::internal {
     auto result = ForEachCompoundField(
         reader,
         [&](std::string_view field, base::TagType t) -> ParseResult<void> {
-          if (field == "Block" && t == base::TagType::String) {
+          if (field == "Block" && t == base::TagType::kString) {
             auto v = reader.ReadStringView();
             if (!v) return std::unexpected(v.error());
             tick.block = *v;
             have_block = true;
-          } else if (field == "Fluid" && t == base::TagType::String) {
+          } else if (field == "Fluid" && t == base::TagType::kString) {
             auto v = reader.ReadStringView();
             if (!v) return std::unexpected(v.error());
             tick.block = *v;
             have_block = true;
-          } else if (field == "SubTick" && t == base::TagType::Long) {
+          } else if (field == "SubTick" && t == base::TagType::kLong) {
             auto v = reader.Read<std::int64_t>();
             if (!v) return std::unexpected(v.error());
             tick.sub_tick = *v;
-          } else if (field == "Priority" && t == base::TagType::Int) {
+          } else if (field == "Priority" && t == base::TagType::kInt) {
             auto v = reader.Read<std::int32_t>();
             if (!v) return std::unexpected(v.error());
             tick.priority = *v;
-          } else if (field == "Time" && t == base::TagType::Int) {
+          } else if (field == "Time" && t == base::TagType::kInt) {
             auto v = reader.Read<std::int32_t>();
             if (!v) return std::unexpected(v.error());
             tick.time = *v;
-          } else if (field == "x" && t == base::TagType::Int) {
+          } else if (field == "x" && t == base::TagType::kInt) {
             auto v = reader.Read<std::int32_t>();
             if (!v) return std::unexpected(v.error());
             tick.pos[0] = *v;
-          } else if (field == "y" && t == base::TagType::Int) {
+          } else if (field == "y" && t == base::TagType::kInt) {
             auto v = reader.Read<std::int32_t>();
             if (!v) return std::unexpected(v.error());
             tick.pos[1] = *v;
-          } else if (field == "z" && t == base::TagType::Int) {
+          } else if (field == "z" && t == base::TagType::kInt) {
             auto v = reader.Read<std::int32_t>();
             if (!v) return std::unexpected(v.error());
             tick.pos[2] = *v;
@@ -95,7 +95,7 @@ namespace fschema::litematic::internal {
     if (!result) return std::unexpected(result.error());
 
     if (!have_block) [[unlikely]] {
-      return std::unexpected(reader.Error(ParseError::Code::MissingField));
+      return std::unexpected(reader.Error(ParseError::Code::kMissingField));
     }
     out.push_back(std::move(tick));
   }

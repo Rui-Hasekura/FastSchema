@@ -91,7 +91,7 @@ class NbtFilter {
     for (;;) {
       std::string_view name;
       auto tag = reader.ReadCompoundEntryHeaderView(name);
-      if (!tag || *tag == base::TagType::End) return false;
+      if (!tag || *tag == base::TagType::kEnd) return false;
       if (name == key) {
         out_type = *tag;
         return true;
@@ -121,14 +121,14 @@ class NbtFilter {
                                       const NbtQuery& query) {
     if (nbt.empty()) return false;
     base::ByteReader reader(nbt, base::DecodeLimits{});
-    base::TagType current_type = base::TagType::Compound;
+    base::TagType current_type = base::TagType::kCompound;
 
     for (const auto& node : query.path) {
       if (node.type == NbtPathNodeType::kKey) {
-        if (current_type != base::TagType::Compound) return false;
+        if (current_type != base::TagType::kCompound) return false;
         if (!NavigateToChild(reader, node.key, current_type)) return false;
       } else if (node.type == NbtPathNodeType::kIndex) {
-        if (current_type != base::TagType::List) return false;
+        if (current_type != base::TagType::kList) return false;
         if (!NavigateToIndex(reader, node.index, current_type)) return false;
       }
     }
@@ -137,7 +137,7 @@ class NbtFilter {
       case NbtOp::kExists:
         return true;
       case NbtOp::kEqString:
-        if (current_type != base::TagType::String) return false;
+        if (current_type != base::TagType::kString) return false;
         if (auto v = reader.ReadStringView()) return *v == query.str_val;
         return false;
       case NbtOp::kEqInt:
@@ -145,13 +145,13 @@ class NbtFilter {
       case NbtOp::kLtInt: {
         std::int64_t val = 0;
         bool success = false;
-        if (current_type == base::TagType::Byte) {
+        if (current_type == base::TagType::kByte) {
           if (auto v = reader.Read<std::int8_t>()) val = *v, success = true;
-        } else if (current_type == base::TagType::Short) {
+        } else if (current_type == base::TagType::kShort) {
           if (auto v = reader.Read<std::int16_t>()) val = *v, success = true;
-        } else if (current_type == base::TagType::Int) {
+        } else if (current_type == base::TagType::kInt) {
           if (auto v = reader.Read<std::int32_t>()) val = *v, success = true;
-        } else if (current_type == base::TagType::Long) {
+        } else if (current_type == base::TagType::kLong) {
           if (auto v = reader.Read<std::int64_t>()) val = *v, success = true;
         }
         if (!success) return false;

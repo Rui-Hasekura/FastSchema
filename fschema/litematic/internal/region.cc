@@ -46,15 +46,15 @@ namespace fschema::litematic::internal {
 
   auto r = ForEachCompoundField(
       reader, [&](std::string_view name, base::TagType t) -> ParseResult<void> {
-        if (name == "x" && t == base::TagType::Int) {
+        if (name == "x" && t == base::TagType::kInt) {
           auto v = reader.Read<std::int32_t>();
           if (!v) return std::unexpected(v.error());
           result[0] = *v;
-        } else if (name == "y" && t == base::TagType::Int) {
+        } else if (name == "y" && t == base::TagType::kInt) {
           auto v = reader.Read<std::int32_t>();
           if (!v) return std::unexpected(v.error());
           result[1] = *v;
-        } else if (name == "z" && t == base::TagType::Int) {
+        } else if (name == "z" && t == base::TagType::kInt) {
           auto v = reader.Read<std::int32_t>();
           if (!v) return std::unexpected(v.error());
           result[2] = *v;
@@ -84,61 +84,61 @@ namespace fschema::litematic::internal {
       reader, [&](std::string_view name, base::TagType t) -> ParseResult<void> {
         const std::size_t payload_start = reader.pos();
 
-        if (name == "Position" && t == base::TagType::Compound) {
+        if (name == "Position" && t == base::TagType::kCompound) {
           auto r = ParseVec3Int(reader);
           if (!r) return std::unexpected(r.error());
           region.position = *r;
           have_position = true;
-        } else if (name == "Size" && t == base::TagType::Compound) {
+        } else if (name == "Size" && t == base::TagType::kCompound) {
           auto r = ParseVec3Int(reader);
           if (!r) return std::unexpected(r.error());
           region.size = *r;
           have_size = true;
-        } else if (name == "BlockStatePalette" && t == base::TagType::List) {
+        } else if (name == "BlockStatePalette" && t == base::TagType::kList) {
           auto r = ParsePalette(reader, region.palette);
           if (!r) return std::unexpected(r.error());
           have_palette = true;
-        } else if (name == "BlockStates" && t == base::TagType::LongArray) {
+        } else if (name == "BlockStates" && t == base::TagType::kLongArray) {
           auto len_raw = reader.Read<std::int32_t>();
           if (!len_raw) return std::unexpected(len_raw.error());
           const auto length = static_cast<std::int64_t>(*len_raw);
           if (length < 0) {
             return std::unexpected(
-                reader.Error(ParseError::Code::NegativeLength));
+                reader.Error(ParseError::Code::kNegativeLength));
           }
           if (static_cast<std::uint64_t>(length) >
               reader.limits().max_array_elements) {
             return std::unexpected(
-                reader.Error(ParseError::Code::OversizedPayload));
+                reader.Error(ParseError::Code::kOversizedPayload));
           }
           const auto payload_bytes = static_cast<std::uint64_t>(length) * 8;
-          if (reader.remaining() < payload_bytes) {
-            return std::unexpected(reader.Error(ParseError::Code::Truncated));
+          if (reader.Remaining() < payload_bytes) {
+            return std::unexpected(reader.Error(ParseError::Code::kTruncated));
           }
           auto span_result =
               reader.PeekRaw(static_cast<std::size_t>(payload_bytes));
           if (!span_result) return std::unexpected(span_result.error());
           block_states_raw = *span_result;
-          reader.advance(static_cast<std::size_t>(payload_bytes));
+          reader.Advance(static_cast<std::size_t>(payload_bytes));
           have_states = true;
-        } else if (name == "TileEntities" && t == base::TagType::List) {
+        } else if (name == "TileEntities" && t == base::TagType::kList) {
           auto r = ParseTileEntities(reader, region.tile_entities);
           if (!r) return std::unexpected(r.error());
-        } else if (name == "Entities" && t == base::TagType::List) {
+        } else if (name == "Entities" && t == base::TagType::kList) {
           auto r = ParseEntities(reader, region.entities);
           if (!r) return std::unexpected(r.error());
-        } else if (name == "PendingBlockTicks" && t == base::TagType::List) {
+        } else if (name == "PendingBlockTicks" && t == base::TagType::kList) {
           auto r = ParsePendingTicks(reader, region.pending_block_ticks);
           if (!r) return std::unexpected(r.error());
-        } else if (name == "PendingFluidTicks" && t == base::TagType::List) {
+        } else if (name == "PendingFluidTicks" && t == base::TagType::kList) {
           auto r = ParsePendingTicks(reader, region.pending_fluid_ticks);
           if (!r) return std::unexpected(r.error());
-        } else if (name == "PendingBlockEntities" && t == base::TagType::List) {
-          auto r = base::SkipPayload(reader, base::TagType::List);
+        } else if (name == "PendingBlockEntities" && t == base::TagType::kList) {
+          auto r = base::SkipPayload(reader, base::TagType::kList);
           if (!r) return std::unexpected(r.error());
           region.pending_block_entities = reader.SpanFrom(payload_start);
-        } else if (name == "PendingEntities" && t == base::TagType::List) {
-          auto r = base::SkipPayload(reader, base::TagType::List);
+        } else if (name == "PendingEntities" && t == base::TagType::kList) {
+          auto r = base::SkipPayload(reader, base::TagType::kList);
           if (!r) return std::unexpected(r.error());
           region.pending_entities = reader.SpanFrom(payload_start);
         } else {
@@ -151,25 +151,25 @@ namespace fschema::litematic::internal {
   // Required-field checks
   if (!have_size) [[unlikely]] {
     return std::unexpected(
-        ParseError::At(ParseError::Code::MissingField,
+        ParseError::At(ParseError::Code::kMissingField,
                        std::format("Regions/{}/Size", region.name),
                        reader.pos()));
   }
   if (!have_palette) [[unlikely]] {
     return std::unexpected(
-        ParseError::At(ParseError::Code::MissingField,
+        ParseError::At(ParseError::Code::kMissingField,
                        std::format("Regions/{}/BlockStatePalette", region.name),
                        reader.pos()));
   }
   if (!have_states) [[unlikely]] {
     return std::unexpected(
-        ParseError::At(ParseError::Code::MissingField,
+        ParseError::At(ParseError::Code::kMissingField,
                        std::format("Regions/{}/BlockStates", region.name),
                        reader.pos()));
   }
   if (!have_position) [[unlikely]] {
     return std::unexpected(
-        ParseError::At(ParseError::Code::MissingField,
+        ParseError::At(ParseError::Code::kMissingField,
                        std::format("Regions/{}/Position", region.name),
                        reader.pos()));
   }
@@ -188,11 +188,11 @@ namespace fschema::litematic::internal {
   if (ax == 0 || ay == 0 || az == 0) {
     volume = 0;
   } else if (ax > limit || ay > limit || az > limit) {
-    return std::unexpected(reader.Error(ParseError::Code::OversizedPayload));
+    return std::unexpected(reader.Error(ParseError::Code::kOversizedPayload));
   } else {
     const std::uint64_t v2 = ax * ay;
     if (v2 > limit / az) {
-      return std::unexpected(reader.Error(ParseError::Code::OversizedPayload));
+      return std::unexpected(reader.Error(ParseError::Code::kOversizedPayload));
     }
     volume = v2 * az;
   }
@@ -203,7 +203,7 @@ namespace fschema::litematic::internal {
     const std::uint64_t min_longs = (volume * bits_per_block + 63) / 64;
     if (static_cast<std::uint64_t>(block_states_raw.size() / 8) < min_longs) {
       return std::unexpected(
-          reader.Error(ParseError::Code::BlockStatesTooSmall));
+          reader.Error(ParseError::Code::kBlockStatesTooSmall));
     }
   }
   region.raw_block_states = block_states_raw;
@@ -220,9 +220,9 @@ namespace fschema::litematic::internal {
       reader, [&](std::string_view name, base::TagType t) -> ParseResult<void> {
         if (++region_count > reader.limits().max_regions) [[unlikely]] {
           return std::unexpected(
-              reader.Error(ParseError::Code::OversizedPayload));
+              reader.Error(ParseError::Code::kOversizedPayload));
         }
-        if (t == base::TagType::Compound) {
+        if (t == base::TagType::kCompound) {
           auto r = ParseRegion(reader, name, *out.arena);
           if (!r) return std::unexpected(r.error());
           out.regions.push_back(std::move(*r));

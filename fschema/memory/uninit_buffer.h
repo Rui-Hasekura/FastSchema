@@ -40,13 +40,13 @@ class UnInitBuffer {
 
   UnInitBuffer() noexcept = default;
 
-  explicit UnInitBuffer(size_type count) { allocate_direct(count); }
+  explicit UnInitBuffer(size_type count) { AllocateDirect(count); }
 
   UnInitBuffer(size_type count, Arena* arena) {
     if (arena) {
-      allocate_from_arena(count, arena);
+      AllocateFromArena(count, arena);
     } else {
-      allocate_direct(count);
+      AllocateDirect(count);
     }
   }
 
@@ -61,7 +61,7 @@ class UnInitBuffer {
 
   UnInitBuffer& operator=(UnInitBuffer&& o) noexcept {
     if (this != &o) {
-      release();
+      Release();
       data_ = o.data_;
       size_ = o.size_;
       arena_ = o.arena_;
@@ -75,14 +75,14 @@ class UnInitBuffer {
   UnInitBuffer(const UnInitBuffer&) = delete;
   UnInitBuffer& operator=(const UnInitBuffer&) = delete;
 
-  ~UnInitBuffer() { release(); }
+  ~UnInitBuffer() { Release(); }
 
-  void reallocate_uninitialized(size_type count, Arena* arena) {
-    release();
+  void ReallocateUninitialized(size_type count, Arena* arena) {
+    Release();
     if (arena) {
-      allocate_from_arena(count, arena);
+      AllocateFromArena(count, arena);
     } else {
-      allocate_direct(count);
+      AllocateDirect(count);
     }
   }
 
@@ -102,21 +102,21 @@ class UnInitBuffer {
  private:
   static constexpr std::size_t kAlign = (alignof(T) < 64) ? 64 : alignof(T);
 
-  void allocate_from_arena(size_type count, Arena* arena) {
+  void AllocateFromArena(size_type count, Arena* arena) {
     if (count == 0) return;
     arena_ = arena;
     size_ = count;
     data_ = arena_->AllocateArray<T>(count);
   }
 
-  void allocate_direct(size_type count) {
+  void AllocateDirect(size_type count) {
     if (count == 0) return;
     size_ = count;
     data_ = static_cast<T*>(
         ::operator new(count * sizeof(T), std::align_val_t(kAlign)));
   }
 
-  void release() noexcept {
+  void Release() noexcept {
     if (!arena_ && data_) {
       ::operator delete(data_, std::align_val_t(kAlign));
     }

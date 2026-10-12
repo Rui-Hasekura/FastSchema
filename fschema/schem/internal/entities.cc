@@ -47,26 +47,26 @@ namespace fschema::schem::internal {
 
   auto result = ForEachCompoundField(
       reader, [&](std::string_view name, base::TagType t) -> ParseResult<void> {
-        if (name == "Id" && t == base::TagType::String) {
+        if (name == "Id" && t == base::TagType::kString) {
           auto v = reader.ReadStringView();
           if (!v) return std::unexpected(v.error());
           ent.id = *v;
           id = *v;
-        } else if (name == "Pos" && t == base::TagType::List) {
+        } else if (name == "Pos" && t == base::TagType::kList) {
           auto r = base::ReadVec3DoubleList(reader);
           if (!r) return std::unexpected(r.error());
           ent.pos = *r;
-        } else if (name == "Motion" && t == base::TagType::List) {
+        } else if (name == "Motion" && t == base::TagType::kList) {
           auto r = base::ReadVec3DoubleList(reader);
           if (!r) return std::unexpected(r.error());
           ent.motion = *r;
-        } else if (name == "Rotation" && t == base::TagType::List) {
+        } else if (name == "Rotation" && t == base::TagType::kList) {
           auto r = base::ReadVec2FloatList(reader);
           if (!r) return std::unexpected(r.error());
           ent.rotation = *r;
-        } else if (is_v3 && name == "Data" && t == base::TagType::Compound) {
+        } else if (is_v3 && name == "Data" && t == base::TagType::kCompound) {
           const auto data_start = reader.pos();
-          auto s = base::SkipPayload(reader, base::TagType::Compound);
+          auto s = base::SkipPayload(reader, base::TagType::kCompound);
           if (!s) return std::unexpected(s.error());
           data_payload = reader.SpanFrom(data_start);
 
@@ -77,13 +77,13 @@ namespace fschema::schem::internal {
             for (;;) {
               std::string_view dname;
               auto dtag = data_scan.ReadCompoundEntryHeaderView(dname);
-              if (!dtag || *dtag == base::TagType::End) break;
+              if (!dtag || *dtag == base::TagType::kEnd) break;
 
-              if (dname == "Motion" && *dtag == base::TagType::List) {
+              if (dname == "Motion" && *dtag == base::TagType::kList) {
                 auto m = base::ReadVec3DoubleList(data_scan);
                 if (!m) return std::unexpected(m.error());
                 ent.motion = *m;
-              } else if (dname == "Rotation" && *dtag == base::TagType::List) {
+              } else if (dname == "Rotation" && *dtag == base::TagType::kList) {
                 auto r = base::ReadVec2FloatList(data_scan);
                 if (!r) return std::unexpected(r.error());
                 ent.rotation = *r;
@@ -110,7 +110,7 @@ namespace fschema::schem::internal {
     base::NbtWriter writer;
     writer.BeginListElementCompound();
     writer.WriteStringField("Id", id);
-    writer.BeginListField("Pos", base::TagType::Double, 3);
+    writer.BeginListField("Pos", base::TagType::kDouble, 3);
     writer.WriteListElementDouble(ent.pos[0]);
     writer.WriteListElementDouble(ent.pos[1]);
     writer.WriteListElementDouble(ent.pos[2]);
@@ -137,11 +137,11 @@ namespace fschema::schem::internal {
   auto header = reader.ReadListHeader();
   if (!header) return std::unexpected(header.error());
   auto [elem_type, count] = *header;
-  if (elem_type == base::TagType::End || count == 0) return {};
-  if (elem_type != base::TagType::Compound)
-    return std::unexpected(reader.Error(ParseError::Code::InvalidTagId));
+  if (elem_type == base::TagType::kEnd || count == 0) return {};
+  if (elem_type != base::TagType::kCompound)
+    return std::unexpected(reader.Error(ParseError::Code::kInvalidTagId));
   if (count > reader.limits().max_entities)
-    return std::unexpected(reader.Error(ParseError::Code::OversizedPayload));
+    return std::unexpected(reader.Error(ParseError::Code::kOversizedPayload));
 
   out.clear();
   out.reserve(count);

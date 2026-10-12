@@ -94,7 +94,10 @@ struct TestFile {
   return out;
 }
 
-static std::vector<TestFile> files = LoadTestFiles();
+[[nodiscard]] const std::vector<TestFile>& GetFiles() {
+  static const std::vector<TestFile> files = LoadTestFiles();
+  return files;
+}
 
 void PrintErrorFn(const fschema::ParseError& e) {
   std::println("  [ParseError] {} at path=\"{}\" offset={}",
@@ -104,6 +107,7 @@ void PrintErrorFn(const fschema::ParseError& e) {
 }
 
 static void BM_PureNbtParse(benchmark::State& st) {
+  const auto& files = GetFiles();
   const auto& tf = files[st.range(0)];
   const auto bytes_size = tf.bytes.size();
   std::span<const std::byte> byte_span(tf.bytes);
@@ -137,6 +141,8 @@ int main(int argc, char* argv[]) {
   std::println("Highway supported: 0x{:x}", hwy::SupportedTargets());
 
   bool all_ok = true;
+  const auto& files = GetFiles();
+
   for (std::size_t i = 0; i < files.size(); ++i) {
     const auto& tf = files[i];
     std::println("\n══════ Verify: {} ════", tf.filename);

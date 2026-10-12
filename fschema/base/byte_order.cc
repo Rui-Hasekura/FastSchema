@@ -24,9 +24,10 @@
 #include <cstring>
 #include <type_traits>
 
-#include "fschema/base/port.h"
 #include "hwy/foreach_target.h"
 #include "hwy/highway.h"
+
+#include "fschema/base/port.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace fschema::base::HWY_NAMESPACE {

@@ -32,13 +32,13 @@ namespace fschema::litematic::internal {
   auto result = ForEachCompoundField(
       reader, [&](std::string_view name, base::TagType t) -> ParseResult<void> {
         // Common fields
-        if (name == "Name" && t == base::TagType::String) {
+        if (name == "Name" && t == base::TagType::kString) {
           auto v = reader.ReadStringView();
           if (!v) return std::unexpected(v.error());
           meta.name = *v;
           return {};
         }
-        if (name == "Author" && t == base::TagType::String) {
+        if (name == "Author" && t == base::TagType::kString) {
           auto v = reader.ReadStringView();
           if (!v) return std::unexpected(v.error());
           meta.author = *v;
@@ -48,36 +48,36 @@ namespace fschema::litematic::internal {
         // Format-specific fields
         const auto payload_start = reader.pos();
 
-        if (name == "Description" && t == base::TagType::String) {
+        if (name == "Description" && t == base::TagType::kString) {
           auto v = reader.ReadStringView();
           if (!v) return std::unexpected(v.error());
           meta.description = *v;
-        } else if (name == "RegionCount" && t == base::TagType::Int) {
+        } else if (name == "RegionCount" && t == base::TagType::kInt) {
           auto v = reader.Read<std::int32_t>();
           if (!v) return std::unexpected(v.error());
           meta.region_count = *v;
-        } else if (name == "TotalBlocks" && t == base::TagType::Int) {
+        } else if (name == "TotalBlocks" && t == base::TagType::kInt) {
           auto v = reader.Read<std::int32_t>();
           if (!v) return std::unexpected(v.error());
           meta.total_blocks = *v;
-        } else if (name == "TotalVolume" && t == base::TagType::Int) {
+        } else if (name == "TotalVolume" && t == base::TagType::kInt) {
           auto v = reader.Read<std::int32_t>();
           if (!v) return std::unexpected(v.error());
           meta.total_volume = *v;
-        } else if (name == "EnclosingSize" && t == base::TagType::Compound) {
+        } else if (name == "EnclosingSize" && t == base::TagType::kCompound) {
           return ForEachCompoundField(
               reader,
               [&](std::string_view axis,
                   base::TagType at) -> ParseResult<void> {
-                if (axis == "x" && at == base::TagType::Int) {
+                if (axis == "x" && at == base::TagType::kInt) {
                   auto v = reader.Read<std::int32_t>();
                   if (!v) return std::unexpected(v.error());
                   meta.enclosing_size[0] = *v;
-                } else if (axis == "y" && at == base::TagType::Int) {
+                } else if (axis == "y" && at == base::TagType::kInt) {
                   auto v = reader.Read<std::int32_t>();
                   if (!v) return std::unexpected(v.error());
                   meta.enclosing_size[1] = *v;
-                } else if (axis == "z" && at == base::TagType::Int) {
+                } else if (axis == "z" && at == base::TagType::kInt) {
                   auto v = reader.Read<std::int32_t>();
                   if (!v) return std::unexpected(v.error());
                   meta.enclosing_size[2] = *v;
@@ -86,22 +86,22 @@ namespace fschema::litematic::internal {
                 }
                 return {};
               });
-        } else if (name == "TimeCreated" && t == base::TagType::Long) {
+        } else if (name == "TimeCreated" && t == base::TagType::kLong) {
           auto v = reader.Read<std::int64_t>();
           if (!v) return std::unexpected(v.error());
           meta.time_created = *v;
-        } else if (name == "TimeModified" && t == base::TagType::Long) {
+        } else if (name == "TimeModified" && t == base::TagType::kLong) {
           auto v = reader.Read<std::int64_t>();
           if (!v) return std::unexpected(v.error());
           meta.time_modified = *v;
-        } else if (name == "PreviewData" && t == base::TagType::IntArray) {
+        } else if (name == "PreviewData" && t == base::TagType::kIntArray) {
           auto length = reader.ReadLength(reader.limits().max_array_elements);
           if (!length) return std::unexpected(length.error());
           const auto total = (*length) * 4;
           auto span = reader.PeekRaw(total);
           if (!span) return std::unexpected(span.error());
           meta.preview_data = *span;
-          reader.advance(total);
+          reader.Advance(total);
         } else {
           return base::SkipPayload(reader, t);
         }

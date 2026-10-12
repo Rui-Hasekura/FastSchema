@@ -80,7 +80,7 @@ template <typename DTag, typename ErrorFn>
 
     if (word_idx1 >= longs.size()) [[unlikely]] {
       return std::unexpected(
-          error_report(ParseError::Code::BlockStatesTooSmall));
+          error_report(ParseError::Code::kBlockStatesTooSmall));
     }
 
     // Build a 64-bit window starting at start_off. If the window crosses a
@@ -103,7 +103,7 @@ template <typename DTag, typename ErrorFn>
       const auto idx = static_cast<std::uint32_t>(store_buffer[lane_idx]);
       if (idx >= palette_size) [[unlikely]] {
         return std::unexpected(
-            error_report(ParseError::Code::PaletteIndexOutOfRange));
+            error_report(ParseError::Code::kPaletteIndexOutOfRange));
       }
       out[static_cast<std::size_t>(block_idx + lane_idx)] = idx;
     }
@@ -121,7 +121,7 @@ template <typename DTag, typename ErrorFn>
     const auto idx = static_cast<std::uint32_t>(value & bit_mask);
     if (idx >= palette_size) [[unlikely]] {
       return std::unexpected(
-          error_report(ParseError::Code::PaletteIndexOutOfRange));
+          error_report(ParseError::Code::kPaletteIndexOutOfRange));
     }
     out[static_cast<std::size_t>(block_idx)] = idx;
   }
@@ -471,7 +471,7 @@ template <typename D64Tag>
   for (std::size_t lane_idx = 0; lane_idx < lanes; ++lane_idx) {
     if (max_values[lane_idx] >= palette_size) [[unlikely]] {
       return std::unexpected(ParseError{
-          ParseError::Code::PaletteIndexOutOfRange, "BlockStates", 0});
+          ParseError::Code::kPaletteIndexOutOfRange, "BlockStates", 0});
     }
   }
 
@@ -481,7 +481,7 @@ template <typename D64Tag>
         ExtractBlock(raw_data, long_count, bits_per_block, tail_idx, bit_mask);
     if (idx >= palette_size) [[unlikely]] {
       return std::unexpected(ParseError{
-          ParseError::Code::PaletteIndexOutOfRange, "BlockStates", 0});
+          ParseError::Code::kPaletteIndexOutOfRange, "BlockStates", 0});
     }
     out[tail_idx] = static_cast<std::uint16_t>(idx);
   }
@@ -511,22 +511,21 @@ ParseResult<memory::UnInitBuffer<std::uint16_t>> UnpackIndicesFusedImpl(
   if (palette_size < 2 || bits_per_block < 2) {
     if (palette_size != 1) {
       return std::unexpected(
-          make_error(ParseError::Code::PaletteIndexOutOfRange));
+          make_error(ParseError::Code::kPaletteIndexOutOfRange));
     }
     memory::UnInitBuffer<std::uint16_t> out(static_cast<std::size_t>(volume));
-    std::memset(out.data(),
-                0,
-                static_cast<std::size_t>(volume) * sizeof(std::uint16_t));
+    std::memset(
+        out.data(), 0, static_cast<std::size_t>(volume) * sizeof(*out.data()));
     return out;
   }
 
   const std::uint64_t min_longs = (volume * bits_per_block + 63) / 64;
   if (long_count < min_longs) {
-    return std::unexpected(make_error(ParseError::Code::BlockStatesTooSmall));
+    return std::unexpected(make_error(ParseError::Code::kBlockStatesTooSmall));
   }
   if (palette_size == 0) {
     return std::unexpected(
-        make_error(ParseError::Code::PaletteIndexOutOfRange));
+        make_error(ParseError::Code::kPaletteIndexOutOfRange));
   }
 
   const std::byte* raw_data = raw_longs.data();
@@ -554,7 +553,7 @@ ParseResult<memory::UnInitBuffer<std::uint16_t>> UnpackIndicesFusedImpl(
 #endif
   } else {
     kernel_result =
-        std::unexpected(make_error(ParseError::Code::PaletteIndexOutOfRange));
+        std::unexpected(make_error(ParseError::Code::kPaletteIndexOutOfRange));
   }
 
   if (!kernel_result) return std::unexpected(kernel_result.error());

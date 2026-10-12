@@ -53,7 +53,7 @@ enum class PropertyEncoding : std::uint8_t {
 
 struct Extension {
   std::string_view key;
-  base::TagType tag_type = base::TagType::End;
+  base::TagType tag_type = base::TagType::kEnd;
   std::span<const std::byte> raw_payload;
 };
 

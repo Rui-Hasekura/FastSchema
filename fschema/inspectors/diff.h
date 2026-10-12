@@ -119,7 +119,7 @@ struct BlockStateKeyEq {
     if (r1.bounds.size[i] != r2.bounds.size[i] ||
         r1.bounds.origin[i] != r2.bounds.origin[i]) {
       return std::unexpected(ParseError{
-          ParseError::Code::InvalidTagId,
+          ParseError::Code::kInvalidTagId,
           "DiffInspector: Regions must have the same size and origin",
           0});
     }

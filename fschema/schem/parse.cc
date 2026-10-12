@@ -61,7 +61,7 @@ ParseSchematicFromOwnedBuffer(
   auto decompressed = base::DecompressGzipFile(path);
   if (!decompressed) {
     return std::unexpected(
-        ParseError{ParseError::Code::Truncated, path.string(), 0});
+        ParseError{ParseError::Code::kTruncated, path.string(), 0});
   }
 
   auto owner =

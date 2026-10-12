@@ -21,19 +21,19 @@
 namespace fschema::base {
 
 enum class TagType : std::uint8_t {
-  End = 0,
-  Byte = 1,
-  Short = 2,
-  Int = 3,
-  Long = 4,
-  Float = 5,
-  Double = 6,
-  ByteArray = 7,
-  String = 8,
-  List = 9,
-  Compound = 10,
-  IntArray = 11,
-  LongArray = 12,
+  kEnd = 0,
+  kByte = 1,
+  kShort = 2,
+  kInt = 3,
+  kLong = 4,
+  kFloat = 5,
+  kDouble = 6,
+  kByteArray = 7,
+  kString = 8,
+  kList = 9,
+  kCompound = 10,
+  kIntArray = 11,
+  kLongArray = 12,
 };
 
 constexpr std::uint8_t kMaxTagId = 12;

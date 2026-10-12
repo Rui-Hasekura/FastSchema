@@ -45,7 +45,7 @@ using NbtPayload = std::variant<std::monostate,
                                 std::unique_ptr<NbtList>>;
 
 struct NbtTag {
-  TagType type = TagType::End;
+  TagType type = TagType::kEnd;
   std::string_view name;
   NbtPayload payload;
 };
@@ -55,7 +55,7 @@ struct NbtCompound {
 };
 
 struct NbtList {
-  TagType element_type = TagType::End;
+  TagType element_type = TagType::kEnd;
   std::vector<NbtPayload> children;
 };
 

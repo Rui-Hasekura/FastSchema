@@ -37,19 +37,19 @@ namespace fschema::litematic::internal {
 
   auto result = ForEachCompoundField(
       reader, [&](std::string_view name, base::TagType t) -> ParseResult<void> {
-        if ((name == "id" || name == "Id") && t == base::TagType::String) {
+        if ((name == "id" || name == "Id") && t == base::TagType::kString) {
           auto v = reader.ReadStringView();
           if (!v) return std::unexpected(v.error());
           entity.id = *v;
-        } else if (name == "Pos" && t == base::TagType::List) {
+        } else if (name == "Pos" && t == base::TagType::kList) {
           auto r = base::ReadVec3DoubleList(reader);
           if (!r) return std::unexpected(r.error());
           entity.position = *r;
-        } else if (name == "Motion" && t == base::TagType::List) {
+        } else if (name == "Motion" && t == base::TagType::kList) {
           auto r = base::ReadVec3DoubleList(reader);
           if (!r) return std::unexpected(r.error());
           entity.motion = *r;
-        } else if (name == "Rotation" && t == base::TagType::List) {
+        } else if (name == "Rotation" && t == base::TagType::kList) {
           auto r = base::ReadVec2FloatList(reader);
           if (!r) return std::unexpected(r.error());
           entity.rotation = *r;
@@ -70,11 +70,11 @@ namespace fschema::litematic::internal {
   if (!header) return std::unexpected(header.error());
   auto [elem_type, count] = *header;
 
-  if (elem_type == base::TagType::End || count == 0) return {};
-  if (elem_type != base::TagType::Compound)
-    return std::unexpected(reader.Error(ParseError::Code::InvalidTagId));
+  if (elem_type == base::TagType::kEnd || count == 0) return {};
+  if (elem_type != base::TagType::kCompound)
+    return std::unexpected(reader.Error(ParseError::Code::kInvalidTagId));
   if (count > reader.limits().max_entities)
-    return std::unexpected(reader.Error(ParseError::Code::OversizedPayload));
+    return std::unexpected(reader.Error(ParseError::Code::kOversizedPayload));
 
   entities.clear();
   entities.reserve(count);

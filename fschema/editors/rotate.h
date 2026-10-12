@@ -61,10 +61,10 @@ template <filters::Filter F>
 
   ir::BoundingBox new_bounds = out.bounds;
   if (steps == 1 || steps == 3) {
-    if (axis == filters::Axis::Y) {
+    if (axis == filters::Axis::kY) {
       new_bounds.size[0] = sz;
       new_bounds.size[2] = sx;
-    } else if (axis == filters::Axis::X) {
+    } else if (axis == filters::Axis::kX) {
       new_bounds.size[1] = sz;
       new_bounds.size[2] = sy;
     } else {  // Axis::Z
@@ -97,7 +97,7 @@ template <filters::Filter F>
         std::uint64_t src_idx = 0;
 
         // Reverse mapping: find the source index for the current dst block.
-        if (axis == filters::Axis::Y) {
+        if (axis == filters::Axis::kY) {
           if (steps == 1) {
             src_idx = dst_y * src_y_stride + dst_x * src_sx + (sx - 1 - dst_z);
           } else if (steps == 2) {
@@ -106,7 +106,7 @@ template <filters::Filter F>
           } else {  // steps == 3
             src_idx = dst_y * src_y_stride + (sz - 1 - dst_x) * src_sx + dst_z;
           }
-        } else if (axis == filters::Axis::X) {
+        } else if (axis == filters::Axis::kX) {
           if (steps == 1) {
             src_idx = (sy - 1 - dst_z) * src_y_stride + dst_y * src_sx + dst_x;
           } else if (steps == 2) {

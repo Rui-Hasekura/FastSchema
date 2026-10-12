@@ -20,13 +20,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
-#include <utility>
 #include <vector>
 
 #include "fschema/base/error.h"
 #include "fschema/memory/arena.h"
 #include "fschema/memory/uninit_buffer.h"
-#include "fschema/schem/types.h"
 
 namespace fschema::schem::internal {
 
@@ -72,10 +70,10 @@ void DecodeVarintChunks(const std::uint8_t* const* chunk_ptrs,
                         const std::size_t* chunk_offsets,
                         const std::size_t* chunk_counts,
                         std::size_t num_chunks,
-                        std::uint16_t* out,
                         const std::uint8_t* data_end,
                         std::size_t palette_size,
-                        std::atomic<std::uint32_t>& error_flag);
+                        std::atomic<std::uint32_t>& error_flag,
+                        std::uint16_t* out);
 
 }  // namespace fschema::schem::internal
 

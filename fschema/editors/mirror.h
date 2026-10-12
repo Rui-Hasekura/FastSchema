@@ -51,8 +51,8 @@ template <filters::Filter F>
   const std::int32_t sy = out.bounds.size[1];
   const std::int32_t sz = out.bounds.size[2];
 
-  const std::int32_t axis_dim = (axis == filters::Axis::X)   ? sx
-                                : (axis == filters::Axis::Y) ? sy
+  const std::int32_t axis_dim = (axis == filters::Axis::kX)   ? sx
+                                : (axis == filters::Axis::kY) ? sy
                                                              : sz;
   // If the region is flat or empty on the mirror axis, it is a no-op.
   if (axis_dim <= 1) return out;
@@ -106,15 +106,15 @@ template <filters::Filter F>
   };
 
   if (sx * sy * sz < kParallelThreshold) {
-    if (axis == filters::Axis::X) {
+    if (axis == filters::Axis::kX) {
       for (std::int32_t y = 0; y < sy; ++y) mirror_x(y);
-    } else if (axis == filters::Axis::Y) {
+    } else if (axis == filters::Axis::kY) {
       for (std::int32_t z = 0; z < sz; ++z) mirror_y(z);
     } else {
       for (std::int32_t y = 0; y < sy; ++y) mirror_z(y);
     }
   } else {
-    if (axis == filters::Axis::X) {
+    if (axis == filters::Axis::kX) {
       tbb::parallel_for(
           tbb::blocked_range<std::int32_t>(0, sy),
           [&](const tbb::blocked_range<std::int32_t>& range) {
@@ -122,7 +122,7 @@ template <filters::Filter F>
               mirror_x(y);
           },
           tbb::static_partitioner{});
-    } else if (axis == filters::Axis::Y) {
+    } else if (axis == filters::Axis::kY) {
       tbb::parallel_for(
           tbb::blocked_range<std::int32_t>(0, sz),
           [&](const tbb::blocked_range<std::int32_t>& range) {

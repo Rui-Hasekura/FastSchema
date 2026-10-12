@@ -67,11 +67,11 @@ struct Vec3i {
 [[nodiscard]] inline Vec3i ApplyMirrorVec(Vec3i v,
                                           filters::Axis axis) noexcept {
   switch (axis) {
-    case filters::Axis::X:
+    case filters::Axis::kX:
       return {-v.x, v.y, v.z};
-    case filters::Axis::Y:
+    case filters::Axis::kY:
       return {v.x, -v.y, v.z};
-    case filters::Axis::Z:
+    case filters::Axis::kZ:
       return {v.x, v.y, -v.z};
   }
   return v;
@@ -92,13 +92,13 @@ struct Vec3i {
   for (std::int32_t i = 0; i < steps; ++i) {
     Vec3i n = v;
     switch (axis) {
-      case filters::Axis::X:
+      case filters::Axis::kX:
         n = {v.x, v.z, -v.y};
         break;
-      case filters::Axis::Y:
+      case filters::Axis::kY:
         n = {-v.z, v.y, v.x};
         break;
-      case filters::Axis::Z:
+      case filters::Axis::kZ:
         n = {v.y, -v.x, v.z};
         break;
     }
@@ -250,9 +250,9 @@ struct Vec3i {
     std::string_view name;
     auto tag = reader.ReadCompoundEntryHeaderView(name);
     if (!tag) return props;  // malformed input, keep original
-    if (*tag == base::TagType::End) break;
+    if (*tag == base::TagType::kEnd) break;
 
-    if (*tag == base::TagType::String) {
+    if (*tag == base::TagType::kString) {
       auto val = reader.ReadStringView();
       if (!val) return props;
       std::string new_val;

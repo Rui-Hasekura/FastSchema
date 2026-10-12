@@ -54,25 +54,25 @@ void PushString(std::vector<std::byte>& buf, const std::string& str) {
 [[nodiscard]] std::vector<std::byte> MakeValidSimpleNbt() {
   std::vector<std::byte> buf;
 
-  buf.push_back(static_cast<std::byte>(fb::TagType::Compound));
+  buf.push_back(static_cast<std::byte>(fb::TagType::kCompound));
   PushString(buf, "Root");
 
-  buf.push_back(static_cast<std::byte>(fb::TagType::Byte));
+  buf.push_back(static_cast<std::byte>(fb::TagType::kByte));
   PushString(buf, "byte_val");
   buf.push_back(static_cast<std::byte>(42));
 
-  buf.push_back(static_cast<std::byte>(fb::TagType::String));
+  buf.push_back(static_cast<std::byte>(fb::TagType::kString));
   PushString(buf, "name");
   PushString(buf, "Hello");
 
-  buf.push_back(static_cast<std::byte>(fb::TagType::List));
+  buf.push_back(static_cast<std::byte>(fb::TagType::kList));
   PushString(buf, "list");
-  buf.push_back(static_cast<std::byte>(fb::TagType::Int));
+  buf.push_back(static_cast<std::byte>(fb::TagType::kInt));
   PushBE<std::int32_t>(buf, 2);
   PushBE<std::int32_t>(buf, 10);
   PushBE<std::int32_t>(buf, -20);
 
-  buf.push_back(static_cast<std::byte>(fb::TagType::End));
+  buf.push_back(static_cast<std::byte>(fb::TagType::kEnd));
 
   return buf;
 }
@@ -106,7 +106,7 @@ TEST(NbtParseTest, ParsesValidSimpleNbt) {
   ASSERT_TRUE(result.has_value()) << "Parse failed unexpectedly";
 
   const auto& root_tag = result.value();
-  EXPECT_EQ(root_tag.type, fb::TagType::Compound);
+  EXPECT_EQ(root_tag.type, fb::TagType::kCompound);
   EXPECT_EQ(root_tag.name, "Root");
 
   const auto* comp_ptr =
@@ -117,20 +117,20 @@ TEST(NbtParseTest, ParsesValidSimpleNbt) {
   const auto& comp = *comp_ptr->get();
   ASSERT_EQ(comp.children.size(), 3);
 
-  EXPECT_EQ(comp.children[0].type, fb::TagType::Byte);
+  EXPECT_EQ(comp.children[0].type, fb::TagType::kByte);
   EXPECT_EQ(comp.children[0].name, "byte_val");
   const auto* byte_val = std::get_if<std::int8_t>(&comp.children[0].payload);
   ASSERT_NE(byte_val, nullptr);
   EXPECT_EQ(*byte_val, 42);
 
-  EXPECT_EQ(comp.children[1].type, fb::TagType::String);
+  EXPECT_EQ(comp.children[1].type, fb::TagType::kString);
   EXPECT_EQ(comp.children[1].name, "name");
   const auto* str_val =
       std::get_if<std::string_view>(&comp.children[1].payload);
   ASSERT_NE(str_val, nullptr);
   EXPECT_EQ(*str_val, "Hello");
 
-  EXPECT_EQ(comp.children[2].type, fb::TagType::List);
+  EXPECT_EQ(comp.children[2].type, fb::TagType::kList);
   EXPECT_EQ(comp.children[2].name, "list");
   const auto* list_ptr =
       std::get_if<std::unique_ptr<fb::NbtList>>(&comp.children[2].payload);
@@ -138,7 +138,7 @@ TEST(NbtParseTest, ParsesValidSimpleNbt) {
   ASSERT_NE(list_ptr->get(), nullptr);
 
   const auto& list = *list_ptr->get();
-  EXPECT_EQ(list.element_type, fb::TagType::Int);
+  EXPECT_EQ(list.element_type, fb::TagType::kInt);
   ASSERT_EQ(list.children.size(), 2);
 
   const auto* item1 = std::get_if<std::int32_t>(&list.children[0]);
@@ -159,7 +159,7 @@ TEST(NbtParseTest, EmptyBytesInput) {
   auto result = fb::ParseNbt(reader);
 
   EXPECT_FALSE(result.has_value());
-  EXPECT_EQ(result.error().code, fschema::ParseError::Code::Truncated);
+  EXPECT_EQ(result.error().code, fschema::ParseError::Code::kTruncated);
 }
 
 TEST(NbtParseTest, InvalidRootTagId) {
@@ -171,7 +171,7 @@ TEST(NbtParseTest, InvalidRootTagId) {
   auto result = fb::ParseNbt(reader);
 
   EXPECT_FALSE(result.has_value());
-  EXPECT_EQ(result.error().code, fschema::ParseError::Code::InvalidTagId);
+  EXPECT_EQ(result.error().code, fschema::ParseError::Code::kInvalidTagId);
 }
 
 TEST(NbtParseTest, TruncatedDuringString) {
@@ -184,7 +184,7 @@ TEST(NbtParseTest, TruncatedDuringString) {
   auto result = fb::ParseNbt(reader);
 
   EXPECT_FALSE(result.has_value());
-  EXPECT_EQ(result.error().code, fschema::ParseError::Code::Truncated);
+  EXPECT_EQ(result.error().code, fschema::ParseError::Code::kTruncated);
 }
 
 TEST(NbtParseTest, DepthLimitExceeded) {
@@ -198,7 +198,7 @@ TEST(NbtParseTest, DepthLimitExceeded) {
   auto result = fb::ParseNbt(reader);
 
   EXPECT_FALSE(result.has_value());
-  EXPECT_EQ(result.error().code, fschema::ParseError::Code::DepthLimitExceeded);
+  EXPECT_EQ(result.error().code, fschema::ParseError::Code::kDepthLimitExceeded);
 }
 
 class NbtParseFileTest : public ::testing::TestWithParam<fs::path> {

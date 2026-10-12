@@ -141,7 +141,7 @@ TEST(SchemParseNegativeTest, EmptyBytesInput) {
 
   auto result = fsc::internal::ParseRoot(reader, schematic);
   EXPECT_FALSE(result.has_value());
-  EXPECT_EQ(result.error().code, fschema::ParseError::Code::Truncated);
+  EXPECT_EQ(result.error().code, fschema::ParseError::Code::kTruncated);
 }
 
 TEST(SchemParseNegativeTest, InvalidRootTagId) {
@@ -158,7 +158,7 @@ TEST(SchemParseNegativeTest, InvalidRootTagId) {
 
   auto result = fsc::internal::ParseRoot(reader, schematic);
   EXPECT_FALSE(result.has_value());
-  EXPECT_EQ(result.error().code, fschema::ParseError::Code::InvalidTagId);
+  EXPECT_EQ(result.error().code, fschema::ParseError::Code::kInvalidTagId);
 }
 
 TEST(SchemParseNegativeTest, TruncatedDuringCompoundHeader) {
@@ -176,5 +176,5 @@ TEST(SchemParseNegativeTest, TruncatedDuringCompoundHeader) {
 
   auto result = fsc::internal::ParseRoot(reader, schematic);
   EXPECT_FALSE(result.has_value());
-  EXPECT_EQ(result.error().code, fschema::ParseError::Code::Truncated);
+  EXPECT_EQ(result.error().code, fschema::ParseError::Code::kTruncated);
 }

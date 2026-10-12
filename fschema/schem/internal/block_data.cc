@@ -15,10 +15,6 @@
 
 #include "fschema/schem/internal/block_data.h"
 
-#include <tbb/blocked_range.h>
-#include <tbb/parallel_for.h>
-#include <tbb/parallel_invoke.h>
-
 #include <algorithm>
 #include <atomic>
 #include <cstddef>
@@ -41,7 +37,7 @@ namespace {
     const std::uint8_t* end) {
   if (p >= end) [[unlikely]] {
     return std::unexpected(
-        ParseError{ParseError::Code::Truncated, "BlockData", 0});
+        ParseError{ParseError::Code::kTruncated, "BlockData", 0});
   }
   std::uint32_t value = *p++;
   if (value < 0x80) [[likely]] {
@@ -51,12 +47,12 @@ namespace {
   for (int shift = 7; shift <= 28; shift += 7) {
     if (p >= end) [[unlikely]] {
       return std::unexpected(
-          ParseError{ParseError::Code::Truncated, "BlockData", 0});
+          ParseError{ParseError::Code::kTruncated, "BlockData", 0});
     }
     const std::uint8_t byte = *p++;
     if (shift == 28 && byte > 0x0F) [[unlikely]] {
       return std::unexpected(
-          ParseError{ParseError::Code::VarintOverflow, "BlockData", 0});
+          ParseError{ParseError::Code::kVarintOverflow, "BlockData", 0});
     }
     value |= (byte & 0x7F) << shift;
     if (byte < 0x80) {
@@ -64,7 +60,7 @@ namespace {
     }
   }
   return std::unexpected(
-      ParseError{ParseError::Code::VarintOverflow, "BlockData", 0});
+      ParseError{ParseError::Code::kVarintOverflow, "BlockData", 0});
 }
 
 }  // anonymous namespace
@@ -107,16 +103,16 @@ DecodeVarintParallel(std::span<const std::byte> data,
       boundaries.offsets.data(),
       boundaries.counts.data(),
       num_chunks,
-      out.data(),
       reinterpret_cast<const std::uint8_t*>(data.data()) + data.size(),
       palette_size,
-      error_flag);
+      error_flag,
+      out.data());
 
   const std::uint32_t err = error_flag.load(std::memory_order_relaxed);
   if (err != 0) [[unlikely]] {
     return std::unexpected(
-        ParseError{err == 1 ? ParseError::Code::Truncated
-                            : ParseError::Code::PaletteIndexOutOfRange,
+        ParseError{err == 1 ? ParseError::Code::kTruncated
+                            : ParseError::Code::kPaletteIndexOutOfRange,
                    "BlockData",
                    0});
   }
@@ -131,7 +127,7 @@ DecodeVarintScalar(std::span<const std::byte> data,
                    memory::Arena& arena) {
   if (palette_size == 0) [[unlikely]] {
     return std::unexpected(
-        ParseError{ParseError::Code::PaletteIndexOutOfRange, "Palette", 0});
+        ParseError{ParseError::Code::kPaletteIndexOutOfRange, "Palette", 0});
   }
   memory::UnInitBuffer<std::uint16_t> out(static_cast<std::size_t>(volume),
                                           &arena);
@@ -144,8 +140,8 @@ DecodeVarintScalar(std::span<const std::byte> data,
     }
     const auto idx = static_cast<std::size_t>(*result);
     if (idx >= palette_size) [[unlikely]] {
-      return std::unexpected(
-          ParseError{ParseError::Code::PaletteIndexOutOfRange, "BlockData", 0});
+      return std::unexpected(ParseError{
+          ParseError::Code::kPaletteIndexOutOfRange, "BlockData", 0});
     }
     out[static_cast<std::size_t>(i)] = static_cast<std::uint16_t>(idx);
   }
@@ -162,7 +158,7 @@ DecodeVarintArray(std::span<const std::byte> data,
   }
   if (data.size() < volume) [[unlikely]] {
     return std::unexpected(
-        ParseError{ParseError::Code::BlockDataTooSmall, "BlockData", 0});
+        ParseError{ParseError::Code::kBlockDataTooSmall, "BlockData", 0});
   }
 
   if (palette_size <= 128 && data.size() >= volume) [[likely]] {
@@ -170,7 +166,7 @@ DecodeVarintArray(std::span<const std::byte> data,
     if (result) {
       return result;
     }
-    if (result.error().code != ParseError::Code::VarintOverflow) {
+    if (result.error().code != ParseError::Code::kVarintOverflow) {
       return std::unexpected(result.error());
     }
   }
@@ -181,7 +177,7 @@ DecodeVarintArray(std::span<const std::byte> data,
     if (result) {
       return result;
     }
-    if (result.error().code != ParseError::Code::VarintOverflow) {
+    if (result.error().code != ParseError::Code::kVarintOverflow) {
       return std::unexpected(result.error());
     }
   }

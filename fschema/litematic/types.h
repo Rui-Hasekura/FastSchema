@@ -38,7 +38,7 @@ enum class Version : std::int32_t {
 
 struct RawField {
   std::string_view name;
-  base::TagType type = base::TagType::End;
+  base::TagType type = base::TagType::kEnd;
   std::span<const std::byte> payload;
 };
 

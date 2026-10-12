@@ -52,11 +52,11 @@ class Arena {
         Allocate(n * sizeof(T), std::max<std::size_t>(align, alignof(T))));
   }
 
-  [[nodiscard]] std::size_t bytes_used() const noexcept;
+  [[nodiscard]] std::size_t BytesUsed() const noexcept;
 
-  [[nodiscard]] std::size_t slab_count() const noexcept;
+  [[nodiscard]] std::size_t SlabCount() const noexcept;
 
-  [[nodiscard]] bool has_large_pages() const noexcept;
+  [[nodiscard]] bool HasLargePages() const noexcept;
 
   void Release() noexcept;
 

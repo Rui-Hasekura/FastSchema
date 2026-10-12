@@ -199,7 +199,7 @@ DecodeSingleByteFastImpl(std::span<const std::byte> data,
   std::uint32_t err = error_flag.load(std::memory_order_relaxed);
   if (err != 0) [[unlikely]] {
     return std::unexpected(
-        ParseError{ParseError::Code::VarintOverflow, "BlockData", 0});
+        ParseError{ParseError::Code::kVarintOverflow, "BlockData", 0});
   }
 
   return out;
@@ -261,7 +261,7 @@ Decode2ByteUniformFastImpl(std::span<const std::byte> data,
   std::uint32_t err = error_flag.load(std::memory_order_relaxed);
   if (err != 0) [[unlikely]] {
     return std::unexpected(
-        ParseError{ParseError::Code::VarintOverflow, "BlockData", 0});
+        ParseError{ParseError::Code::kVarintOverflow, "BlockData", 0});
   }
 
   return out;
@@ -310,7 +310,7 @@ DecodeSingleByteFastImpl(std::span<const std::byte> data,
 
   if (format_error) [[unlikely]] {
     return std::unexpected(
-        ParseError{ParseError::Code::VarintOverflow, "BlockData", 0});
+        ParseError{ParseError::Code::kVarintOverflow, "BlockData", 0});
   }
 
   return out;
@@ -366,7 +366,7 @@ Decode2ByteUniformFastImpl(std::span<const std::byte> data,
 
   if (format_error) [[unlikely]] {
     return std::unexpected(
-        ParseError{ParseError::Code::VarintOverflow, "BlockData", 0});
+        ParseError{ParseError::Code::kVarintOverflow, "BlockData", 0});
   }
 
   return out;
@@ -378,10 +378,10 @@ void DecodeVarintChunksKernelImpl(const std::uint8_t* const* chunk_ptrs,
                                   const std::size_t* chunk_offsets,
                                   const std::size_t* chunk_counts,
                                   std::size_t num_chunks,
-                                  std::uint16_t* FSCHEMA_RESTRICT out,
                                   const std::uint8_t* FSCHEMA_RESTRICT data_end,
                                   std::size_t palette_size,
-                                  std::atomic<std::uint32_t>& error_flag) {
+                                  std::atomic<std::uint32_t>& error_flag,
+                                  std::uint16_t* FSCHEMA_RESTRICT out) {
   auto process_range = [&](const tbb::blocked_range<std::size_t>& range) {
     for (std::size_t t = range.begin(); t < range.end(); ++t) {
       const std::uint8_t* FSCHEMA_RESTRICT p = chunk_ptrs[t];
@@ -613,10 +613,11 @@ void DecodeVarintChunks(const std::uint8_t* const* chunk_ptrs,
                                                      chunk_offsets,
                                                      chunk_counts,
                                                      num_chunks,
-                                                     out,
+
                                                      data_end,
                                                      palette_size,
-                                                     error_flag);
+                                                     error_flag,
+                                                     out);
 }
 
 }  // namespace fschema::schem::internal

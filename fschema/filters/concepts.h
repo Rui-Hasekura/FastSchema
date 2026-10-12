@@ -33,7 +33,7 @@ namespace fschema::filters {
 /// Filters may use local position and/or palette index.
 ///
 /// Note: Filters must be const-callable.
-/// `BasicView::for_each` passes the filter by const reference.
+/// `BasicView::ForEach` passes the filter by const reference.
 template <class F>
 concept Filter =
     std::regular_invocable<const F&, LocalPos, std::uint16_t> &&

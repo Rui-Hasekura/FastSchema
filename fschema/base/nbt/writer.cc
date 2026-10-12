@@ -102,32 +102,32 @@ template void NbtWriter::WriteScalarBE<double>(double);
 
 // Root Boundaries
 void NbtWriter::BeginRootCompound(std::string_view name) {
-  WriteTagId(TagType::Compound);
+  WriteTagId(TagType::kCompound);
   WriteName(name);
   depth_++;
 }
 
 void NbtWriter::EndRootCompound() {
-  WriteTagId(TagType::End);
+  WriteTagId(TagType::kEnd);
   depth_--;
 }
 
 // Compound Fields
 void NbtWriter::BeginCompoundField(std::string_view name) {
-  WriteTagId(TagType::Compound);
+  WriteTagId(TagType::kCompound);
   WriteName(name);
   depth_++;
 }
 
 void NbtWriter::EndCompoundField() {
-  WriteTagId(TagType::End);
+  WriteTagId(TagType::kEnd);
   depth_--;
 }
 
 void NbtWriter::BeginListField(std::string_view name,
                                TagType elem_type,
                                std::size_t count) {
-  WriteTagId(TagType::List);
+  WriteTagId(TagType::kList);
   WriteName(name);
   WriteScalarBE<std::uint8_t>(static_cast<std::uint8_t>(elem_type));
   WriteScalarBE<std::int32_t>(static_cast<std::int32_t>(count));
@@ -138,44 +138,44 @@ void NbtWriter::EndListField() {
 }
 
 void NbtWriter::WriteByteField(std::string_view name, std::int8_t value) {
-  WriteTagId(TagType::Byte);
+  WriteTagId(TagType::kByte);
   WriteName(name);
   WriteScalarBE<std::int8_t>(value);
 }
 
 void NbtWriter::WriteShortField(std::string_view name, std::int16_t value) {
-  WriteTagId(TagType::Short);
+  WriteTagId(TagType::kShort);
   WriteName(name);
   WriteScalarBE<std::int16_t>(value);
 }
 
 void NbtWriter::WriteIntField(std::string_view name, std::int32_t value) {
-  WriteTagId(TagType::Int);
+  WriteTagId(TagType::kInt);
   WriteName(name);
   WriteScalarBE<std::int32_t>(value);
 }
 
 void NbtWriter::WriteLongField(std::string_view name, std::int64_t value) {
-  WriteTagId(TagType::Long);
+  WriteTagId(TagType::kLong);
   WriteName(name);
   WriteScalarBE<std::int64_t>(value);
 }
 
 void NbtWriter::WriteFloatField(std::string_view name, float value) {
-  WriteTagId(TagType::Float);
+  WriteTagId(TagType::kFloat);
   WriteName(name);
   WriteScalarBE<float>(value);
 }
 
 void NbtWriter::WriteDoubleField(std::string_view name, double value) {
-  WriteTagId(TagType::Double);
+  WriteTagId(TagType::kDouble);
   WriteName(name);
   WriteScalarBE<double>(value);
 }
 
 void NbtWriter::WriteStringField(std::string_view name,
                                  std::string_view value) {
-  WriteTagId(TagType::String);
+  WriteTagId(TagType::kString);
   WriteName(name);
   WriteName(value);  // NBT String layout is identical to Tag Name (u16 len +
                      // UTF-8 payload)
@@ -183,7 +183,7 @@ void NbtWriter::WriteStringField(std::string_view name,
 
 void NbtWriter::WriteByteArrayField(std::string_view name,
                                     std::span<const std::int8_t> data) {
-  WriteTagId(TagType::ByteArray);
+  WriteTagId(TagType::kByteArray);
   WriteName(name);
   WriteScalarBE<std::int32_t>(static_cast<std::int32_t>(data.size()));
   if (!data.empty()) {
@@ -193,7 +193,7 @@ void NbtWriter::WriteByteArrayField(std::string_view name,
 
 void NbtWriter::WriteIntArrayField(std::string_view name,
                                    std::span<const std::int32_t> data) {
-  WriteTagId(TagType::IntArray);
+  WriteTagId(TagType::kIntArray);
   WriteName(name);
   WriteScalarBE<std::int32_t>(static_cast<std::int32_t>(data.size()));
 
@@ -210,7 +210,7 @@ void NbtWriter::WriteIntArrayField(std::string_view name,
 
 void NbtWriter::WriteLongArrayField(std::string_view name,
                                     std::span<const std::int64_t> data) {
-  WriteTagId(TagType::LongArray);
+  WriteTagId(TagType::kLongArray);
   WriteName(name);
   WriteScalarBE<std::int32_t>(static_cast<std::int32_t>(data.size()));
 
@@ -228,7 +228,7 @@ void NbtWriter::WriteLongArrayFieldBE(std::string_view name,
                                       std::span<const std::byte> payload) {
   assert(payload.size() % 8 == 0 &&
          "WriteLongArrayFieldBE: payload must be a whole number of longs");
-  WriteTagId(TagType::LongArray);
+  WriteTagId(TagType::kLongArray);
   WriteName(name);
   WriteScalarBE<std::int32_t>(static_cast<std::int32_t>(payload.size() / 8));
   AppendBytes(payload.data(), payload.size());
@@ -267,7 +267,7 @@ void NbtWriter::WriteListElementString(std::string_view value) {
 
 void NbtWriter::BeginListElementCompound() { depth_++; }
 void NbtWriter::EndListElementCompound() {
-  WriteTagId(TagType::End);
+  WriteTagId(TagType::kEnd);
   depth_--;
 }
 

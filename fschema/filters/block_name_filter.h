@@ -40,7 +40,7 @@ class BlockNameFilter {
     }
   }
 
-  [[nodiscard]] bool operator()(LocalPos /*p=*/,
+  [[nodiscard]] bool operator()(LocalPos /*p*/,
                                 std::uint16_t palette_idx) const noexcept {
     return palette_idx < matched_.size() && matched_[palette_idx];
   }
@@ -70,7 +70,7 @@ class IsAirFilter {
     }
   }
 
-  [[nodiscard]] bool operator()(LocalPos /*p=*/,
+  [[nodiscard]] bool operator()(LocalPos /*p*/,
                                 std::uint16_t palette_idx) const noexcept {
     return palette_idx < matched_.size() && matched_[palette_idx];
   }

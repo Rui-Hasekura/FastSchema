@@ -52,7 +52,7 @@ template <filters::Filter F>
   const std::uint64_t y_stride = sx * sz;
 
   std::vector<std::uint64_t> targets;
-  v.for_each([&](filters::LocalPos p, std::uint16_t pal) {
+  v.ForEach([&](filters::LocalPos p, std::uint16_t pal) {
     if (pal >= r.palette.size() || r.IsAir(pal)) {
       return;
     }

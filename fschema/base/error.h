@@ -34,41 +34,41 @@ struct ParseError {
     // NBT Layer Errors
 
     // Input buffer ended unexpectedly before parsing completed.
-    Truncated,
+    kTruncated,
     // Encountered an NBT tag ID > 12 (kMaxTagId).
-    InvalidTagId,
+    kInvalidTagId,
     // A length-prefixed array/string declared a negative size.
-    NegativeLength,
+    kNegativeLength,
     // NBT nesting depth exceeded `DecodeLimits::max_nbt_depth`.
-    DepthLimitExceeded,
+    kDepthLimitExceeded,
     // A payload size exceeded the corresponding `DecodeLimits` threshold.
-    OversizedPayload,
+    kOversizedPayload,
 
-        // Litematic / IR Layer Errors
+    // Litematic / IR Layer Errors
 
     // File format version is outside the supported range
     // (e.g., Litematica < 5 or > 7).
-    UnsupportedVersion,
+    kUnsupportedVersion,
     // A required field was not found in the NBT compound.
-    MissingField,
+    kMissingField,
     // NBT tag structure or dimensions violate the format specification.
-    InvalidStructure,
+    kInvalidStructure,
     // The LongArray payload is too small for the given volume and
     // bits-per-block.
-    BlockStatesTooSmall,
+    kBlockStatesTooSmall,
     // A decoded block index points outside the palette bounds.
-    PaletteIndexOutOfRange,
+    kPaletteIndexOutOfRange,
     // Width * Height * Length calculation overflowed the 64-bit limit.
-    VolumeOverflow,
+    kVolumeOverflow,
 
     // Schem Layer Errors
 
     // A varint sequence exceeded 5 bytes (32-bit limit) or was malformed.
-    VarintOverflow,
+    kVarintOverflow,
     // The BlockData ByteArray is smaller than the expected volume.
-    BlockDataTooSmall,
+    kBlockDataTooSmall,
     // A palette index in the Sponge format was negative.
-    NegativeIndex,
+    kNegativeIndex,
   };
 
   /// The specific error category.
@@ -82,7 +82,9 @@ struct ParseError {
   std::size_t offset;
 
   /// Constructs a ParseError with the given code, path, and offset.
-  [[nodiscard]] static ParseError At(Code code, std::string path, std::size_t offset);
+  [[nodiscard]] static ParseError At(Code code,
+                                     std::string path,
+                                     std::size_t offset);
 };
 
 /// Convenience alias for functions that return a value or a ParseError.

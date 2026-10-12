@@ -35,8 +35,8 @@ inline bool ForEachNbtStringProperty(std::span<const std::byte> nbt, Fn&& fn) {
   for (;;) {
     std::string_view key;
     auto tag = reader.ReadCompoundEntryHeaderView(key);
-    if (!tag || *tag == TagType::End) break;
-    if (*tag != TagType::String) {
+    if (!tag || *tag == TagType::kEnd) break;
+    if (*tag != TagType::kString) {
       if (!SkipPayload(reader, *tag)) return false;
       continue;
     }

@@ -81,7 +81,10 @@ struct TestFile {
   return out;
 }
 
-static std::vector<TestFile> files = LoadTestFiles();
+[[nodiscard]] const std::vector<TestFile>& GetFiles() {
+  static const std::vector<TestFile> files = LoadTestFiles();
+  return files;
+}
 
 void RegisterHandlers() {
   static bool initialized = false;
@@ -168,6 +171,7 @@ void SetShapeCounters(benchmark::State& st, const IrStats& s) {
 // mode: 1 = same-format (round trip),
 // mode: 2 = cross + gzip.
 void BM_Convert(benchmark::State& st) {
+  const auto& files = GetFiles();
   const auto& tf = files[static_cast<std::size_t>(st.range(0))];
   const int mode = static_cast<int>(st.range(1));
   const bool same_format = (mode == 1);
@@ -202,6 +206,7 @@ void BM_Convert(benchmark::State& st) {
 }
 
 void BM_ConvertStaged(benchmark::State& st) {
+  const auto& files = GetFiles();
   const auto& tf = files[static_cast<std::size_t>(st.range(0))];
   const bool same_format = (st.range(1) != 0);
   const fir::SourceFormat target =
@@ -246,6 +251,7 @@ void BM_ConvertStaged(benchmark::State& st) {
 }
 
 void BM_DecodeOnly(benchmark::State& st) {
+  const auto& files = GetFiles();
   const auto& tf = files[static_cast<std::size_t>(st.range(0))];
   const std::uint64_t in_bytes = tf.bytes.size();
 
@@ -265,6 +271,7 @@ void BM_DecodeOnly(benchmark::State& st) {
 }
 
 void BM_EncodeOnly(benchmark::State& st) {
+  const auto& files = GetFiles();
   const auto& tf = files[static_cast<std::size_t>(st.range(0))];
   const bool same_format = (st.range(1) != 0);
   const fir::SourceFormat target =
@@ -305,6 +312,7 @@ void BM_EncodeOnly(benchmark::State& st) {
 }
 
 void BM_CopyOnly(benchmark::State& st) {
+  const auto& files = GetFiles();
   const auto& tf = files[static_cast<std::size_t>(st.range(0))];
   const std::uint64_t in_bytes = tf.bytes.size();
   for (auto _ : st) {
@@ -318,7 +326,9 @@ void BM_CopyOnly(benchmark::State& st) {
 
 // Verification
 [[nodiscard]] bool RunVerification() {
+
   bool all_ok = true;
+  const auto& files = GetFiles();
   if (files.empty()) {
     std::println(stderr, "  [fatal] No test files found.");
     return false;

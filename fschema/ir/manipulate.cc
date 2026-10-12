@@ -36,7 +36,7 @@ ParseResult<void> ExtractRegion(Schema& ir, std::string_view region_name) {
       });
   if (it == ir.regions.end()) {
     return std::unexpected(
-        ParseError{ParseError::Code::MissingField, "ExtractRegion", 0});
+        ParseError{ParseError::Code::kMissingField, "ExtractRegion", 0});
   }
   Region extracted = std::move(*it);
   ir.regions.clear();
@@ -77,7 +77,7 @@ ParseResult<Region> MergeRegions(const std::vector<Region>& regions,
                                  memory::Arena& arena) {
   if (regions.empty()) {
     return std::unexpected(
-        ParseError{ParseError::Code::MissingField, "Regions", 0});
+        ParseError{ParseError::Code::kMissingField, "Regions", 0});
   }
 
   // 1. Find global bounding box
@@ -152,7 +152,7 @@ ParseResult<Region> MergeRegions(const std::vector<Region>& regions,
   std::uint64_t vol = static_cast<std::uint64_t>(merged.bounds.size[0]) *
                       static_cast<std::uint64_t>(merged.bounds.size[1]) *
                       static_cast<std::uint64_t>(merged.bounds.size[2]);
-  merged.block_indices.reallocate_uninitialized(vol, &arena);
+  merged.block_indices.ReallocateUninitialized(vol, &arena);
   std::memset(merged.block_indices.data(), 0, vol * sizeof(std::uint16_t));
 
   // 4. Copy blocks (YZX order)

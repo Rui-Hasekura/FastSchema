@@ -79,8 +79,8 @@ class RandomFilter {
     }
   }
 
-  [[nodiscard]] bool operator()(LocalPos /*p=*/,
-                                std::uint16_t /*idx=*/) const noexcept {
+  [[nodiscard]] bool operator()(LocalPos /*p*/,
+                                std::uint16_t /*idx*/) const noexcept {
     if (threshold_ == 0) return false;
     if (threshold_ == std::numeric_limits<std::uint64_t>::max()) return true;
     return rng_() <= threshold_;

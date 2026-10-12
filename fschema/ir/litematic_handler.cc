@@ -267,7 +267,7 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
 
       if (reg.palette.size() >= 65536) {
         return std::unexpected(ParseError{
-            ParseError::Code::OversizedPayload, "PaletteOverflow", 0});
+            ParseError::Code::kOversizedPayload, "PaletteOverflow", 0});
       }
       out_palette.push_back({"minecraft:air", {}, PropertyEncoding::kNone});
       for (const auto& bs : reg.palette) out_palette.push_back(bs);
@@ -282,14 +282,14 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
     }
 
     writer.BeginListField(
-        "BlockStatePalette", base::TagType::Compound, out_palette.size());
+        "BlockStatePalette", base::TagType::kCompound, out_palette.size());
     for (const auto& bs : out_palette) {
       writer.BeginListElementCompound();
       writer.WriteStringField("Name", bs.name);
       if (bs.prop_encoding == PropertyEncoding::kNbt &&
           !bs.raw_properties.empty()) {
         writer.WriteRawField(
-            "Properties", base::TagType::Compound, bs.raw_properties);
+            "Properties", base::TagType::kCompound, bs.raw_properties);
       } else if (bs.prop_encoding == PropertyEncoding::kString &&
                  !bs.raw_properties.empty()) {
         writer.BeginCompoundField("Properties");
@@ -331,7 +331,7 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
 
     // TileEntities (common)
     writer.BeginListField(
-        "TileEntities", base::TagType::Compound, reg.block_entities.size());
+        "TileEntities", base::TagType::kCompound, reg.block_entities.size());
     for (const auto& te : reg.block_entities) {
       writer.BeginListElementCompound();
       auto write_te_body = [&]() -> ParseResult<void> {
@@ -357,11 +357,11 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
 
     // Entities (common)
     writer.BeginListField(
-        "Entities", base::TagType::Compound, reg.entities.size());
+        "Entities", base::TagType::kCompound, reg.entities.size());
     for (const auto& ent : reg.entities) {
       writer.BeginListElementCompound();
       writer.WriteStringField("id", ent.id);
-      writer.BeginListField("Pos", base::TagType::Double, 3);
+      writer.BeginListField("Pos", base::TagType::kDouble, 3);
       writer.WriteListElementDouble(ent.position[0] -
                                     static_cast<double>(reg.position[0]));
       writer.WriteListElementDouble(ent.position[1] -
@@ -369,12 +369,12 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
       writer.WriteListElementDouble(ent.position[2] -
                                     static_cast<double>(reg.position[2]));
       writer.EndListField();
-      writer.BeginListField("Motion", base::TagType::Double, 3);
+      writer.BeginListField("Motion", base::TagType::kDouble, 3);
       writer.WriteListElementDouble(ent.motion[0]);
       writer.WriteListElementDouble(ent.motion[1]);
       writer.WriteListElementDouble(ent.motion[2]);
       writer.EndListField();
-      writer.BeginListField("Rotation", base::TagType::Float, 2);
+      writer.BeginListField("Rotation", base::TagType::kFloat, 2);
       writer.WriteListElementFloat(ent.rotation[0]);
       writer.WriteListElementFloat(ent.rotation[1]);
       writer.EndListField();
@@ -396,9 +396,9 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
       }
     } else {
       // Cross-format: write empty pending tick lists
-      writer.BeginListField("PendingBlockTicks", base::TagType::Compound, 0);
+      writer.BeginListField("PendingBlockTicks", base::TagType::kCompound, 0);
       writer.EndListField();
-      writer.BeginListField("PendingFluidTicks", base::TagType::Compound, 0);
+      writer.BeginListField("PendingFluidTicks", base::TagType::kCompound, 0);
       writer.EndListField();
     }
 

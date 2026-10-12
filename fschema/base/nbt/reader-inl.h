@@ -36,8 +36,8 @@ template <typename T>
   requires std::integral<T> || std::floating_point<T>
 [[nodiscard]] ParseResult<T> ByteReader::Read() noexcept {
   constexpr std::size_t kSize = sizeof(T);
-  if (remaining() < kSize) [[unlikely]] {
-    return std::unexpected(Error(ParseError::Code::Truncated));
+  if (Remaining() < kSize) [[unlikely]] {
+    return std::unexpected(Error(ParseError::Code::kTruncated));
   }
   if constexpr (std::floating_point<T>) {
     using UintType =
@@ -60,8 +60,8 @@ template <typename T>
     std::span<T> output) noexcept {
   constexpr std::size_t kSize = sizeof(T);
   const std::size_t total = count * kSize;
-  if (remaining() < total) [[unlikely]] {
-    return std::unexpected(Error(ParseError::Code::Truncated));
+  if (Remaining() < total) [[unlikely]] {
+    return std::unexpected(Error(ParseError::Code::kTruncated));
   }
 
   const std::byte* src = buffer_.data() + pos_;
@@ -117,8 +117,8 @@ template <typename T>
 
   constexpr std::size_t kSize = sizeof(T);
   const std::size_t total = *len * kSize;
-  if (remaining() < total) [[unlikely]] {
-    return std::unexpected(Error(ParseError::Code::Truncated));
+  if (Remaining() < total) [[unlikely]] {
+    return std::unexpected(Error(ParseError::Code::kTruncated));
   }
 
   const auto* ptr = reinterpret_cast<const T*>(buffer_.data() + pos_);

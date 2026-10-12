@@ -36,13 +36,13 @@ class ByteReader {
 
   // State
   [[nodiscard]] std::size_t pos() const noexcept;
-  [[nodiscard]] std::size_t remaining() const noexcept;
+  [[nodiscard]] std::size_t Remaining() const noexcept;
   [[nodiscard]] std::size_t depth() const noexcept;
   [[nodiscard]] const DecodeLimits& limits() const noexcept;
 
-  void advance(std::size_t num_bytes) noexcept;
-  void push_depth() noexcept;
-  void pop_depth() noexcept;
+  void Advance(std::size_t num_bytes) noexcept;
+  void PushDepth() noexcept;
+  void PopDepth() noexcept;
 
   [[nodiscard]] ParseError Error(ParseError::Code code) const noexcept;
 

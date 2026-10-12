@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <bit>
 #include <cstddef>
+#include <exception>
 #include <new>
 #include <utility>
 #include <vector>
@@ -133,17 +134,17 @@ FSCHEMA_HOT [[nodiscard]] void* Arena::Allocate(std::size_t bytes,
   return TryBumpCurrent(bytes, align);
 }
 
-[[nodiscard]] std::size_t Arena::bytes_used() const noexcept {
+[[nodiscard]] std::size_t Arena::BytesUsed() const noexcept {
   std::size_t total = 0;
   for (const auto& s : slabs_) total += s.used;
   return total;
 }
 
-[[nodiscard]] std::size_t Arena::slab_count() const noexcept {
+[[nodiscard]] std::size_t Arena::SlabCount() const noexcept {
   return slabs_.size();
 }
 
-[[nodiscard]] bool Arena::has_large_pages() const noexcept {
+[[nodiscard]] bool Arena::HasLargePages() const noexcept {
   for (const auto& s : slabs_)
     if (s.source == SlabSource::kLargePage) return true;
   return false;
@@ -201,7 +202,9 @@ void Arena::NewSlab(std::size_t size) {
   source = SlabSource::kAligned;
 #endif
 
-  if (!p) throw std::bad_alloc{};
+  if (!p) {
+    std::terminate();
+  }
 
   slabs_.push_back({static_cast<std::byte*>(p), size, 0, source});
   cursor_ = {static_cast<std::byte*>(p), size, 0};

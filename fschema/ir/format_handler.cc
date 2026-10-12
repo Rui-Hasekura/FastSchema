@@ -57,11 +57,11 @@ ParseResult<Schema> DecodeFromFormat(
   const FormatHandler* h = FormatRegistry::Instance().Find(fmt);
   if (!h) {
     return std::unexpected(ParseError{
-        ParseError::Code::UnsupportedVersion, "FormatHandlerNotFound", 0});
+        ParseError::Code::kUnsupportedVersion, "FormatHandlerNotFound", 0});
   }
   if (!bytes || bytes->empty()) {
     return std::unexpected(
-        ParseError{ParseError::Code::Truncated, "EmptyInputBuffer", 0});
+        ParseError{ParseError::Code::kTruncated, "EmptyInputBuffer", 0});
   }
 
   if (bytes->size() >= 2 && (*bytes)[0] == std::byte{0x1F} &&
@@ -70,7 +70,7 @@ ParseResult<Schema> DecodeFromFormat(
         base::DecompressGzip(std::span<const std::byte>(*bytes));
     if (!decompressed) {
       return std::unexpected(
-          ParseError{ParseError::Code::Truncated, "AutoDecompressFailed", 0});
+          ParseError{ParseError::Code::kTruncated, "AutoDecompressFailed", 0});
     }
     *bytes = std::move(*decompressed);
   }
@@ -85,7 +85,7 @@ ParseResult<std::vector<std::byte>> EncodeToFormat(
   const FormatHandler* h = FormatRegistry::Instance().Find(fmt);
   if (!h) {
     return std::unexpected(ParseError{
-        ParseError::Code::UnsupportedVersion, "FormatHandlerNotFound", 0});
+        ParseError::Code::kUnsupportedVersion, "FormatHandlerNotFound", 0});
   }
 
   auto result = h->Encode(ir, options);
@@ -95,7 +95,7 @@ ParseResult<std::vector<std::byte>> EncodeToFormat(
     auto compressed = base::CompressGzip(std::span<const std::byte>(*result));
     if (!compressed) {
       return std::unexpected(
-          ParseError{ParseError::Code::Truncated, "CompressFailed", 0});
+          ParseError{ParseError::Code::kTruncated, "CompressFailed", 0});
     }
     return *compressed;
   }

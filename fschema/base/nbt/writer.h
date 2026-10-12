@@ -39,7 +39,7 @@ class NbtWriter {
   NbtWriter& operator=(NbtWriter&&) noexcept = default;
 
   // Current output size in bytes (useful for reserve estimation / debugging).
-  [[nodiscard]] std::size_t size() const noexcept { return buffer_.size(); }
+  [[nodiscard]] std::size_t Size() const noexcept { return buffer_.size(); }
 
   // Root Compound Boundaries
   void BeginRootCompound(std::string_view name);
@@ -91,7 +91,7 @@ class NbtWriter {
   // Appends a single TAG_End byte (0x00) without changing the writer's
   // internal depth counter. Needed when appending to a raw compound body
   // that was copied via WriteListElementRawPayload.
-  void WriteEndTag() { WriteTagId(TagType::End); }
+  void WriteEndTag() { WriteTagId(TagType::kEnd); }
 
   // Finalization
   // Moves and returns the constructed NBT buffer

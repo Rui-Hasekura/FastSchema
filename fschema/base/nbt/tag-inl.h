@@ -30,17 +30,17 @@ namespace fschema::base {
 [[nodiscard]] constexpr std::size_t FixedPayloadSize(
     TagType tag_type) noexcept {
   switch (tag_type) {
-    case TagType::Byte:
+    case TagType::kByte:
       return 1;
-    case TagType::Short:
+    case TagType::kShort:
       return 2;
-    case TagType::Int:
+    case TagType::kInt:
       return 4;
-    case TagType::Long:
+    case TagType::kLong:
       return 8;
-    case TagType::Float:
+    case TagType::kFloat:
       return 4;
-    case TagType::Double:
+    case TagType::kDouble:
       return 8;
     default:
       return 0;
@@ -53,11 +53,11 @@ namespace fschema::base {
 
 [[nodiscard]] constexpr std::size_t ElementSize(TagType tag_type) noexcept {
   switch (tag_type) {
-    case TagType::ByteArray:
+    case TagType::kByteArray:
       return 1;
-    case TagType::IntArray:
+    case TagType::kIntArray:
       return 4;
-    case TagType::LongArray:
+    case TagType::kLongArray:
       return 8;
     default:
       return 0;
