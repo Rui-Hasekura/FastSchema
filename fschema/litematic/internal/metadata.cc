@@ -45,9 +45,6 @@ namespace fschema::litematic::internal {
           return {};
         }
 
-        // Format-specific fields
-        const auto payload_start = reader.pos();
-
         if (name == "Description" && t == base::TagType::kString) {
           auto v = reader.ReadStringView();
           if (!v) return std::unexpected(v.error());

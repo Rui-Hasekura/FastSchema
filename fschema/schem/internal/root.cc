@@ -42,7 +42,6 @@ namespace fschema::schem::internal {
 
   auto r = ForEachCompoundField(
       reader, [&](std::string_view name, base::TagType t) -> ParseResult<void> {
-        const std::size_t payload_start = reader.pos();
 
         if (name == "Name" && t == base::TagType::kString) {
           auto v = reader.ReadStringView();
@@ -62,6 +61,7 @@ namespace fschema::schem::internal {
           if (!v) return std::unexpected(v.error());
           meta.date = *v;
         } else if (name == "RequiredMods" && t == base::TagType::kList) {
+          const std::size_t payload_start = reader.pos();
           auto s = base::SkipPayload(reader, base::TagType::kList);
           if (!s) return std::unexpected(s.error());
           meta.required_mods = reader.SpanFrom(payload_start);
@@ -174,7 +174,6 @@ ParseSchematicFields(base::ByteReader& reader, Schematic& out, bool is_v3) {
 
   auto result = ForEachCompoundField(
       reader, [&](std::string_view name, base::TagType t) -> ParseResult<void> {
-        const std::size_t payload_start = reader.pos();
 
         if (name == "Version" && t == base::TagType::kInt) {
           auto v = reader.Read<std::int32_t>();
@@ -296,18 +295,18 @@ ParseSchematicFields(base::ByteReader& reader, Schematic& out, bool is_v3) {
         ParseError::At(ParseError::Code::kMissingField, "Width", reader.pos()));
   }
   if (!have_height) [[unlikely]] {
-    return std::unexpected(
-        ParseError::At(ParseError::Code::kMissingField, "Height", reader.pos()));
+    return std::unexpected(ParseError::At(
+        ParseError::Code::kMissingField, "Height", reader.pos()));
   }
   if (!have_length) [[unlikely]] {
-    return std::unexpected(
-        ParseError::At(ParseError::Code::kMissingField, "Length", reader.pos()));
+    return std::unexpected(ParseError::At(
+        ParseError::Code::kMissingField, "Length", reader.pos()));
   }
 
   const std::uint64_t volume = VolumeOf(out);
   if (volume > reader.limits().max_volume_per_region) [[unlikely]] {
-    return std::unexpected(
-        ParseError{ParseError::Code::kVolumeOverflow, "Width*Height*Length", 0});
+    return std::unexpected(ParseError{
+        ParseError::Code::kVolumeOverflow, "Width*Height*Length", 0});
   }
 
   if (!is_v3 && v2_have_block_data) {
