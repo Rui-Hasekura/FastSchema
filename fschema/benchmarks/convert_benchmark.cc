@@ -453,7 +453,9 @@ int main(int argc, char* argv[]) {
   // CrossConvertGzip
   // Tip: --benchmark_filter=Convert|EncodeOnly|CopyOnly|DecodeOnly
 
+  const auto& files = GetFiles();
   const bool all_ok = RunVerification();
+
   std::println(stderr, "\nVerify: {}", all_ok ? "PASS" : "FAIL");
 
   ::benchmark::Initialize(&argc, argv);

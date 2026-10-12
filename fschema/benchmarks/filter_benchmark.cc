@@ -125,7 +125,7 @@ void RunFilterBenchmark(benchmark::State& st, FilterType filter) {
       return;
     }
     // Force full traversal so the filter's predicate is actually exercised.
-    total_blocks = view_res->count();
+    total_blocks = view_res->Count();
     benchmark::DoNotOptimize(total_blocks);
   }
 

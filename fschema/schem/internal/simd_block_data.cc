@@ -605,15 +605,14 @@ void DecodeVarintChunks(const std::uint8_t* const* chunk_ptrs,
                         const std::size_t* chunk_offsets,
                         const std::size_t* chunk_counts,
                         std::size_t num_chunks,
-                        std::uint16_t* out,
                         const std::uint8_t* data_end,
                         std::size_t palette_size,
-                        std::atomic<std::uint32_t>& error_flag) {
+                        std::atomic<std::uint32_t>& error_flag,
+                        std::uint16_t* out) {
   HWY_DYNAMIC_DISPATCH(DecodeVarintChunksKernelImpl)(chunk_ptrs,
                                                      chunk_offsets,
                                                      chunk_counts,
                                                      num_chunks,
-
                                                      data_end,
                                                      palette_size,
                                                      error_flag,
