@@ -84,12 +84,6 @@ TEST_P(SchemParseTest, ParsesSuccessfullyAndValidatesStructure) {
   // Palette sanity
   EXPECT_FALSE(schematic.palette.empty()) << "Palette is empty";
 
-  // Biome consistency (if present)
-  if (!schematic.raw_biome_data.empty()) {
-    EXPECT_FALSE(schematic.biome_palette.empty())
-        << "biome_palette is empty but raw_biome_data is not";
-  }
-
   // Validate materialized block indices
   const std::uint64_t expected_vol = fsc::VolumeOf(schematic);
   auto res = fsc::internal::DecodeVarintArray(schematic.raw_block_data,

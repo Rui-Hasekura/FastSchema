@@ -300,11 +300,6 @@ int main(int argc, char* argv[]) {
     std::println("  BlockEnts:    {}", schematic.block_entities.size());
     std::println("  Entities:     {}", schematic.entities.size());
     std::println("  Non-air:      {}", non_air_total);
-
-    if (!schematic.raw_biome_data.empty()) {
-      std::println("  BiomePal:     {}", schematic.biome_palette.size());
-      std::println("  BiomeData:    {} bytes", schematic.raw_biome_data.size());
-    }
   }
   std::println("Verify: {}", all_ok ? "PASS" : "FAIL");
 
