@@ -36,7 +36,6 @@
 #include "fschema/litematic/internal/pending.h"
 #include "fschema/litematic/internal/tile_entity.h"
 #include "fschema/litematic/types.h"
-#include "fschema/memory/arena.h"
 
 namespace fschema::litematic::internal {
 
@@ -68,8 +67,7 @@ namespace fschema::litematic::internal {
 }
 
 [[nodiscard]] ParseResult<Region> ParseRegion(base::ByteReader& reader,
-                                              std::string_view region_name,
-                                              memory::Arena& arena) {
+                                              std::string_view region_name) {
   Region region;
   region.name = region_name;
   const std::size_t compound_start = reader.pos();
@@ -223,7 +221,7 @@ namespace fschema::litematic::internal {
               reader.Error(ParseError::Code::kOversizedPayload));
         }
         if (t == base::TagType::kCompound) {
-          auto r = ParseRegion(reader, name, *out.arena);
+          auto r = ParseRegion(reader, name);
           if (!r) return std::unexpected(r.error());
           out.regions.push_back(std::move(*r));
         } else {
