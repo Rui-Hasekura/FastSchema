@@ -13,7 +13,7 @@ typically at program startup:
 
 ```cpp
 #include "fschema/ir/format_handler.h"
-#include "fschema/ir/litematic_handler.h"
+#include "fschema/ir/litematica_handler.h"
 #include "fschema/ir/schem_handler.h"
 
 namespace firc = fschema::ir::format;
@@ -100,7 +100,7 @@ region, apply an editor, and encode the modified schema back out.
 #include "fschema/filters/box_filter.h"
 #include "fschema/filters/view.h"
 #include "fschema/ir/format_handler.h"
-#include "fschema/ir/litematic_handler.h"
+#include "fschema/ir/litematica_handler.h"
 #include "fschema/memory/arena.h"
 
 namespace fl = fschema::filters;

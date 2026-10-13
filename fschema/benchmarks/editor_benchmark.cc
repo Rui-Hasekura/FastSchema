@@ -37,7 +37,7 @@
 #include "fschema/filters/box_filter.h"
 #include "fschema/filters/view.h"
 #include "fschema/ir/format_handler.h"
-#include "fschema/ir/litematic_handler.h"
+#include "fschema/ir/litematica_handler.h"
 #include "fschema/ir/materialize.h"
 #include "fschema/ir/schem_handler.h"
 #include "fschema/ir/types.h"

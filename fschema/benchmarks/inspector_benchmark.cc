@@ -32,7 +32,7 @@
 #include "fschema/inspectors/support_check.h"
 #include "fschema/inspectors/version_check.h"
 #include "fschema/ir/format_handler.h"
-#include "fschema/ir/litematic_handler.h"
+#include "fschema/ir/litematica_handler.h"
 #include "fschema/ir/materialize.h"
 #include "fschema/ir/schem_handler.h"
 #include "fschema/ir/types.h"

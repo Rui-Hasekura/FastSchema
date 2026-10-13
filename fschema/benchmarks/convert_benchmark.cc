@@ -30,7 +30,7 @@
 #include "fschema/base/block_utils.h"
 #include "fschema/base/compressor.h"
 #include "fschema/ir/format_handler.h"
-#include "fschema/ir/litematic_handler.h"
+#include "fschema/ir/litematica_handler.h"
 #include "fschema/ir/materialize.h"
 #include "fschema/ir/schem_handler.h"
 #include "fschema/ir/types.h"
