@@ -81,7 +81,7 @@ and debugging format issues.
 
 ## Litematic Layer
 
-`fschema/litematic/parse.h` has one entry point:
+`fschema/litematica/parse.h` has one entry point:
 
 ```cpp
 [[nodiscard]] ParseResult<Litematic> ParseLitematic(

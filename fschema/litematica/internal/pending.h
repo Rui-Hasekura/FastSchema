@@ -13,22 +13,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef FSCHEMA_LITEMATIC_INTERNAL_ENTITY_H_
-#define FSCHEMA_LITEMATIC_INTERNAL_ENTITY_H_
+#ifndef FSCHEMA_LITEMATICA_INTERNAL_PENDING_H_
+#define FSCHEMA_LITEMATICA_INTERNAL_PENDING_H_
 
 #include <vector>
 
 #include "fschema/base/error.h"
 #include "fschema/base/nbt/reader.h"
-#include "fschema/litematic/types.h"
+#include "fschema/litematica/types.h"
 
-namespace fschema::litematic::internal {
+namespace fschema::litematica::internal {
 
-[[nodiscard]] ParseResult<Entity> ParseEntityCompound(base::ByteReader& reader);
+[[nodiscard]] ParseResult<void> ParsePendingTicks(
+    base::ByteReader& reader,
+    std::vector<PendingTick>& out);
 
-[[nodiscard]] ParseResult<void> ParseEntities(base::ByteReader& reader,
-                                              std::vector<Entity>& entities);
+}  // namespace fschema::litematica::internal
 
-}  // namespace fschema::litematic::internal
-
-#endif  // FSCHEMA_LITEMATIC_INTERNAL_ENTITY_H_
+#endif  // FSCHEMA_LITEMATICA_INTERNAL_PENDING_H_

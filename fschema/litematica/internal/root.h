@@ -13,14 +13,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef FSCHEMA_LITEMATIC_INTERNAL_ROOT_H_
-#define FSCHEMA_LITEMATIC_INTERNAL_ROOT_H_
+#ifndef FSCHEMA_LITEMATICA_INTERNAL_ROOT_H_
+#define FSCHEMA_LITEMATICA_INTERNAL_ROOT_H_
 
 #include "fschema/base/error.h"
 #include "fschema/base/nbt/reader.h"
-#include "fschema/litematic/types.h"
+#include "fschema/litematica/types.h"
 
-namespace fschema::litematic::internal {
+namespace fschema::litematica::internal {
 
 // Litematica root Compound fields (Java write order is fixed):
 //   Version: Int          <- Necessary
@@ -31,8 +31,8 @@ namespace fschema::litematic::internal {
 //
 // Unknown field -> SkipPayload
 [[nodiscard]] ParseResult<void> ParseRoot(base::ByteReader& reader,
-                                          Litematic& out);
+                                          Litematica& out);
 
-}  // namespace fschema::litematic::internal
+}  // namespace fschema::litematica::internal
 
-#endif  // FSCHEMA_LITEMATIC_INTERNAL_ROOT_H_
+#endif  // FSCHEMA_LITEMATICA_INTERNAL_ROOT_H_

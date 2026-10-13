@@ -13,8 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef FSCHEMA_LITEMATIC_TYPES_H_
-#define FSCHEMA_LITEMATIC_TYPES_H_
+#ifndef FSCHEMA_LITEMATICA_TYPES_H_
+#define FSCHEMA_LITEMATICA_TYPES_H_
 
 #include <array>
 #include <cstddef>
@@ -27,7 +27,7 @@
 #include "fschema/base/nbt/tag.h"
 #include "fschema/memory/arena.h"
 
-namespace fschema::litematic {
+namespace fschema::litematica {
 
 // Minecraft Java Edition Version
 enum class Version : std::int32_t {
@@ -42,7 +42,7 @@ struct RawField {
   std::span<const std::byte> payload;
 };
 
-// Litematic Metadata
+// Litematica Metadata
 struct Metadata {
   std::string_view name;
   std::string_view author;
@@ -125,7 +125,7 @@ struct Region {
 };
 
 // Up-level
-struct Litematic {
+struct Litematica {
   Version version = Version::kV5;
   std::int32_t data_version = 0;  // Minecraft DataVersion
   Metadata metadata;
@@ -133,7 +133,7 @@ struct Litematic {
 
   // Owner of the bytes (after decompression).
   // All spans (properties / raw_nbt / preview_data / pending_*) point to this
-  // memory; when Litematic is destructed, all spans become invalid. Downstream
+  // memory; when Litematica is destructed, all spans become invalid. Downstream
   // should not use this pointer directly.
   std::unique_ptr<std::vector<std::byte>> owner;
   std::unique_ptr<memory::Arena> arena;
@@ -149,6 +149,6 @@ struct Litematic {
   return abs_dim(size[0]) * abs_dim(size[1]) * abs_dim(size[2]);
 }
 
-}  // namespace fschema::litematic
+}  // namespace fschema::litematica
 
-#endif  // FSCHEMA_LITEMATIC_TYPES_H_
+#endif  // FSCHEMA_LITEMATICA_TYPES_H_

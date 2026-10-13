@@ -28,9 +28,9 @@
 #include "fschema/base/block_utils.h"
 #include "fschema/base/compressor.h"
 #include "fschema/base/error.h"
-#include "fschema/litematic/internal/block_states.h"
-#include "fschema/litematic/parse.h"
-#include "fschema/litematic/types.h"
+#include "fschema/litematica/internal/block_states.h"
+#include "fschema/litematica/parse.h"
+#include "fschema/litematica/types.h"
 #include "fschema/memory/arena.h"
 #include "fschema/tests/testdata_util.h"
 #include "hwy/targets.h"
@@ -108,7 +108,7 @@ static void BM_ParseLitematic(benchmark::State& st) {
   for (auto _ : st) {
     auto owner =
         std::make_unique<std::vector<std::byte>>(std::move(reusable_buffer));
-    auto result = fschema::litematic::ParseLitematic(std::move(owner));
+    auto result = fschema::litematica::ParseLitematic(std::move(owner));
     if (!result) {
       PrintErrorFn(result.error());
       st.SkipWithError("parse failed");
@@ -122,7 +122,7 @@ static void BM_ParseLitematic(benchmark::State& st) {
 
   {
     auto owner = std::make_unique<std::vector<std::byte>>(tf.bytes);
-    auto r = fschema::litematic::ParseLitematic(std::move(owner));
+    auto r = fschema::litematica::ParseLitematic(std::move(owner));
     if (r) {
       std::uint64_t total_blocks = 0;
       for (const auto& reg : r->regions) {
@@ -145,7 +145,7 @@ static void BM_UnpackLitematic(benchmark::State& st) {
   const auto& tf = files[st.range(0)];
 
   auto owner = std::make_unique<std::vector<std::byte>>(tf.bytes);
-  auto result = fschema::litematic::ParseLitematic(std::move(owner));
+  auto result = fschema::litematica::ParseLitematic(std::move(owner));
   if (!result || result->regions.empty()) {
     st.SkipWithError("Parse failed or no regions");
     return;
@@ -154,12 +154,12 @@ static void BM_UnpackLitematic(benchmark::State& st) {
   const auto& reg = result->regions[0];
   std::uint64_t volume = ExpectedVolume(reg.size);
   std::uint32_t bpb =
-      fschema::litematic::internal::BitsPerBlock(reg.palette.size());
+      fschema::litematica::internal::BitsPerBlock(reg.palette.size());
   std::size_t bytes_size = reg.raw_block_states.size();
 
   for (auto _ : st) {
     fschema::memory::Arena arena;
-    auto res = fschema::litematic::internal::UnpackIndicesFused(
+    auto res = fschema::litematica::internal::UnpackIndicesFused(
         reg.raw_block_states, bpb, volume, reg.palette.size());
     if (!res) {
       st.SkipWithError("Unpack failed");
@@ -173,7 +173,7 @@ static void BM_UnpackLitematic(benchmark::State& st) {
       benchmark::Counter(static_cast<double>(bytes_size) / (1024.0 * 1024.0));
 }
 
-[[nodiscard]] bool ValidateRegion(const fschema::litematic::Region& r,
+[[nodiscard]] bool ValidateRegion(const fschema::litematica::Region& r,
                                   bool full,
                                   fschema::memory::Arena& arena) {
   bool ok = true;
@@ -182,13 +182,13 @@ static void BM_UnpackLitematic(benchmark::State& st) {
   if (expected == 0) return r.raw_block_states.empty();
 
   const std::uint32_t bpb =
-      fschema::litematic::internal::BitsPerBlock(r.palette.size());
+      fschema::litematica::internal::BitsPerBlock(r.palette.size());
   const std::uint64_t min_longs = (expected * bpb + 63) / 64;
   if (static_cast<std::uint64_t>(r.raw_block_states.size() / 8) < min_longs) {
     return false;
   }
 
-  auto res = fschema::litematic::internal::UnpackIndicesFused(
+  auto res = fschema::litematica::internal::UnpackIndicesFused(
       r.raw_block_states, bpb, expected, r.palette.size());
   if (!res) return false;
 
@@ -215,7 +215,7 @@ static void BM_UnpackLitematic(benchmark::State& st) {
   return ok;
 }
 
-[[nodiscard]] std::uint64_t NonAirCount(const fschema::litematic::Region& r,
+[[nodiscard]] std::uint64_t NonAirCount(const fschema::litematica::Region& r,
                                         fschema::memory::Arena& arena) {
   if (r.palette.empty() || r.raw_block_states.empty()) {
     return 0;
@@ -224,9 +224,9 @@ static void BM_UnpackLitematic(benchmark::State& st) {
   if (expected == 0) return 0;
 
   const std::uint32_t bpb =
-      fschema::litematic::internal::BitsPerBlock(r.palette.size());
+      fschema::litematica::internal::BitsPerBlock(r.palette.size());
 
-  auto res = fschema::litematic::internal::UnpackIndicesFused(
+  auto res = fschema::litematica::internal::UnpackIndicesFused(
       r.raw_block_states, bpb, expected, r.palette.size());
   if (!res) return 0;
 
@@ -265,7 +265,7 @@ int main(int argc, char* argv[]) {
     const auto& tf = files[fi];
     std::println("\n══════ Verify: {} ════", tf.filename);
     auto owner = std::make_unique<std::vector<std::byte>>(tf.bytes);
-    auto r = fschema::litematic::ParseLitematic(std::move(owner));
+    auto r = fschema::litematica::ParseLitematic(std::move(owner));
     if (!r) {
       PrintErrorFn(r.error());
       all_ok = false;

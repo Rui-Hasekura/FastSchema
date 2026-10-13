@@ -13,21 +13,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef FSCHEMA_LITEMATIC_INTERNAL_PENDING_H_
-#define FSCHEMA_LITEMATIC_INTERNAL_PENDING_H_
+#ifndef FSCHEMA_LITEMATICA_INTERNAL_PALETTE_H_
+#define FSCHEMA_LITEMATICA_INTERNAL_PALETTE_H_
 
 #include <vector>
 
 #include "fschema/base/error.h"
 #include "fschema/base/nbt/reader.h"
-#include "fschema/litematic/types.h"
+#include "fschema/litematica/types.h"
 
-namespace fschema::litematic::internal {
+namespace fschema::litematica::internal {
 
-[[nodiscard]] ParseResult<void> ParsePendingTicks(
+// BlockStatePalette: List<Compound>
+//   PER Compound: {
+//     Name: String          <- Necessary, e.g. "minecraft:oak_stairs"
+//     Properties: Compound  <- Optional, arbitrary key-value pairs
+//   }
+// Properties reserves raw span (Open schema, it's impossible to enumerate all
+// keys).
+[[nodiscard]] ParseResult<void> ParsePalette(
     base::ByteReader& reader,
-    std::vector<PendingTick>& out);
+    std::vector<fschema::litematica::BlockState>& palette);
 
-}  // namespace fschema::litematic::internal
+}  // namespace fschema::litematica::internal
 
-#endif  // FSCHEMA_LITEMATIC_INTERNAL_PENDING_H_
+#endif  // FSCHEMA_LITEMATICA_INTERNAL_PALETTE_H_

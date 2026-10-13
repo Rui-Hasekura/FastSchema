@@ -23,8 +23,8 @@
 
 #include "fschema/base/compressor.h"
 #include "fschema/base/error.h"
-#include "fschema/litematic/parse.h"
-#include "fschema/litematic/types.h"
+#include "fschema/litematica/parse.h"
+#include "fschema/litematica/types.h"
 
 namespace fb = fschema::base;
 namespace fl = fschema::litematic;

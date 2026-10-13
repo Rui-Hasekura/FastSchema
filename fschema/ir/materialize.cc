@@ -15,7 +15,7 @@
 
 #include "fschema/ir/materialize.h"
 
-#include "fschema/litematic/internal/block_states.h"
+#include "fschema/litematica/internal/block_states.h"
 #include "fschema/schem/internal/block_data.h"
 
 namespace fschema::ir {
@@ -29,7 +29,7 @@ ParseResult<void> EnsureMaterialized(const Region& reg, memory::Arena& arena) {
 
   if (reg.lazy_source.encoding == BlockDataEncoding::kLitematicaLongArray) {
     auto res =
-        litematic::internal::UnpackIndicesFused(reg.lazy_source.raw_bytes,
+        litematica::internal::UnpackIndicesFused(reg.lazy_source.raw_bytes,
                                                 reg.lazy_source.bits_per_block,
                                                 volume,
                                                 reg.lazy_source.palette_size);

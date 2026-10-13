@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "fschema/litematic/internal/region.h"
+#include "fschema/litematica/internal/region.h"
 
 #include <array>
 #include <cstddef>
@@ -30,14 +30,14 @@
 #include "fschema/base/nbt/scope.h"
 #include "fschema/base/nbt/skip.h"
 #include "fschema/base/nbt/tag.h"
-#include "fschema/litematic/internal/block_states.h"
-#include "fschema/litematic/internal/entity.h"
-#include "fschema/litematic/internal/palette.h"
-#include "fschema/litematic/internal/pending.h"
-#include "fschema/litematic/internal/tile_entity.h"
-#include "fschema/litematic/types.h"
+#include "fschema/litematica/internal/block_states.h"
+#include "fschema/litematica/internal/entity.h"
+#include "fschema/litematica/internal/palette.h"
+#include "fschema/litematica/internal/pending.h"
+#include "fschema/litematica/internal/tile_entity.h"
+#include "fschema/litematica/types.h"
 
-namespace fschema::litematic::internal {
+namespace fschema::litematica::internal {
 
 [[nodiscard]] ParseResult<std::array<std::int32_t, 3>> ParseVec3Int(
     base::ByteReader& reader) {
@@ -211,7 +211,7 @@ namespace fschema::litematic::internal {
 }
 
 [[nodiscard]] ParseResult<void> ParseRegions(base::ByteReader& reader,
-                                             Litematic& out) {
+                                             Litematica& out) {
   std::size_t region_count = 0;
 
   auto result = ForEachCompoundField(
@@ -233,4 +233,4 @@ namespace fschema::litematic::internal {
   return {};
 }
 
-}  // namespace fschema::litematic::internal
+}  // namespace fschema::litematica::internal

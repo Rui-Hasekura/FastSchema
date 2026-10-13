@@ -13,8 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef FSCHEMA_LITEMATIC_INTERNAL_BLOCK_STATES_H_
-#define FSCHEMA_LITEMATIC_INTERNAL_BLOCK_STATES_H_
+#ifndef FSCHEMA_LITEMATICA_INTERNAL_BLOCK_STATES_H_
+#define FSCHEMA_LITEMATICA_INTERNAL_BLOCK_STATES_H_
 
 #include <bit>
 #include <cstddef>
@@ -24,7 +24,7 @@
 #include "fschema/base/error.h"
 #include "fschema/memory/uninit_buffer.h"
 
-namespace fschema::litematic::internal {
+namespace fschema::litematica::internal {
 
 [[nodiscard]] constexpr std::uint32_t BitsPerBlock(
     std::size_t palette_size) noexcept {
@@ -40,6 +40,6 @@ UnpackIndicesFused(std::span<const std::byte> raw_longs,
                    std::uint64_t volume,
                    std::size_t palette_size);
 
-}  // namespace fschema::litematic::internal
+}  // namespace fschema::litematica::internal
 
-#endif  // FSCHEMA_LITEMATIC_INTERNAL_BLOCK_STATES_H_
+#endif  // FSCHEMA_LITEMATICA_INTERNAL_BLOCK_STATES_H_

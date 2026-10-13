@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "fschema/ir/litematic_handler.h"
+#include "fschema/ir/litematica_handler.h"
 
 #include <array>
 #include <bit>
@@ -32,7 +32,7 @@
 #include "fschema/ir/internal/bit_pack.h"
 #include "fschema/ir/internal/codec_utils.h"
 #include "fschema/ir/materialize.h"
-#include "fschema/litematic/parse.h"
+#include "fschema/litematica/parse.h"
 
 #if defined(__AVX2__)
 #  include <immintrin.h>
@@ -62,7 +62,7 @@ inline bool ShouldUseExtensions(const Schema& ir, std::int32_t target_version) {
 ParseResult<Schema> LitematicaHandler::Decode(
     std::unique_ptr<std::vector<std::byte>> bytes,
     const base::DecodeLimits& limits) const {
-  auto lit = litematic::ParseLitematic(std::move(bytes), limits);
+  auto lit = litematica::ParseLitematic(std::move(bytes), limits);
   if (!lit) return std::unexpected(lit.error());
   return DecodeFromParsed(std::move(*lit));
 }
@@ -419,7 +419,7 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
 }
 
 ParseResult<Schema> LitematicaHandler::DecodeFromParsed(
-    litematic::Litematic&& src) const {
+    litematica::Litematica&& src) const {
   Schema ir;
   ir.source_format = SourceFormat::kLitematica;
   ir.source_version = static_cast<std::int32_t>(src.version);

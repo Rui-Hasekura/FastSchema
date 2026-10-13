@@ -14,7 +14,7 @@
 // limitations under the License.
 
 #undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "fschema/litematic/internal/simd_block_states.cc"
+#define HWY_TARGET_INCLUDE "fschema/litematica/internal/simd_block_states.cc"
 
 #include "hwy/foreach_target.h"
 #include "hwy/highway.h"
@@ -36,10 +36,10 @@
 
 #include "fschema/base/error.h"
 #include "fschema/base/port.h"
-#include "fschema/litematic/internal/block_states.h"
+#include "fschema/litematica/internal/block_states.h"
 
 HWY_BEFORE_NAMESPACE();
-namespace fschema::litematic::internal {
+namespace fschema::litematica::internal {
 namespace HWY_NAMESPACE {
 
 namespace hn = hwy::HWY_NAMESPACE;
@@ -561,11 +561,11 @@ ParseResult<memory::UnInitBuffer<std::uint16_t>> UnpackIndicesFusedImpl(
 }
 
 }  // namespace HWY_NAMESPACE
-}  // namespace fschema::litematic::internal
+}  // namespace fschema::litematica::internal
 HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
-namespace fschema::litematic::internal {
+namespace fschema::litematica::internal {
 HWY_EXPORT(UnpackIndicesFusedImpl);
 
 [[nodiscard]] ParseResult<memory::UnInitBuffer<std::uint16_t>>
@@ -577,5 +577,5 @@ UnpackIndicesFused(std::span<const std::byte> raw_longs,
       raw_longs, bits_per_block, volume, palette_size);
 }
 
-}  // namespace fschema::litematic::internal
+}  // namespace fschema::litematica::internal
 #endif  // HWY_ONCE

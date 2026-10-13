@@ -17,7 +17,7 @@
 #define FSCHEMA_IR_LITEMATICA_HANDLER_H_
 
 #include "fschema/ir/format_handler.h"
-#include "fschema/litematic/types.h"
+#include "fschema/litematica/types.h"
 
 namespace fschema::ir::format {
 
@@ -38,9 +38,9 @@ class LitematicaHandler final : public FormatHandler {
       const Schema& ir,
       const EncodeOptions& options) const override;
 
-  // High-efficiency path: build IR directly from already parsed Litematic
+  // High-efficiency path: build IR directly from already parsed Litematica
   [[nodiscard]] ParseResult<Schema> DecodeFromParsed(
-      litematic::Litematic&& src) const;
+      litematica::Litematica&& src) const;
 };
 
 }  // namespace fschema::ir::format

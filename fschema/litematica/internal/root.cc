@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "fschema/litematic/internal/root.h"
+#include "fschema/litematica/internal/root.h"
 
 #include <cstdint>
 #include <expected>
@@ -23,13 +23,13 @@
 #include "fschema/base/nbt/scope.h"
 #include "fschema/base/nbt/skip.h"
 #include "fschema/base/nbt/tag.h"
-#include "fschema/litematic/internal/metadata.h"
-#include "fschema/litematic/internal/region.h"
+#include "fschema/litematica/internal/metadata.h"
+#include "fschema/litematica/internal/region.h"
 
-namespace fschema::litematic::internal {
+namespace fschema::litematica::internal {
 
 [[nodiscard]] ParseResult<void> ParseRoot(base::ByteReader& reader,
-                                          Litematic& out) {
+                                          Litematica& out) {
   {
     auto root_tag = reader.Read<std::uint8_t>();
     if (!root_tag) return std::unexpected(root_tag.error());
@@ -102,4 +102,4 @@ namespace fschema::litematic::internal {
   return {};
 }
 
-}  // namespace fschema::litematic::internal
+}  // namespace fschema::litematica::internal

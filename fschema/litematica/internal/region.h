@@ -13,8 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef FSCHEMA_LITEMATIC_INTERNAL_REGION_H_
-#define FSCHEMA_LITEMATIC_INTERNAL_REGION_H_
+#ifndef FSCHEMA_LITEMATICA_INTERNAL_REGION_H_
+#define FSCHEMA_LITEMATICA_INTERNAL_REGION_H_
 
 #include <array>
 #include <cstdint>
@@ -22,13 +22,13 @@
 
 #include "fschema/base/error.h"
 #include "fschema/base/nbt/reader.h"
-#include "fschema/litematic/types.h"
+#include "fschema/litematica/types.h"
 
 namespace fschema::memory {
 class Arena;
 }
 
-namespace fschema::litematic::internal {
+namespace fschema::litematica::internal {
 
 // Regions Compound: every region is a Compound entry
 //   <region_name>: Compound {
@@ -53,8 +53,8 @@ namespace fschema::litematic::internal {
                                               memory::Arena& arena);
 
 [[nodiscard]] ParseResult<void> ParseRegions(base::ByteReader& reader,
-                                             Litematic& out);
+                                             Litematica& out);
 
-}  // namespace fschema::litematic::internal
+}  // namespace fschema::litematica::internal
 
-#endif  // FSCHEMA_LITEMATIC_INTERNAL_REGION_H_
+#endif  // FSCHEMA_LITEMATICA_INTERNAL_REGION_H_

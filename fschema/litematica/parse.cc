@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "fschema/litematic/parse.h"
+#include "fschema/litematica/parse.h"
 
 #include <cstddef>
 #include <expected>
@@ -25,16 +25,16 @@
 #include "fschema/base/error.h"
 #include "fschema/base/limits.h"
 #include "fschema/base/nbt/reader.h"
-#include "fschema/litematic/internal/root.h"
-#include "fschema/litematic/types.h"
+#include "fschema/litematica/internal/root.h"
+#include "fschema/litematica/types.h"
 #include "fschema/memory/arena.h"
 
-namespace fschema::litematic {
+namespace fschema::litematica {
 
-[[nodiscard]] ParseResult<Litematic> ParseLitematic(
+[[nodiscard]] ParseResult<Litematica> ParseLitematic(
     std::unique_ptr<std::vector<std::byte>> decompressed,
     const base::DecodeLimits& limits) {
-  Litematic out;
+  Litematica out;
   out.arena = std::make_unique<memory::Arena>();
 
   if (!decompressed || decompressed->empty()) {
@@ -51,4 +51,4 @@ namespace fschema::litematic {
   return out;
 }
 
-}  // namespace fschema::litematic
+}  // namespace fschema::litematica

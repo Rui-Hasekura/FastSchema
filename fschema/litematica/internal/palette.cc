@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "fschema/litematic/internal/palette.h"
+#include "fschema/litematica/internal/palette.h"
 
 #include <expected>
 #include <string_view>
@@ -22,9 +22,9 @@
 #include "fschema/base/nbt/scope.h"
 #include "fschema/base/nbt/skip.h"
 #include "fschema/base/nbt/tag.h"
-#include "fschema/litematic/types.h"
+#include "fschema/litematica/types.h"
 
-namespace fschema::litematic::internal {
+namespace fschema::litematica::internal {
 
 [[nodiscard]] ParseResult<void> ParsePalette(base::ByteReader& reader,
                                              std::vector<BlockState>& palette) {
@@ -79,4 +79,4 @@ namespace fschema::litematic::internal {
   return {};
 }
 
-}  // namespace fschema::litematic::internal
+}  // namespace fschema::litematica::internal

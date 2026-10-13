@@ -65,9 +65,9 @@ cc_library(
 # Tests
 
 cc_test(
-    name = "fschema_litematic_parse_test",
+    name = "fschema_litematica_parse_test",
     srcs = [
-        "fschema/tests/litematic_parse_test.cc",
+        "fschema/tests/litematica_parse_test.cc",
         "fschema/tests/testdata_util.h",
     ],
     copts = select({
@@ -207,9 +207,9 @@ cc_binary(
 )
 
 cc_binary(
-    name = "fschema_litematic_parse_benchmark",
+    name = "fschema_litematica_parse_benchmark",
     srcs = [
-        "fschema/benchmarks/litematic_parse_benchmark.cc",
+        "fschema/benchmarks/litematica_parse_benchmark.cc",
         "fschema/tests/testdata_util.h",
     ],
     copts = select({

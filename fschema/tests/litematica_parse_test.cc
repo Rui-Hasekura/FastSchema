@@ -25,15 +25,15 @@
 #include "fschema/base/block_utils.h"
 #include "fschema/base/compressor.h"
 #include "fschema/base/error.h"
-#include "fschema/litematic/internal/block_states.h"
-#include "fschema/litematic/parse.h"
-#include "fschema/litematic/types.h"
+#include "fschema/litematica/internal/block_states.h"
+#include "fschema/litematica/parse.h"
+#include "fschema/litematica/types.h"
 #include "fschema/memory/arena.h"
 #include "fschema/tests/testdata_util.h"
 
 namespace fs = std::filesystem;
 namespace fb = fschema::base;
-namespace fl = fschema::litematic;
+namespace fl = fschema::litematica;
 
 [[nodiscard]] std::uint64_t ExpectedVolume(
     const std::array<std::int32_t, 3>& size) noexcept {

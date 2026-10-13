@@ -44,7 +44,7 @@ struct ParseError {
     // A payload size exceeded the corresponding `DecodeLimits` threshold.
     kOversizedPayload,
 
-    // Litematic / IR Layer Errors
+    // Litematica / IR Layer Errors
 
     // File format version is outside the supported range
     // (e.g., Litematica < 5 or > 7).

@@ -13,8 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef FSCHEMA_LITEMATIC_PARSE_H_
-#define FSCHEMA_LITEMATIC_PARSE_H_
+#ifndef FSCHEMA_LITEMATICA_PARSE_H_
+#define FSCHEMA_LITEMATICA_PARSE_H_
 
 #include <cstddef>
 #include <memory>
@@ -22,22 +22,22 @@
 
 #include "fschema/base/error.h"
 #include "fschema/base/limits.h"
-#include "fschema/litematic/types.h"
+#include "fschema/litematica/types.h"
 
-namespace fschema::litematic {
+namespace fschema::litematica {
 
 // Entry: ParseLitematic after DecompressGzipFile
 //
-// bytes' ownership is transferred to the returned Litematic::owner.
+// bytes' ownership is transferred to the returned Litematica::owner.
 // All internal spans (properties / raw_nbt / preview_data) point to it.
-// This span is valid until the Litematic object is destructed.
+// This span is valid until the Litematica object is destructed.
 //
 // Precondition: bytes must be a valid gzip decompressed result
 // (guaranteed by the upper layer DecompressGzipFile).
-[[nodiscard]] ParseResult<Litematic> ParseLitematic(
+[[nodiscard]] ParseResult<Litematica> ParseLitematic(
     std::unique_ptr<std::vector<std::byte>> decompressed,
     const fschema::base::DecodeLimits& limits = {});
 
-}  // namespace fschema::litematic
+}  // namespace fschema::litematica
 
-#endif  // FSCHEMA_LITEMATIC_PARSE_H_
+#endif  // FSCHEMA_LITEMATICA_PARSE_H_

@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "fschema/litematic/internal/entity.h"
+#include "fschema/litematica/internal/entity.h"
 
 #include <array>
 #include <expected>
@@ -24,7 +24,7 @@
 #include "fschema/base/nbt/skip.h"
 #include "fschema/base/nbt/tag.h"
 
-namespace fschema::litematic::internal {
+namespace fschema::litematica::internal {
 
 [[nodiscard]] ParseResult<Entity> ParseEntityCompound(
     base::ByteReader& reader) {
@@ -87,4 +87,4 @@ namespace fschema::litematic::internal {
   return {};
 }
 
-}  // namespace fschema::litematic::internal
+}  // namespace fschema::litematica::internal

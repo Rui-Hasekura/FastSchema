@@ -13,14 +13,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef FSCHEMA_LITEMATIC_INTERNAL_METADATA_H_
-#define FSCHEMA_LITEMATIC_INTERNAL_METADATA_H_
+#ifndef FSCHEMA_LITEMATICA_INTERNAL_METADATA_H_
+#define FSCHEMA_LITEMATICA_INTERNAL_METADATA_H_
 
 #include "fschema/base/error.h"
 #include "fschema/base/nbt/reader.h"
-#include "fschema/litematic/types.h"
+#include "fschema/litematica/types.h"
 
-namespace fschema::litematic::internal {
+namespace fschema::litematica::internal {
 
 // Metadata Compound:
 //   Name: String
@@ -34,8 +34,8 @@ namespace fschema::litematic::internal {
 //   TimeModified: Long
 //   PreviewData: IntArray (Optional, 1.13+)
 [[nodiscard]] ParseResult<void> ParseMetadata(base::ByteReader& reader,
-                                              Litematic& out);
+                                              Litematica& out);
 
-}  // namespace fschema::litematic::internal
+}  // namespace fschema::litematica::internal
 
-#endif  // FSCHEMA_LITEMATIC_INTERNAL_METADATA_H_
+#endif  // FSCHEMA_LITEMATICA_INTERNAL_METADATA_H_

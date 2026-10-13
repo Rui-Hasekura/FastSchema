@@ -13,13 +13,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "fschema/litematic/internal/tile_entity.h"
+#include "fschema/litematica/internal/tile_entity.h"
 
 #include "fschema/base/nbt/scope.h"
 #include "fschema/base/nbt/skip.h"
 #include "fschema/base/nbt/tag.h"
 
-namespace fschema::litematic::internal {
+namespace fschema::litematica::internal {
 
 [[nodiscard]] ParseResult<TileEntity> ParseTileEntityCompound(
     base::ByteReader& reader) {
@@ -107,4 +107,4 @@ namespace fschema::litematic::internal {
   return {};
 }
 
-}  // namespace fschema::litematic::internal
+}  // namespace fschema::litematica::internal

@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "fschema/litematic/internal/pending.h"
+#include "fschema/litematica/internal/pending.h"
 
 #include <cstdint>
 #include <expected>
@@ -23,7 +23,7 @@
 #include "fschema/base/nbt/skip.h"
 #include "fschema/base/nbt/tag.h"
 
-namespace fschema::litematic::internal {
+namespace fschema::litematica::internal {
 
 [[nodiscard]] ParseResult<void> ParsePendingTicks(
     base::ByteReader& reader,
@@ -102,4 +102,4 @@ namespace fschema::litematic::internal {
   return {};
 }
 
-}  // namespace fschema::litematic::internal
+}  // namespace fschema::litematica::internal

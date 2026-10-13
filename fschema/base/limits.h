@@ -48,9 +48,9 @@ struct DecodeLimits {
   // Note: Maybe it's not enough, need feedback.
   std::size_t max_nbt_list_elements = 1ULL << 23;
 
-  // Litematic / Schematic Domain Limits
+  // Litematica / Schematic Domain Limits
 
-  /// Max number of regions in a single Litematic file.
+  /// Max number of regions in a single Litematica file.
   std::size_t max_regions = 64;
 
   /// Max blocks per region (256M). Prevents 64-bit volume overflow and limits

@@ -13,28 +13,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef FSCHEMA_LITEMATIC_INTERNAL_PALETTE_H_
-#define FSCHEMA_LITEMATIC_INTERNAL_PALETTE_H_
+#ifndef FSCHEMA_LITEMATICA_INTERNAL_ENTITY_H_
+#define FSCHEMA_LITEMATICA_INTERNAL_ENTITY_H_
 
 #include <vector>
 
 #include "fschema/base/error.h"
 #include "fschema/base/nbt/reader.h"
-#include "fschema/litematic/types.h"
+#include "fschema/litematica/types.h"
 
-namespace fschema::litematic::internal {
+namespace fschema::litematica::internal {
 
-// BlockStatePalette: List<Compound>
-//   PER Compound: {
-//     Name: String          <- Necessary, e.g. "minecraft:oak_stairs"
-//     Properties: Compound  <- Optional, arbitrary key-value pairs
-//   }
-// Properties reserves raw span (Open schema, it's impossible to enumerate all
-// keys).
-[[nodiscard]] ParseResult<void> ParsePalette(
-    base::ByteReader& reader,
-    std::vector<fschema::litematic::BlockState>& palette);
+[[nodiscard]] ParseResult<Entity> ParseEntityCompound(base::ByteReader& reader);
 
-}  // namespace fschema::litematic::internal
+[[nodiscard]] ParseResult<void> ParseEntities(base::ByteReader& reader,
+                                              std::vector<Entity>& entities);
 
-#endif  // FSCHEMA_LITEMATIC_INTERNAL_PALETTE_H_
+}  // namespace fschema::litematica::internal
+
+#endif  // FSCHEMA_LITEMATICA_INTERNAL_ENTITY_H_

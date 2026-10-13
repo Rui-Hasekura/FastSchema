@@ -13,16 +13,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef FSCHEMA_LITEMATIC_INTERNAL_TILE_ENTITY_H_
-#define FSCHEMA_LITEMATIC_INTERNAL_TILE_ENTITY_H_
+#ifndef FSCHEMA_LITEMATICA_INTERNAL_TILE_ENTITY_H_
+#define FSCHEMA_LITEMATICA_INTERNAL_TILE_ENTITY_H_
 
 #include <vector>
 
 #include "fschema/base/error.h"
 #include "fschema/base/nbt/reader.h"
-#include "fschema/litematic/types.h"
+#include "fschema/litematica/types.h"
 
-namespace fschema::litematic::internal {
+namespace fschema::litematica::internal {
 
 // TileEntities: List<Compound>
 //
@@ -39,6 +39,6 @@ namespace fschema::litematic::internal {
     base::ByteReader& reader,
     std::vector<TileEntity>& tile_entities);
 
-}  // namespace fschema::litematic::internal
+}  // namespace fschema::litematica::internal
 
-#endif  // FSCHEMA_LITEMATIC_INTERNAL_TILE_ENTITY_H_
+#endif  // FSCHEMA_LITEMATICA_INTERNAL_TILE_ENTITY_H_
