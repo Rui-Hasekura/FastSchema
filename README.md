@@ -29,21 +29,21 @@ But... How fast is it?
 | Types                            | Wall Time | CPU Time | Iterations | Throughput   |
 |:-------------------------------- |:--------- |:-------- |:---------- |:------------ |
 | Pure NBT Parsing                 | 1.627 ms  | 1.594 ms | 1774       | 171.3GiB/s   |
-| Litematic Parsing (ImmutableAPI) | 0.641 ms  | 0.622 ms | 4371       | 439.05GiB/s  |
-| Litematic Unpack (MutableAPI)    | 45.5 ms   | 42.2 ms  | 64         | 6.45706GiB/s |
-| Schem Parsing (ImmutableAPI)     | 2.23 ms   | 2.18 ms  | 1195       | 111.261GiB/s |
-| Schem Unpack (MutableAPI)        | 25.3 ms   | 19.8 ms  | 119        | 12.2345GiB/s |
+| Litematica Parsing (ImmutableAPI) | 0.641 ms  | 0.622 ms | 4371       | 439.05GiB/s  |
+| Litematica Unpack (MutableAPI)    | 45.5 ms   | 42.2 ms  | 64         | 6.45706GiB/s |
+| Sponge Parsing (ImmutableAPI)     | 2.23 ms   | 2.18 ms  | 1195       | 111.261GiB/s |
+| Sponge Unpack (MutableAPI)        | 25.3 ms   | 19.8 ms  | 119        | 12.2345GiB/s |
 
 #### 2.2 Format Conversion
 
 | Types                                  | Wall Time | CPU Time | Iterations | Throughput    |
 |:-------------------------------------- |:--------- |:-------- |:---------- |:------------- |
-| CrossConvert (Litematic -> Schem)      | 206 ms    | 202 ms   | 34         | 1.354 GiB/s   |
-| RoundTripSame (Litematic -> Litematic) | 119 ms    | 114 ms   | 61         | 2.396 GiB/s   |
-| CrossConvert (Schem -> Litematic)      | 268 ms    | 261 ms   | 27         | 953.189 MiB/s |
-| RoundTripSame (Schem -> Schem)         | 103 ms    | 102 ms   | 65         | 2.389 GiB/s   |
-| CrossConvertGzip (Litematic -> Schem)  | 618 ms    | 598 ms   | 7          | 467.461 MiB/s |
-| CrossConvertGzip (Schem -> Litematic)  | 738 ms    | 721 ms   | 6          | 344.876 MiB/s |
+| CrossConvert (Litematica -> Sponge)      | 206 ms    | 202 ms   | 34         | 1.354 GiB/s   |
+| RoundTripSame (Litematica -> Litematica) | 119 ms    | 114 ms   | 61         | 2.396 GiB/s   |
+| CrossConvert (Sponge -> Litematica)      | 268 ms    | 261 ms   | 27         | 953.189 MiB/s |
+| RoundTripSame (Sponge -> Sponge)         | 103 ms    | 102 ms   | 65         | 2.389 GiB/s   |
+| CrossConvertGzip (Litematica -> Sponge)  | 618 ms    | 598 ms   | 7          | 467.461 MiB/s |
+| CrossConvertGzip (Sponge -> Litematica)  | 738 ms    | 721 ms   | 6          | 344.876 MiB/s |
 
 > Gzip performance is mostly limited by Deflate itself. `libdeflate` is already highly optimized, and the results are close to the practical limit for this workload on the test machine.
 
