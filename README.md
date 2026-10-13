@@ -4,11 +4,11 @@ It's a super fast Minecraft schema tool library. Why it's so fast:
 
 ### 1. Features
 
-- **Decompression**: Integrated with `libdeflate` to save a few milliseconds of WallTime during `zlib-ng` decompression.
+- **Decompression**: Utilizes `libdeflate` for decompression.
 
-- **SIMD**: Built on Google Highway primitives with custom SIMD kernels targeting AVX2.
+- **SIMD**: Built on `Google Highway` primitives with custom SIMD kernels targeting AVX2.
 
-- **Multi-threading**: Parallelized via Intel oneTBB for multi-core scaling.
+- **Multi-threading**: Parallelized via `Intel oneTBB` for multi-core scaling.
 
 But... How fast is it?
 
@@ -16,10 +16,12 @@ But... How fast is it?
 
 > **No benchmark comparisons are provided here, as differences in output data structures and parsing semantics make direct performance comparisons potentially misleading.**
 
-**Environment & Toolchain:** Intel Core i5-12400F (Alder Lake-S, 6C/12T), DDR4-3200 8GB×2. Windows 11 24H2(with huge pages), Clang-CL 22.1.3 -O2.
+**Environment & Toolchain:** Intel Core i5-12400F (Alder Lake-S, 6C/12T), DDR4-3200 8GB×2. Windows 11 24H2(with large pages), Clang-CL 22.1.3 -O2.
 
 **Input Data:**
 
+The test sample was actually the Valkyrie Space Station 3.
+You can download it from [here](https://2b2t.miraheze.org/wiki/Space_Valkyria_3_V2).
 - `.litematic` Input Size: 279.642 MiB, Total Blocks: 260.297M, Palette Max: 465
 - `.schem` Input Size: 248.778 MiB, Total Blocks: 260.297M, Palette Max: 466
 - `.nbt` Input Size: 279.642 MiB
@@ -70,7 +72,7 @@ include(FetchContent)
 FetchContent_Declare(
  FastSchema
  GIT_REPOSITORY [https://github.com/Rui-Hasekura/FastSchema.git](https://github.com/Rui-Hasekura/FastSchema.git)
- GIT_TAG v0.1.0 # Or you can replace with the latest tag
+ GIT_TAG v1.0.0 # Or you can replace with the latest tag
 )
 
 ```
@@ -112,13 +114,9 @@ target_link_libraries(your_app PRIVATE fschema::fschema)
 
 ### 4. How to use
 
-This library is still under development.
-
 It features a high-performance parser, converters(not because the implementation is bad or I lack confidence, but ideally avoid cross-converting if you can), and tools(quite a few, actually).
 
-[Basic documentation](https://github.com/Rui-Hasekura/FastSchema/tree/main/fschema/docs/) is now available, though it is still a work in progress. That said, the API is fairly straightforward (at least I think), so you can explore it on your own for now.
-
-[You can find examples here](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/examples).
+[Documentation](https://github.com/Rui-Hasekura/FastSchema/tree/main/fschema/docs/) is now available.
 
 ### 5. License
 
