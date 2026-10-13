@@ -24,10 +24,6 @@
 #include "fschema/base/nbt/reader.h"
 #include "fschema/litematica/types.h"
 
-namespace fschema::memory {
-class Arena;
-}
-
 namespace fschema::litematica::internal {
 
 // Regions Compound: every region is a Compound entry
@@ -49,8 +45,7 @@ namespace fschema::litematica::internal {
     base::ByteReader& reader);
 
 [[nodiscard]] ParseResult<Region> ParseRegion(base::ByteReader& reader,
-                                              std::string_view region_name,
-                                              memory::Arena& arena);
+                                              std::string_view region_name);
 
 [[nodiscard]] ParseResult<void> ParseRegions(base::ByteReader& reader,
                                              Litematica& out);

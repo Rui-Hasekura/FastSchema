@@ -44,7 +44,7 @@ namespace fl = fschema::litematica;
   return abs(size[0]) * abs(size[1]) * abs(size[2]);
 }
 
-class LitematicParseTest : public ::testing::TestWithParam<fs::path> {
+class LitematicaParseTest : public ::testing::TestWithParam<fs::path> {
  public:
   static std::vector<fs::path> GetSampleFiles() {
     std::vector<fs::path> files;
@@ -63,7 +63,7 @@ class LitematicParseTest : public ::testing::TestWithParam<fs::path> {
   }
 };
 
-TEST_P(LitematicParseTest, ParsesSuccessfullyAndValidatesStructure) {
+TEST_P(LitematicaParseTest, ParsesSuccessfullyAndValidatesStructure) {
   const auto& file_path = GetParam();
 
   auto unpacked_bytes = fb::DecompressGzipFile(file_path);
@@ -74,26 +74,26 @@ TEST_P(LitematicParseTest, ParsesSuccessfullyAndValidatesStructure) {
 
   auto owner =
       std::make_unique<std::vector<std::byte>>(std::move(*unpacked_bytes));
-  auto result = fl::ParseLitematic(std::move(owner));
+  auto result = fl::ParseLitematica(std::move(owner));
 
   ASSERT_TRUE(result.has_value())
       << "Parse failed for " << file_path
       << " Code: " << static_cast<int>(result.error().code);
 
-  const auto& litematic = result.value();
+  const auto& litematica = result.value();
 
-  EXPECT_TRUE(litematic.version == fl::Version::kV5 ||
-              litematic.version == fl::Version::kV6 ||
-              litematic.version == fl::Version::kV7)
-      << "Unsupported version: " << static_cast<int>(litematic.version);
+  EXPECT_TRUE(litematica.version == fl::Version::kV5 ||
+              litematica.version == fl::Version::kV6 ||
+              litematica.version == fl::Version::kV7)
+      << "Unsupported version: " << static_cast<int>(litematica.version);
 
-  EXPECT_EQ(litematic.metadata.region_count, litematic.regions.size())
+  EXPECT_EQ(litematica.metadata.region_count, litematica.regions.size())
       << "Metadata region_count mismatch";
 
   std::uint64_t total_non_air_blocks = 0;
 
-  for (std::size_t i = 0; i < litematic.regions.size(); ++i) {
-    const auto& region = litematic.regions[i];
+  for (std::size_t i = 0; i < litematica.regions.size(); ++i) {
+    const auto& region = litematica.regions[i];
 
     const std::uint64_t expected_vol = ExpectedVolume(region.size);
 
@@ -137,32 +137,32 @@ TEST_P(LitematicParseTest, ParsesSuccessfullyAndValidatesStructure) {
   }
 
   EXPECT_EQ(total_non_air_blocks,
-            static_cast<std::uint64_t>(litematic.metadata.total_blocks))
+            static_cast<std::uint64_t>(litematica.metadata.total_blocks))
       << "Total non-air blocks do not match metadata.total_blocks";
 }
 
 INSTANTIATE_TEST_SUITE_P(
     Samples,
-    LitematicParseTest,
-    ::testing::ValuesIn(LitematicParseTest::GetSampleFiles()));
+    LitematicaParseTest,
+    ::testing::ValuesIn(LitematicaParseTest::GetSampleFiles()));
 
-TEST(LitematicParseNegativeTest, NullBytesInput) {
+TEST(LitematicaParseNegativeTest, NullBytesInput) {
   std::unique_ptr<std::vector<std::byte>> null_owner = nullptr;
-  auto result = fl::ParseLitematic(std::move(null_owner));
+  auto result = fl::ParseLitematica(std::move(null_owner));
 
   EXPECT_FALSE(result.has_value());
   EXPECT_EQ(result.error().code, fschema::ParseError::Code::kTruncated);
 }
 
-TEST(LitematicParseNegativeTest, EmptyBytesInput) {
+TEST(LitematicaParseNegativeTest, EmptyBytesInput) {
   auto empty_owner = std::make_unique<std::vector<std::byte>>();
-  auto result = fl::ParseLitematic(std::move(empty_owner));
+  auto result = fl::ParseLitematica(std::move(empty_owner));
 
   EXPECT_FALSE(result.has_value());
   EXPECT_EQ(result.error().code, fschema::ParseError::Code::kTruncated);
 }
 
-TEST(LitematicUnpackNegativeTest, FileNotFound) {
+TEST(LitematicaUnpackNegativeTest, FileNotFound) {
   auto result = fb::DecompressGzipFile("nonexistent_file.litematic");
 
   EXPECT_FALSE(result.has_value());

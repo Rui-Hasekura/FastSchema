@@ -26,7 +26,7 @@
 
 namespace fschema::litematica {
 
-// Entry: ParseLitematic after DecompressGzipFile
+// Entry: ParseLitematica after DecompressGzipFile
 //
 // bytes' ownership is transferred to the returned Litematica::owner.
 // All internal spans (properties / raw_nbt / preview_data) point to it.
@@ -34,7 +34,7 @@ namespace fschema::litematica {
 //
 // Precondition: bytes must be a valid gzip decompressed result
 // (guaranteed by the upper layer DecompressGzipFile).
-[[nodiscard]] ParseResult<Litematica> ParseLitematic(
+[[nodiscard]] ParseResult<Litematica> ParseLitematica(
     std::unique_ptr<std::vector<std::byte>> decompressed,
     const fschema::base::DecodeLimits& limits = {});
 

@@ -66,7 +66,7 @@ FSCHEMA_HOT void PackChunk(std::byte* FSCHEMA_RESTRICT out,
 
 }  // namespace
 
-FSCHEMA_HOT std::size_t PackIndicesLitematicInto(
+FSCHEMA_HOT std::size_t PackIndicesLitematicaInto(
     std::byte* FSCHEMA_RESTRICT out,
     std::span<const std::uint16_t> indices,
     std::uint32_t bits_per_block) {
@@ -84,7 +84,7 @@ FSCHEMA_HOT std::size_t PackIndicesLitematicInto(
 
   if (n <= kChunk) {
     PackChunk<true>(out, indices, bpb);
-    return LitematicLongCount(n, bpb) * 8;
+    return LitematicaLongCount(n, bpb) * 8;
   }
 
   const std::size_t body = (n / kChunk) * kChunk;
@@ -98,7 +98,7 @@ FSCHEMA_HOT std::size_t PackIndicesLitematicInto(
   if (n > body) {
     PackChunk<true>(out + (body * bpb / 64) * 8, indices.subspan(body), bpb);
   }
-  return LitematicLongCount(n, bpb) * 8;
+  return LitematicaLongCount(n, bpb) * 8;
 }
 
 }  // namespace fschema::ir::internal

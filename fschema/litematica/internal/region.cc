@@ -205,7 +205,6 @@ namespace fschema::litematica::internal {
     }
   }
   region.raw_block_states = block_states_raw;
-  region.raw_block_states_bpb = bits_per_block;
   region.raw_compound = reader.SpanFrom(compound_start);
   return region;
 }

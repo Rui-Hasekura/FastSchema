@@ -93,7 +93,7 @@ void PrintErrorFn(const fschema::ParseError& e) {
                e.offset);
 }
 
-static void BM_ParseLitematic(benchmark::State& st) {
+static void BM_ParseLitematica(benchmark::State& st) {
   const auto& files = GetFiles();
   if (files.empty()) {
     st.SkipWithError("No test files loaded");
@@ -108,7 +108,7 @@ static void BM_ParseLitematic(benchmark::State& st) {
   for (auto _ : st) {
     auto owner =
         std::make_unique<std::vector<std::byte>>(std::move(reusable_buffer));
-    auto result = fschema::litematica::ParseLitematic(std::move(owner));
+    auto result = fschema::litematica::ParseLitematica(std::move(owner));
     if (!result) {
       PrintErrorFn(result.error());
       st.SkipWithError("parse failed");
@@ -122,7 +122,7 @@ static void BM_ParseLitematic(benchmark::State& st) {
 
   {
     auto owner = std::make_unique<std::vector<std::byte>>(tf.bytes);
-    auto r = fschema::litematica::ParseLitematic(std::move(owner));
+    auto r = fschema::litematica::ParseLitematica(std::move(owner));
     if (r) {
       std::uint64_t total_blocks = 0;
       for (const auto& reg : r->regions) {
@@ -135,7 +135,7 @@ static void BM_ParseLitematic(benchmark::State& st) {
   }
 }
 
-static void BM_UnpackLitematic(benchmark::State& st) {
+static void BM_UnpackLitematica(benchmark::State& st) {
   const auto& files = GetFiles();
   if (files.empty()) {
     st.SkipWithError("No test files loaded");
@@ -145,7 +145,7 @@ static void BM_UnpackLitematic(benchmark::State& st) {
   const auto& tf = files[st.range(0)];
 
   auto owner = std::make_unique<std::vector<std::byte>>(tf.bytes);
-  auto result = fschema::litematica::ParseLitematic(std::move(owner));
+  auto result = fschema::litematica::ParseLitematica(std::move(owner));
   if (!result || result->regions.empty()) {
     st.SkipWithError("Parse failed or no regions");
     return;
@@ -265,7 +265,7 @@ int main(int argc, char* argv[]) {
     const auto& tf = files[fi];
     std::println("\n══════ Verify: {} ════", tf.filename);
     auto owner = std::make_unique<std::vector<std::byte>>(tf.bytes);
-    auto r = fschema::litematica::ParseLitematic(std::move(owner));
+    auto r = fschema::litematica::ParseLitematica(std::move(owner));
     if (!r) {
       PrintErrorFn(r.error());
       all_ok = false;
@@ -297,12 +297,12 @@ int main(int argc, char* argv[]) {
 
   for (std::size_t i = 0; i < files.size(); ++i) {
     benchmark::RegisterBenchmark(
-        ("LitematicParse/" + files[i].filename).c_str(), BM_ParseLitematic)
+        ("LitematicaParse/" + files[i].filename).c_str(), BM_ParseLitematica)
         ->Arg(i)
         ->Unit(benchmark::kMillisecond)
         ->MinTime(2.0);
     benchmark::RegisterBenchmark(
-        ("LitematicUnpack/" + files[i].filename).c_str(), BM_UnpackLitematic)
+        ("LitematicaUnpack/" + files[i].filename).c_str(), BM_UnpackLitematica)
         ->Arg(i)
         ->Unit(benchmark::kMillisecond)
         ->MinTime(2.0);

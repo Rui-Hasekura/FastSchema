@@ -31,7 +31,7 @@
 
 namespace fschema::litematica {
 
-[[nodiscard]] ParseResult<Litematica> ParseLitematic(
+[[nodiscard]] ParseResult<Litematica> ParseLitematica(
     std::unique_ptr<std::vector<std::byte>> decompressed,
     const base::DecodeLimits& limits) {
   Litematica out;

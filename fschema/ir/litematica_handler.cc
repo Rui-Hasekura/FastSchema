@@ -62,7 +62,7 @@ inline bool ShouldUseExtensions(const Schema& ir, std::int32_t target_version) {
 ParseResult<Schema> LitematicaHandler::Decode(
     std::unique_ptr<std::vector<std::byte>> bytes,
     const base::DecodeLimits& limits) const {
-  auto lit = litematica::ParseLitematic(std::move(bytes), limits);
+  auto lit = litematica::ParseLitematica(std::move(bytes), limits);
   if (!lit) return std::unexpected(lit.error());
   return DecodeFromParsed(std::move(*lit));
 }
@@ -325,11 +325,11 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
       writer.WriteLongArrayFieldBE("BlockStates", reg.lazy_source.raw_bytes);
     } else {
       const std::size_t packed_bytes =
-          internal::LitematicLongCount(pack_src.size(), bpb) * 8;
+          internal::LitematicaLongCount(pack_src.size(), bpb) * 8;
       auto packed = std::make_unique_for_overwrite<std::byte[]>(packed_bytes);
 
       [[maybe_unused]] const std::size_t written =
-          internal::PackIndicesLitematicInto(packed.get(), pack_src, bpb);
+          internal::PackIndicesLitematicaInto(packed.get(), pack_src, bpb);
       assert(written == packed_bytes);
 
       writer.WriteLongArrayFieldBE(
@@ -460,10 +460,6 @@ ParseResult<Schema> LitematicaHandler::DecodeFromParsed(
     r.lazy_source.encoding = ir::BlockDataEncoding::kLitematicaLongArray;
     r.lazy_source.bits_per_block = reg.raw_block_states_bpb;
     r.lazy_source.palette_size = reg.palette.size();
-    r.lazy_source.air_at_zero =
-        !reg.palette.empty() && (reg.palette[0].name == "minecraft:air" ||
-                                 reg.palette[0].name == "minecraft:cave_air" ||
-                                 reg.palette[0].name == "minecraft:void_air");
     r.lazy_source.palette_pristine = true;
     r.lazy_source.air_at_zero =
         !reg.palette.empty() && base::IsAirVariant(reg.palette[0].name);

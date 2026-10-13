@@ -20,21 +20,19 @@
 #include <cstdint>
 #include <span>
 
-#include "fschema/memory/uninit_buffer.h"
-
 namespace fschema::ir::internal {
 
 // Number of int64 longs occupied by the litematica sliding bitstream:
 // stream bit j lives at bit (j % 64) of long (j / 64), LSB-first; a block may
 // straddle two longs (no per-long padding).
-[[nodiscard]] constexpr std::size_t LitematicLongCount(
+[[nodiscard]] constexpr std::size_t LitematicaLongCount(
     std::size_t n,
     std::uint32_t bits_per_block) noexcept {
   if (bits_per_block == 0) return 0;
   return (n * bits_per_block + 63) / 64;
 }
 
-[[nodiscard]] std::size_t PackIndicesLitematicInto(
+[[nodiscard]] std::size_t PackIndicesLitematicaInto(
     std::byte* out,
     std::span<const std::uint16_t> indices,
     std::uint32_t bits_per_block);
