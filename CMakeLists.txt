@@ -374,7 +374,7 @@ if(FASTSCHEMA_BUILD_TESTS)
     endfunction()
 
     # Parsing
-    fschema_add_test(fschema_litematica_parse_test fschema/tests/litematic_parse_test.cc)
+    fschema_add_test(fschema_litematica_parse_test fschema/tests/litematica_parse_test.cc)
     fschema_add_test(fschema_nbt_parse_test    fschema/tests/nbt_parse_test.cc)
     fschema_add_test(fschema_schem_parse_test  fschema/tests/schem_parse_test.cc)
 
@@ -406,7 +406,7 @@ if(FASTSCHEMA_BUILD_BENCHMARKS)
 
     # Parsing
     fschema_add_bench(fschema_schem_parse_benchmark      fschema/benchmarks/schem_parse_benchmark.cc)
-    fschema_add_bench(fschema_litematica_parse_benchmark  fschema/benchmarks/litematic_parse_benchmark.cc)
+    fschema_add_bench(fschema_litematica_parse_benchmark  fschema/benchmarks/litematica_parse_benchmark.cc)
     fschema_add_bench(fschema_nbt_parse_benchmark        fschema/benchmarks/nbt_parse_benchmark.cc)
 
     # Conversion
