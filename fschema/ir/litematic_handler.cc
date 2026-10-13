@@ -96,7 +96,10 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
 
   const bool use_ext = ShouldUseExtensions(ir, options.target_version);
 
-  writer.BeginRootCompound("Litematic");
+  // Anonymous root (name = ""), to match Litematica mod's on-disk format.
+  // Disk: 0A 00 00 ...  (TAG_Compound + u16 name length = 0)
+
+  writer.BeginRootCompound("");
   writer.WriteIntField("Version", version);
   if (version >= 7) {
     writer.WriteIntField("SubVersion", 1);
