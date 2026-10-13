@@ -1,28 +1,28 @@
 # Parsing
 
 `fschema` parses schematic files in three layers. Pick the layer that matches
-what you need to do; do not mix them.
+what you need.
 
 ```
 bytes
   │
   ├─ NBT        base/nbt/parse.h            NbtTag tree
   │
-  ├─ Format     litematic/parse.h           litematic::Litematic
+  ├─ Format     litematica/parse.h          litematica::Litematica
   │             schem/parse.h               schem::Schematic
   │
   └─ IR         ir/format_handler.h         ir::Schema
 ```
 
 The format layer and the IR layer are zero-copy. Both hold a
-`std::unique_ptr<std::vector<std::byte>> owner` and every `string_view` or
+`std::unique_ptr<std::vector<std::byte>> owner`; every `string_view` or
 `span` inside points into that buffer. Destroying the owning object
 invalidates all of them.
 
 ## Decompression
 
-Every `.litematic` and `.schem` file on disk is gzip-compressed. Three
-functions in `fschema/base/compressor.h` handle that:
+`.litematic` and `.schem` files on disk are gzip-compressed. The functions
+in `fschema/base/compressor.h` handle compression:
 
 ```cpp
 std::expected<std::vector<std::byte>, CompressorError>
@@ -35,13 +35,11 @@ std::expected<std::vector<std::byte>, CompressorError>
 CompressGzip(std::span<const std::byte> data);
 ```
 
-`CompressorError` is a separate enum from `ParseError`. The two do not
-interconvert. Callers that need to distinguish a bad gzip header from a bad
-NBT payload must handle both.
+`CompressorError` is separate from `ParseError`. The IR layer auto-detects  gzip and converts a compression failure into a `ParseError` with path `"AutoDecompressFailed"`. Callers that need the specific `CompressorError` must decompress before calling `DecodeFromFormat`.
 
 ## NBT Layer
 
-`fschema/base/nbt/parse.h` exposes four functions:
+`fschema/base/nbt/parse.h` exposes:
 
 ```cpp
 [[nodiscard]] ParseResult<NbtPayload> ParsePayload(ByteReader& reader,
@@ -54,96 +52,61 @@ NBT payload must handle both.
 `ByteReader` is constructed from a byte span and `DecodeLimits`:
 
 ```cpp
-auto unpacked = fschema::base::DecompressGzipFile(path);
-if (!unpacked) {
-  // Handle CompressorError.
-  return;
-}
+#include "fschema/base/nbt/parse.h"
+#include "fschema/base/nbt/reader.h"
 
-std::span<const std::byte> bytes(*unpacked);
+std::span<const std::byte> bytes = /* decompressed NBT */;
 fschema::base::ByteReader reader(bytes, fschema::base::DecodeLimits{});
 
 auto tag = fschema::base::ParseNbt(reader);
 if (!tag) {
-  // Handle ParseError.
+  const fschema::ParseError& e = tag.error();
+  // e.code, e.path, e.offset
   return;
 }
 ```
 
-`ParseNbt` parses one root tag. `NbtTag::payload` is a `std::variant` of
-scalars, spans, and `std::unique_ptr<NbtCompound>` /
-`std::unique_ptr<NbtList>`. Array and string payloads are views into the
-input buffer, not copies.
+`NbtTag::payload` is a `std::variant` of scalars, spans, and 
+`std::unique_ptr<NbtCompound>` / `std::unique_ptr<NbtList>`. Array and string payloads are views into the input buffer.
 
-This layer knows nothing about gzip and nothing about schematic semantics.
-It is useful for inspecting a file's tag structure, writing NBT dump tools,
-and debugging format issues.
+This layer is useful for inspecting raw tag structure. It has no knowledge of schematic semantics.
 
-## Litematic Layer
+## Litematica Layer
 
 `fschema/litematica/parse.h` has one entry point:
 
 ```cpp
-[[nodiscard]] ParseResult<Litematic> ParseLitematic(
+[[nodiscard]] ParseResult<Litematica> ParseLitematica(
     std::unique_ptr<std::vector<std::byte>> decompressed,
     const fschema::base::DecodeLimits& limits = {});
 ```
 
-It takes decompressed bytes, not a path. Decompress first:
+It takes decompressed bytes. Decompress first:
 
 ```cpp
-auto unpacked = fschema::base::DecompressGzipFile(path);
+#include "fschema/base/compressor.h"
+#include "fschema/litematica/parse.h"
+
+auto unpacked = fschema::base::DecompressGzipFile("input.litematic");
+if (!unpacked) {
+  const fschema::base::CompressorError& e = unpacked.error();
+  return;
+}
 auto owner =
     std::make_unique<std::vector<std::byte>>(std::move(*unpacked));
 
-auto lit = fschema::litematic::ParseLitematic(std::move(owner));
+auto lit = fschema::litematica::ParseLitematica(std::move(owner));
 if (!lit) {
-  // Handle ParseError.
+  const fschema::ParseError& e = lit.error();
   return;
 }
 ```
 
-`Litematic` holds `metadata`, a `std::vector<Region>`, `version`, and
-`data_version`. Version is checked against `kV5`, `kV6`, `kV7`; anything
-else returns `UnsupportedVersion`.
+`Litematica` holds `metadata`, a `std::vector<Region>`, `version`, and 
+`data_version`. Version is checked against `kV5`, `kV6`, `kV7`; any other value returns `UnsupportedVersion`.
 
-`litematic::Region` stores block data as raw bits:
-
-```cpp
-struct Region {
-  std::string_view name;
-  std::array<std::int32_t, 3> position;
-  std::array<std::int32_t, 3> size;  // may be negative
-  std::vector<BlockState> palette;
-  std::vector<Entity> entities;
-  std::vector<TileEntity> tile_entities;
-  // pending ticks, raw spans ...
-  std::span<const std::byte> raw_block_states;
-  std::uint32_t raw_block_states_bpb = 0;
-};
-```
-
-`size` can be negative, indicating a flipped axis. `VolumeOf(size)` takes
-absolute values and returns the block count.
-
-Block indices are not unpacked during parsing. To get them, call:
-
-```cpp
-std::uint64_t volume = fschema::litematic::VolumeOf(region.size);
-std::uint32_t bpb =
-    fschema::litematic::internal::BitsPerBlock(region.palette.size());
-
-auto indices = fschema::litematic::internal::UnpackIndicesFused(
-    region.raw_block_states, bpb, volume, region.palette.size());
-```
-
-`UnpackIndicesFused` allocates its own buffer and does not take an arena.
-`internal::` is not a stable public API,
-but these two names are the ones the IR layer uses.
-
-Fields without an IR equivalent are only reachable here:
-`pending_block_ticks`, `pending_fluid_ticks`, `pending_block_entities`,
-`pending_entities`, `preview_data`, and each region's `raw_compound`.
+`litematica::Region` stores block data as raw bits. `size` may be negative. 
+`VolumeOf(size)` returns the absolute block count. Block indices are not unpacked during parsing; use `internal::UnpackIndicesFused` if needed. Fields without an IR equivalent, such as pending ticks and preview data, are reachable only at this layer.
 
 ## Sponge Schematic Layer
 
@@ -158,43 +121,18 @@ Fields without an IR equivalent are only reachable here:
     const base::DecodeLimits& limits = {});
 ```
 
-`ParseSchematic(path)` calls `DecompressGzipFile` internally.
-`ParseSchematicFromBytes` takes decompressed bytes, matching
-`ParseLitematic`.
+`ParseSchematic(path)` decompresses internally.
 
-Both v2 and v3 are detected in `ParseRoot`: a root tag named `"Schematic"`
-selects v2, otherwise the root is scanned for a `"Schematic"` child and v3
-is assumed. Callers do not need to know which version a file uses.
+`ParseSchematicFromBytes` takes decompressed bytes.
 
-`Schematic` stores properties as strings, not NBT:
+Both v2 and v3 are detected in `ParseRoot`. A root tag named `"Schematic"` selects v2; otherwise the root is scanned for a `"Schematic"` child and v3 is assumed.
 
-```cpp
-struct BlockState {
-  std::string_view name;
-  std::string_view properties;  // "k=v,k=v", may be empty
-};
-```
-
-Block indices are varint-packed in `raw_block_data`. To decode:
-
-```cpp
-std::uint64_t volume = fschema::schem::VolumeOf(schematic);
-auto indices = fschema::schem::internal::DecodeVarintArray(
-    schematic.raw_block_data, volume, schematic.palette.size(),
-    *schematic.arena);
-```
-
-`DecodeVarintArray` takes the arena owned by `Schematic`. The returned
-`UnInitBuffer` points into that arena and is invalidated with the
-`Schematic`.
-
-`VolumeOf(schematic)` is `width * height * length`. `BiomeVolumeOf` returns
-the same for v3 and `width * length` for v2, since v2 biomes are 2D.
+`Schematic` stores properties as strings. Block indices are varint-packed in 
+`raw_block_data`. Use `internal::DecodeVarintArray` to decode them.
 
 ## IR Layer
 
-`fschema/ir/format_handler.h` unifies the two formats behind one type,
-`ir::Schema`. See `conversion.md` for the encoding side.
+`fschema/ir/format_handler.h` unifies both formats behind `ir::Schema`.
 
 ```cpp
 [[nodiscard]] ParseResult<Schema> DecodeFromFormat(
@@ -203,9 +141,13 @@ the same for v3 and `width * length` for v2, since v2 biomes are 2D.
     const base::DecodeLimits& limits = {});
 ```
 
-Before calling it, register the handlers:
+Register handlers before calling:
 
 ```cpp
+#include "fschema/ir/format_handler.h"
+#include "fschema/ir/litematica_handler.h"
+#include "fschema/ir/schem_handler.h"
+
 namespace firc = fschema::ir::format;
 
 firc::FormatRegistry::Instance().Register(
@@ -214,78 +156,49 @@ firc::FormatRegistry::Instance().Register(
     std::make_unique<firc::SchemHandler>());
 ```
 
-`FormatRegistry` is a function-local static singleton. Registering the same
-handler twice replaces the pointer in the lookup table; the previous
-instance is kept alive until the registry is destroyed. Calling
-`DecodeFromFormat` without registering returns
-`ParseError{UnsupportedVersion, "FormatHandlerNotFound", 0}`.
+`DecodeFromFormat` checks the first two bytes for the gzip magic `1f 8b`  and decompresses in place. This differs from the format layers, which require the caller to decompress first.
 
-`DecodeFromFormat` checks the first two bytes for the gzip magic `1f 8b`
-and decompresses in place if present. This differs from the format layers,
-which require the caller to decompress first.
+`ir::Schema` holds `regions`, `metadata`, `owner`, and `arena`. Each 
+`ir::Region` has `bounds`, `position`, `size`, `palette`,  `block_indices`, `lazy_source`, `is_materialized`, `edited`, `entities`, 
+`block_entities`, and `raw_compound`.
 
-`ir::Schema` holds `regions`, `metadata`, `owner`, and `arena`. Each
-`ir::Region`:
+`block_indices` is lazy. Use `EnsureMaterialized` or `MakeView` before reading it.
 
 ```cpp
-struct Region {
-  std::string_view name;
-  BoundingBox bounds;
-  std::array<std::int32_t, 3> position;
-  std::array<std::int32_t, 3> size;
-  std::vector<BlockState> palette;
-  mutable memory::UnInitBuffer<std::uint16_t> block_indices;
-  mutable LazyBlockData lazy_source;
-  mutable bool is_materialized = false;
-  mutable bool edited = false;
-  std::vector<Entity> entities;
-  std::vector<BlockEntity> block_entities;
-  std::span<const std::byte> raw_compound;
-};
-```
+#include "fschema/ir/materialize.h"
 
-`block_indices` is lazy. To access it:
-
-```cpp
-auto mat = fschema::ir::EnsureMaterialized(region, *schema.arena);
-if (!mat) {
-  // Handle ParseError.
+auto mat_res = fschema::ir::EnsureMaterialized(region, *schema.arena);
+if (!mat_res) {
+  const fschema::ParseError& e = mat_res.error();
   return;
 }
 // region.block_indices is now populated.
 ```
 
-`EnsureMaterialized` takes `const Region&` because the fields it writes are
-`mutable`. It dispatches on `lazy_source.encoding` to the Litematic or
-Sponge unpacker. Any code path that goes through `MakeView` triggers this
-automatically; manual materialization is only needed when reading
-`block_indices` directly.
+`palette` properties use `PropertyEncoding`:
 
-`palette` properties use `PropertyEncoding` to record which format they
-came from:
+- `kNbt`: Litematica. Raw NBT Compound.
 
-- `kNbt`: Litematica. `raw_properties` is a raw NBT Compound.
-- `kString`: Sponge. `raw_properties` is `k=v,k=v` bytes.
+- `kString`: Sponge. `k=v,k=v` bytes.
+
 - `kNone`: no properties.
 
-The encoding is preserved so that `EncodeToFormat` can round-trip back to
-the same format without a normalization step.
+The encoding is preserved so `EncodeToFormat` can round-trip without normalization.
 
 ## Choosing a Layer
 
-| Goal                                                     | Use                           |
-| -------------------------------------------------------- | ----------------------------- |
-| Inspect raw NBT structure                                | NBT layer                     |
-| Read Litematic-only fields (pending ticks, preview data) | Litematic layer               |
-| Read Sponge-only fields (biomes, required mods)          | Schem layer                   |
-| Convert formats                                          | IR layer, see `conversion.md` |
-| Apply filters, editors, inspectors                       | IR layer                      |
+| Goal                                                      | Use                           |
+| --------------------------------------------------------- | ----------------------------- |
+| Inspect raw NBT structure                                 | NBT layer                     |
+| Read Litematica-only fields (pending ticks, preview data) | Litematica layer              |
+| Read Sponge-only fields (biomes, required mods)           | Schem layer                   |
+| Convert formats                                           | IR layer, see `conversion.md` |
+| Apply filters, editors, inspectors                        | IR layer                      |
 
-Converting a `litematic::Litematic` or a `schem::Schematic` into an
-`ir::Schema` is not a public operation. The conversion lives in
-`LitematicaHandler::DecodeFromParsed` and `SchemHandler::DecodeFromParsed`.
-Those are only reachable through `DecodeFromFormat`, which requires the
-original bytes.
+Converting a format-layer object into `ir::Schema` is not a public  
+operation. The conversion lives in `LitematicaHandler::DecodeFromParsed`  
+and `SchemHandler::DecodeFromParsed`, reachable only through  
+`DecodeFromFormat`.
 
 ## Errors
 
