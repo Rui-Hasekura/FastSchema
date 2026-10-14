@@ -67,6 +67,9 @@ ParseResult<void> SkipList(ByteReader& reader) {
     return std::unexpected(len_raw.error());
   }
   const auto len = static_cast<std::size_t>(*len_raw);
+  if (len > reader.limits().max_string_bytes) [[unlikely]] {
+    return std::unexpected(reader.Error(ParseError::Code::kOversizedPayload));
+  }
   if (reader.Remaining() < len) [[unlikely]] {
     return std::unexpected(reader.Error(ParseError::Code::kTruncated));
   }

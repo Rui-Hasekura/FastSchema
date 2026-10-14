@@ -39,8 +39,8 @@ struct DecodeLimits {
 
   // Max nesting depth for compounds/lists (DoS / stack overflow guard).
   std::size_t max_nbt_depth = 64;
-  // Max size per NBT String tag: 64 KiB (NBT spec limit).
-  std::size_t max_string_bytes = 1ULL << 16;
+  // Max size per NBT String tag: 65536 (NBT spec uint16_t limit).
+  std::size_t max_string_bytes = (1ULL << 16) - 1;
   // Max elements per ByteArray/IntArray/LongArray tag: 256M.
   std::size_t max_array_elements = 1ULL << 28;
 
