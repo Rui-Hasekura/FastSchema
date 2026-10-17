@@ -71,7 +71,7 @@ include(FetchContent)
 
 FetchContent_Declare(
  FastSchema
- GIT_REPOSITORY [https://github.com/Rui-Hasekura/FastSchema.git](https://github.com/Rui-Hasekura/FastSchema.git)
+ GIT_REPOSITORY https://github.com/Rui-Hasekura/FastSchema.git
  GIT_TAG v1.0.0 # Or you can replace with the latest tag
 )
 
