@@ -163,6 +163,19 @@ target_sources(fschema
     fschema/ir/internal/bit_pack.cc
     fschema/ir/internal/codec_utils.cc
     fschema/ir/internal/varint_pack.cc
+    fschema/remap/remap.cc
+    fschema/remap/internal/block_entity.cc
+    fschema/remap/internal/component_extra.cc
+    fschema/remap/internal/context.cc
+    fschema/remap/internal/entity.cc
+    fschema/remap/internal/item.cc
+    fschema/remap/internal/nbt_utils.cc
+    fschema/remap/internal/palette.cc
+    fschema/remap/internal/text.cc
+    fschema/remap/internal/walker.cc
+    fschema/remap/internal/block_entity.cc
+    fschema/remap/internal/nbt_utils.cc
+    fschema/remap/internal/walker.cc
 )
 
 # Private headers
@@ -264,6 +277,7 @@ target_sources(fschema
       fschema/ir/internal/codec_utils.h
       fschema/third_party/pdqsort/pdqsort.h
       fschema/third_party/xxhash/xxhash.h
+      fschema/remap/remap.h
 )
 
 target_link_libraries(fschema
