@@ -26,6 +26,7 @@
 #include "fschema/base/error.h"
 #include "fschema/base/limits.h"
 #include "fschema/ir/types.h"
+#include "fschema/remap/remap.h"
 
 namespace fschema::ir::format {
 
@@ -49,6 +50,16 @@ struct EncodeOptions {
 
   // Whether to compress the output
   bool compress = false;
+
+  // Cross-version data remap.
+  // target_data_version == 0 (default) derives from the target container
+  // (litematica v6 -> 3463; v7/unspecified -> no remap).
+  // Remap only runs when the effective target differs
+  // from the source DataVersion.
+  remap::RemapOptions remap;
+
+  // Optional stats out-param (diagnostics, counters, watchlist).
+  remap::RemapStats* remap_stats = nullptr;
 };
 
 class FormatHandler {

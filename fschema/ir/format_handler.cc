@@ -49,7 +49,6 @@ const FormatHandler* FormatRegistry::Find(SourceFormat fmt) const noexcept {
   return impl_->table[static_cast<std::size_t>(fmt)];
 }
 
-// High-level Convenience API Implementation
 ParseResult<Schema> DecodeFromFormat(
     SourceFormat fmt,
     std::unique_ptr<std::vector<std::byte>> bytes,
@@ -108,16 +107,20 @@ ParseResult<std::vector<std::byte>> Convert(
     std::unique_ptr<std::vector<std::byte>> bytes,
     const EncodeOptions& options,
     const base::DecodeLimits& limits) {
-  // 1. Decode from source format to IR
-  auto ir_result = DecodeFromFormat(from, std::move(bytes), limits);
-  if (!ir_result) {
-    return std::unexpected(ir_result.error());
+  auto ir_res = DecodeFromFormat(from, std::move(bytes), limits);
+  if (!ir_res) return std::unexpected(ir_res.error());
+
+  // Only fix data if target version is different.
+  // DataVersion (see fschema/remap/remap.h for the resolution policy).
+  if (auto r = remap::MaybeRemapForTarget(*ir_res,
+                                          to,
+                                          options.target_version,
+                                          options.remap,
+                                          options.remap_stats);
+      !r) {
+    return std::unexpected(r.error());
   }
 
-  // 2. (Optional) Pre-encode validations could go here if needed,
-  //    but handler's Encode should cover version guards.
-
-  // 3. Encode from IR to target format
-  return EncodeToFormat(to, *ir_result, options);
+  return EncodeToFormat(to, *ir_res, options);
 }
 }  // namespace fschema::ir::format

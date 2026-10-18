@@ -236,12 +236,12 @@ ParseResult<std::vector<std::byte>> SchemHandler::Encode(
         "Pos", std::span<const std::int32_t>(be.block_position.data(), 3));
     if (is_v3) {
       writer.BeginCompoundField("Data");
-      auto res = internal::FilterAndWriteFields(
+      auto res = internal::FilterAndWriteTileEntityFields(
           be.raw_nbt, internal::kBlockEntitySkip, writer);
       if (!res) return std::unexpected(res.error());
       writer.EndCompoundField();
     } else {
-      auto res = internal::FilterAndWriteFields(
+      auto res = internal::FilterAndWriteTileEntityFields(
           be.raw_nbt, internal::kBlockEntitySkip, writer);
       if (!res) return std::unexpected(res.error());
     }
