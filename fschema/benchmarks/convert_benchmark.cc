@@ -367,14 +367,10 @@ void BM_CopyOnly(benchmark::State& st) {
       targets.push_back({fir::SourceFormat::kSchem, 2, ".schem", "SchemV2"});
       targets.push_back({fir::SourceFormat::kSchem, 3, ".schem", "SchemV3"});
       targets.push_back(
-          {fir::SourceFormat::kLitematica, 5, ".litematic", "LitematicaV5"});
-      targets.push_back(
           {fir::SourceFormat::kLitematica, 6, ".litematic", "LitematicaV6"});
       targets.push_back(
           {fir::SourceFormat::kLitematica, 7, ".litematic", "LitematicaV7"});
     } else {
-      targets.push_back(
-          {fir::SourceFormat::kLitematica, 5, ".litematic", "LitematicaV5"});
       targets.push_back(
           {fir::SourceFormat::kLitematica, 6, ".litematic", "LitematicaV6"});
       targets.push_back(
