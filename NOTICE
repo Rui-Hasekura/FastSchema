@@ -8,3 +8,9 @@ This product includes schematic/test sample files designed by Linvin-1233.
 This product includes NBT test sample files from na_nbt.
 * Files under the `fschema/testdata/na_nbt` directory are licensed under the MIT License.
   Source: https://github.com/zijinshanren/na_nbt/
+
+This product includes game data mappings derived from Minecraft.
+* Files under the `fschema/remap/tables` directory contain factual game data (such as block/item IDs, registry names, and component definitions) based on Minecraft, copyright Mojang AB.
+* These data tables are used solely for interoperability and non-commercial purposes, in accordance with the Minecraft EULA.
+* This project is an unofficial community tool. It is not affiliated with, endorsed by, or associated with Mojang Studios or Microsoft.
+* "Minecraft" is a trademark of Mojang Synergies AB.
