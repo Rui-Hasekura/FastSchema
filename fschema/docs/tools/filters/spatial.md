@@ -33,7 +33,7 @@ Selects blocks inside an axis-aligned box in local coordinates. Bounds are inclu
 #include "fschema/filters/view.h"
 
 fl::BoxFilter box{0, 0, 0, 9, 9, 9};
-auto view_res = fl::MakeView(region, box, *schema.arena);
+auto view_res = fl::MakeView(region, box, *schematic.arena);
 if (!view_res) {
   const fschema::ParseError& e = view_res.error();
   return;

@@ -13,24 +13,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef FSCHEMA_SCHEM_INTERNAL_BLOCK_ENTITIES_H_
-#define FSCHEMA_SCHEM_INTERNAL_BLOCK_ENTITIES_H_
+#ifndef FSCHEMA_SPONGE_INTERNAL_PALETTE_H_
+#define FSCHEMA_SPONGE_INTERNAL_PALETTE_H_
 
 #include <vector>
 
 #include "fschema/base/error.h"
 #include "fschema/base/nbt/reader.h"
-#include "fschema/memory/arena.h"
-#include "fschema/schem/types.h"
+#include "fschema/sponge/types.h"
 
-namespace fschema::schem::internal {
+namespace fschema::sponge::internal {
 
-[[nodiscard]] ParseResult<void> ParseBlockEntities(
+// Parses a block palette Compound.
+// Keys are blockstate strings, values are Int indices.
+//   { "minecraft:air": 0, "minecraft:stone_button[face=floor]": 1, ... }
+// Indices may be non-contiguous; gaps are left as default BlockState.
+// Blockstate strings are parsed into name + properties.
+[[nodiscard]] ParseResult<void> ParseBlockPalette(
     base::ByteReader& reader,
-    std::vector<BlockEntity>& out,
-    bool is_v3,
-    memory::Arena& arena);
+    std::vector<BlockState>& palette);
 
-}  // namespace fschema::schem::internal
+}  // namespace fschema::sponge::internal
 
-#endif  // FSCHEMA_SCHEM_INTERNAL_BLOCK_ENTITIES_H_
+#endif  // FSCHEMA_SPONGE_INTERNAL_PALETTE_H_

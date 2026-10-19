@@ -45,7 +45,7 @@
 #include "fschema/ir/format_handler.h"
 #include "fschema/ir/litematica_handler.h"
 #include "fschema/ir/materialize.h"
-#include "fschema/ir/schem_handler.h"
+#include "fschema/ir/sponge_handler.h"
 #include "fschema/ir/types.h"
 #include "fschema/tests/testdata_util.h"
 
@@ -68,7 +68,7 @@ class EditorTest : public ::testing::TestWithParam<fs::path> {
       firc::FormatRegistry::Instance().Register(
           std::make_unique<firc::LitematicaHandler>());
       firc::FormatRegistry::Instance().Register(
-          std::make_unique<firc::SchemHandler>());
+          std::make_unique<firc::SpongeHandler>());
       initialized = true;
     }
 
@@ -80,11 +80,11 @@ class EditorTest : public ::testing::TestWithParam<fs::path> {
         std::make_unique<std::vector<std::byte>>(std::move(*decompressed));
     fir::SourceFormat fmt = (ext_ == ".litematic")
                                 ? fir::SourceFormat::kLitematica
-                                : fir::SourceFormat::kSchem;
+                                : fir::SourceFormat::kSponge;
 
-    auto schema_res = firc::DecodeFromFormat(fmt, std::move(owner));
-    ASSERT_TRUE(schema_res.has_value()) << "Decode failed for " << path_;
-    schema_ = std::make_unique<fir::Schema>(std::move(*schema_res));
+    auto schematic_res = firc::DecodeFromFormat(fmt, std::move(owner));
+    ASSERT_TRUE(schematic_res.has_value()) << "Decode failed for " << path_;
+    schema_ = std::make_unique<fir::Schematic>(std::move(*schematic_res));
 
     ASSERT_FALSE(schema_->regions.empty());
     region_ = &schema_->regions[0];
@@ -95,7 +95,7 @@ class EditorTest : public ::testing::TestWithParam<fs::path> {
 
   fs::path path_;
   std::string ext_;
-  std::unique_ptr<fir::Schema> schema_;
+  std::unique_ptr<fir::Schematic> schema_;
   fir::Region* region_;
 };
 

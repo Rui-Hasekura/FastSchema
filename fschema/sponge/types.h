@@ -13,8 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef FSCHEMA_SCHEM_TYPES_H_
-#define FSCHEMA_SCHEM_TYPES_H_
+#ifndef FSCHEMA_SPONGE_TYPES_H_
+#define FSCHEMA_SPONGE_TYPES_H_
 
 #include <array>
 #include <cstdint>
@@ -26,7 +26,7 @@
 #include "fschema/base/nbt/tag.h"
 #include "fschema/memory/arena.h"
 
-namespace fschema::schem {
+namespace fschema::sponge {
 
 enum class Version : std::int32_t {
   kV2 = 2,
@@ -95,6 +95,6 @@ struct Schematic {
          static_cast<std::uint64_t>(s.length);
 }
 
-}  // namespace fschema::schem
+}  // namespace fschema::sponge
 
-#endif  // FSCHEMA_SCHEM_TYPES_H_
+#endif  // FSCHEMA_SPONGE_TYPES_H_

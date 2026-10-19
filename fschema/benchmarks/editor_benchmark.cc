@@ -39,7 +39,7 @@
 #include "fschema/ir/format_handler.h"
 #include "fschema/ir/litematica_handler.h"
 #include "fschema/ir/materialize.h"
-#include "fschema/ir/schem_handler.h"
+#include "fschema/ir/sponge_handler.h"
 #include "fschema/ir/types.h"
 #include "fschema/tests/testdata_util.h"
 
@@ -51,15 +51,15 @@ namespace ed = fschema::editors;
 
 namespace {
 
-struct LoadedSchema {
+struct LoadedSchematic {
   std::string filename;
-  std::unique_ptr<fir::Schema> schema;
+  std::unique_ptr<fir::Schematic> schematic;
   std::vector<std::uint16_t> original_blocks;
   std::unique_ptr<filt::View> view;
 };
 
-[[nodiscard]] std::vector<LoadedSchema> LoadAllSchemas() {
-  std::vector<LoadedSchema> out;
+[[nodiscard]] std::vector<LoadedSchematic> LoadAllSchemas() {
+  std::vector<LoadedSchematic> out;
   const fs::path dir = fschema::test::GetTestDataDir();
   if (!fs::exists(dir)) return out;
 
@@ -68,7 +68,7 @@ struct LoadedSchema {
     firc::FormatRegistry::Instance().Register(
         std::make_unique<firc::LitematicaHandler>());
     firc::FormatRegistry::Instance().Register(
-        std::make_unique<firc::SchemHandler>());
+        std::make_unique<firc::SpongeHandler>());
     initialized = true;
   }
 
@@ -85,21 +85,21 @@ struct LoadedSchema {
         std::make_unique<std::vector<std::byte>>(std::move(*decompressed));
     fir::SourceFormat fmt = (ext == ".litematic")
                                 ? fir::SourceFormat::kLitematica
-                                : fir::SourceFormat::kSchem;
+                                : fir::SourceFormat::kSponge;
 
-    auto schema_res = firc::DecodeFromFormat(fmt, std::move(owner));
-    if (!schema_res) continue;
+    auto schematic_res = firc::DecodeFromFormat(fmt, std::move(owner));
+    if (!schematic_res) continue;
 
-    LoadedSchema ls;
+    LoadedSchematic ls;
     ls.filename = path.filename().string();
-    ls.schema = std::make_unique<fir::Schema>(std::move(*schema_res));
+    ls.schematic = std::make_unique<fir::Schematic>(std::move(*schematic_res));
 
-    if (!ls.schema->regions.empty()) {
+    if (!ls.schematic->regions.empty()) {
       auto mat_res =
-          fir::EnsureMaterialized(ls.schema->regions[0], *ls.schema->arena);
+          fir::EnsureMaterialized(ls.schematic->regions[0], *ls.schematic->arena);
       if (!mat_res) continue;
 
-      fir::Region& region = ls.schema->regions[0];
+      fir::Region& region = ls.schematic->regions[0];
       const auto& b = region.bounds;
 
       // Snapshot pristine block indices so in-place editors can be reset
@@ -110,7 +110,7 @@ struct LoadedSchema {
       // Cache a full-region view for editors that take a view argument.
       filt::BoxFilter all_box{
           0, 0, 0, b.size[0] - 1, b.size[1] - 1, b.size[2] - 1};
-      auto view_res = filt::MakeView(region, all_box, *ls.schema->arena);
+      auto view_res = filt::MakeView(region, all_box, *ls.schematic->arena);
       if (view_res) {
         ls.view = std::make_unique<filt::View>(*view_res);
       }
@@ -120,8 +120,8 @@ struct LoadedSchema {
   return out;
 }
 
-const std::vector<LoadedSchema>& GetTestSchemas() {
-  static const std::vector<LoadedSchema> schemas = LoadAllSchemas();
+const std::vector<LoadedSchematic>& GetTestSchemas() {
+  static const std::vector<LoadedSchematic> schemas = LoadAllSchemas();
   return schemas;
 }
 
@@ -130,7 +130,7 @@ void BM_Fill(benchmark::State& st) {
   if (schemas.empty()) return;
   const auto& ls = schemas[st.range(0)];
   if (!ls.view) return;
-  fir::Region& region = ls.schema->regions[0];
+  fir::Region& region = ls.schematic->regions[0];
 
   for (auto _ : st) {
     std::memcpy(region.block_indices.data(),
@@ -150,7 +150,7 @@ void BM_ReplaceWith(benchmark::State& st) {
   if (schemas.empty()) return;
   const auto& ls = schemas[st.range(0)];
   if (!ls.view) return;
-  fir::Region& region = ls.schema->regions[0];
+  fir::Region& region = ls.schematic->regions[0];
 
   // Pick any non-air palette entry as the source block.
   std::string_view from_block;
@@ -183,7 +183,7 @@ void BM_Move(benchmark::State& st) {
   if (schemas.empty()) return;
   const auto& ls = schemas[st.range(0)];
   if (!ls.view) return;
-  fir::Region& region = ls.schema->regions[0];
+  fir::Region& region = ls.schematic->regions[0];
 
   for (auto _ : st) {
     std::memcpy(region.block_indices.data(),
@@ -203,7 +203,7 @@ void BM_Hollow(benchmark::State& st) {
   if (schemas.empty()) return;
   const auto& ls = schemas[st.range(0)];
   if (!ls.view) return;
-  fir::Region& region = ls.schema->regions[0];
+  fir::Region& region = ls.schematic->regions[0];
 
   for (auto _ : st) {
     std::memcpy(region.block_indices.data(),
@@ -211,7 +211,7 @@ void BM_Hollow(benchmark::State& st) {
                 ls.original_blocks.size() * sizeof(std::uint16_t));
     region.edited = false;
 
-    auto res = ed::Hollow(*ls.view, *ls.schema->arena);
+    auto res = ed::Hollow(*ls.view, *ls.schematic->arena);
     benchmark::DoNotOptimize(res);
   }
   st.SetBytesProcessed(static_cast<std::int64_t>(ls.original_blocks.size()) *
@@ -225,7 +225,7 @@ void BM_Extract(benchmark::State& st) {
   if (!ls.view) return;
 
   for (auto _ : st) {
-    auto res = ed::Extract(*ls.view, *ls.schema->arena);
+    auto res = ed::Extract(*ls.view, *ls.schematic->arena);
     benchmark::DoNotOptimize(res);
   }
   st.SetBytesProcessed(static_cast<std::int64_t>(ls.original_blocks.size()) *
@@ -239,7 +239,7 @@ void BM_Mirror(benchmark::State& st) {
   if (!ls.view) return;
 
   for (auto _ : st) {
-    auto res = ed::Mirror(*ls.view, filt::Axis::kX, *ls.schema->arena);
+    auto res = ed::Mirror(*ls.view, filt::Axis::kX, *ls.schematic->arena);
     benchmark::DoNotOptimize(res);
   }
   st.SetBytesProcessed(static_cast<std::int64_t>(ls.original_blocks.size()) *
@@ -253,7 +253,7 @@ void BM_Rotate(benchmark::State& st) {
   if (!ls.view) return;
 
   for (auto _ : st) {
-    auto res = ed::Rotate(*ls.view, filt::Axis::kY, 1, *ls.schema->arena);
+    auto res = ed::Rotate(*ls.view, filt::Axis::kY, 1, *ls.schematic->arena);
     benchmark::DoNotOptimize(res);
   }
   st.SetBytesProcessed(static_cast<std::int64_t>(ls.original_blocks.size()) *
@@ -264,10 +264,10 @@ void BM_BoundingBoxTrim(benchmark::State& st) {
   const auto& schemas = GetTestSchemas();
   if (schemas.empty()) return;
   const auto& ls = schemas[st.range(0)];
-  fir::Region& region = ls.schema->regions[0];
+  fir::Region& region = ls.schematic->regions[0];
 
   for (auto _ : st) {
-    auto res = ed::BoundingBoxTrim(region, *ls.schema->arena);
+    auto res = ed::BoundingBoxTrim(region, *ls.schematic->arena);
     benchmark::DoNotOptimize(res);
   }
   st.SetBytesProcessed(static_cast<std::int64_t>(ls.original_blocks.size()) *

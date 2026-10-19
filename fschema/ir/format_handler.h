@@ -34,7 +34,7 @@ struct EncodeOptions {
   std::int32_t target_version = 0;
 
   // Strategy for handling multiple regions
-  // (applies when IR contains multiple regions and target is Schem format)
+  // (applies when IR contains multiple regions and target is Sponge)
   enum class MultiRegionStrategy : std::uint8_t {
     kStrictSingle = 0,      // FAIL, delegate to downstream
     kExtractFirst = 1,      // Extract the first region
@@ -65,15 +65,14 @@ struct EncodeOptions {
 class FormatHandler {
  public:
   virtual ~FormatHandler() = default;
-  [[nodiscard]] virtual std::string_view id() const noexcept = 0;
   [[nodiscard]] virtual SourceFormat format() const noexcept = 0;
 
-  [[nodiscard]] virtual ParseResult<Schema> Decode(
+  [[nodiscard]] virtual ParseResult<Schematic> Decode(
       std::unique_ptr<std::vector<std::byte>> bytes,
       const base::DecodeLimits& limits) const = 0;
 
   [[nodiscard]] virtual ParseResult<std::vector<std::byte>> Encode(
-      const Schema& ir,
+      const Schematic& schematic,
       const EncodeOptions& options) const = 0;
 };
 
@@ -92,14 +91,14 @@ class FormatRegistry {
   absl::Mutex register_mutex_;
 };
 
-[[nodiscard]] ParseResult<Schema> DecodeFromFormat(
+[[nodiscard]] ParseResult<Schematic> DecodeFromFormat(
     SourceFormat fmt,
     std::unique_ptr<std::vector<std::byte>> bytes,
     const base::DecodeLimits& limits = {});
 
 [[nodiscard]] ParseResult<std::vector<std::byte>> EncodeToFormat(
     SourceFormat fmt,
-    const Schema& ir,
+    const Schematic& schematic,
     const EncodeOptions& options = {});
 
 [[nodiscard]] ParseResult<std::vector<std::byte>> Convert(

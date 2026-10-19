@@ -28,17 +28,17 @@
 #include "fschema/base/limits.h"
 #include "fschema/base/nbt/reader.h"
 #include "fschema/memory/arena.h"
-#include "fschema/schem/internal/block_data.h"
-#include "fschema/schem/internal/root.h"
-#include "fschema/schem/types.h"
+#include "fschema/sponge/internal/block_data.h"
+#include "fschema/sponge/internal/root.h"
+#include "fschema/sponge/types.h"
 #include "fschema/tests/testdata_util.h"
 
 namespace fs = std::filesystem;
 namespace fb = fschema::base;
 namespace fm = fschema::memory;
-namespace fsc = fschema::schem;
+namespace fsp = fschema::sponge;
 
-class SchemParseTest : public ::testing::TestWithParam<fs::path> {
+class SpongeParseTest : public ::testing::TestWithParam<fs::path> {
  public:
   static std::vector<fs::path> GetSampleFiles() {
     std::vector<fs::path> files;
@@ -57,7 +57,7 @@ class SchemParseTest : public ::testing::TestWithParam<fs::path> {
   }
 };
 
-TEST_P(SchemParseTest, ParsesSuccessfullyAndValidatesStructure) {
+TEST_P(SpongeParseTest, ParsesSuccessfullyAndValidatesStructure) {
   const auto& file_path = GetParam();
 
   auto unpacked_bytes = fb::DecompressGzipFile(file_path);
@@ -66,7 +66,7 @@ TEST_P(SchemParseTest, ParsesSuccessfullyAndValidatesStructure) {
       << fb::ToString(unpacked_bytes.error());
   ASSERT_FALSE(unpacked_bytes->empty());
 
-  fsc::Schematic schematic;
+  fsp::Schematic schematic;
   schematic.arena = std::make_unique<fm::Arena>();
   schematic.owner =
       std::make_unique<std::vector<std::byte>>(std::move(*unpacked_bytes));
@@ -76,7 +76,7 @@ TEST_P(SchemParseTest, ParsesSuccessfullyAndValidatesStructure) {
                                                    schematic.owner->size()),
                         limits);
 
-  auto result = fsc::internal::ParseRoot(reader, schematic);
+  auto result = fsp::internal::ParseRoot(reader, schematic);
   ASSERT_TRUE(result.has_value())
       << "Parse failed for " << file_path
       << " Code: " << static_cast<int>(result.error().code);
@@ -85,8 +85,8 @@ TEST_P(SchemParseTest, ParsesSuccessfullyAndValidatesStructure) {
   EXPECT_FALSE(schematic.palette.empty()) << "Palette is empty";
 
   // Validate materialized block indices
-  const std::uint64_t expected_vol = fsc::VolumeOf(schematic);
-  auto res = fsc::internal::DecodeVarintArray(schematic.raw_block_data,
+  const std::uint64_t expected_vol = fsp::VolumeOf(schematic);
+  auto res = fsp::internal::DecodeVarintArray(schematic.raw_block_data,
                                               expected_vol,
                                               schematic.palette.size(),
                                               *schematic.arena);
@@ -120,28 +120,28 @@ TEST_P(SchemParseTest, ParsesSuccessfullyAndValidatesStructure) {
 }
 
 INSTANTIATE_TEST_SUITE_P(Samples,
-                         SchemParseTest,
-                         ::testing::ValuesIn(SchemParseTest::GetSampleFiles()));
+                         SpongeParseTest,
+                         ::testing::ValuesIn(SpongeParseTest::GetSampleFiles()));
 
 // Negative tests
 
-TEST(SchemParseNegativeTest, EmptyBytesInput) {
-  fsc::Schematic schematic;
+TEST(SpongeParseNegativeTest, EmptyBytesInput) {
+  fsp::Schematic schematic;
   schematic.arena = std::make_unique<fm::Arena>();
   schematic.owner = std::make_unique<std::vector<std::byte>>();
 
   fb::DecodeLimits limits;
   fb::ByteReader reader(std::span<const std::byte>(), limits);
 
-  auto result = fsc::internal::ParseRoot(reader, schematic);
+  auto result = fsp::internal::ParseRoot(reader, schematic);
   EXPECT_FALSE(result.has_value());
   EXPECT_EQ(result.error().code, fschema::ParseError::Code::kTruncated);
 }
 
-TEST(SchemParseNegativeTest, InvalidRootTagId) {
+TEST(SpongeParseNegativeTest, InvalidRootTagId) {
   std::vector<std::byte> bytes = {static_cast<std::byte>(13)};
 
-  fsc::Schematic schematic;
+  fsp::Schematic schematic;
   schematic.arena = std::make_unique<fm::Arena>();
   schematic.owner = std::make_unique<std::vector<std::byte>>(std::move(bytes));
 
@@ -150,16 +150,16 @@ TEST(SchemParseNegativeTest, InvalidRootTagId) {
                                                    schematic.owner->size()),
                         limits);
 
-  auto result = fsc::internal::ParseRoot(reader, schematic);
+  auto result = fsp::internal::ParseRoot(reader, schematic);
   EXPECT_FALSE(result.has_value());
   EXPECT_EQ(result.error().code, fschema::ParseError::Code::kInvalidTagId);
 }
 
-TEST(SchemParseNegativeTest, TruncatedDuringCompoundHeader) {
+TEST(SpongeParseNegativeTest, TruncatedDuringCompoundHeader) {
   // Valid root tag ID (Compound = 10) but truncated immediately after.
   std::vector<std::byte> bytes = {static_cast<std::byte>(10)};
 
-  fsc::Schematic schematic;
+  fsp::Schematic schematic;
   schematic.arena = std::make_unique<fm::Arena>();
   schematic.owner = std::make_unique<std::vector<std::byte>>(std::move(bytes));
 
@@ -168,7 +168,7 @@ TEST(SchemParseNegativeTest, TruncatedDuringCompoundHeader) {
                                                    schematic.owner->size()),
                         limits);
 
-  auto result = fsc::internal::ParseRoot(reader, schematic);
+  auto result = fsp::internal::ParseRoot(reader, schematic);
   EXPECT_FALSE(result.has_value());
   EXPECT_EQ(result.error().code, fschema::ParseError::Code::kTruncated);
 }

@@ -13,36 +13,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef FSCHEMA_IR_SCHEM_HANDLER_H_
-#define FSCHEMA_IR_SCHEM_HANDLER_H_
+#ifndef FSCHEMA_IR_SPONGE_HANDLER_H_
+#define FSCHEMA_IR_SPONGE_HANDLER_H_
 
 #include "fschema/ir/format_handler.h"
-#include "fschema/schem/types.h"
+#include "fschema/sponge/types.h"
 
 namespace fschema::ir::format {
 
-class SchemHandler final : public FormatHandler {
+class SpongeHandler final : public FormatHandler {
  public:
-  [[nodiscard]] std::string_view id() const noexcept override {
-    return "schem";
-  }
   [[nodiscard]] SourceFormat format() const noexcept override {
-    return SourceFormat::kSchem;
+    return SourceFormat::kSponge;
   }
 
-  [[nodiscard]] ParseResult<Schema> Decode(
+  [[nodiscard]] ParseResult<Schematic> Decode(
       std::unique_ptr<std::vector<std::byte>> bytes,
       const base::DecodeLimits& limits) const override;
 
   [[nodiscard]] ParseResult<std::vector<std::byte>> Encode(
-      const Schema& ir,
+      const Schematic& schematic,
       const EncodeOptions& options) const override;
 
-  // High-efficiency path: build IR directly from already parsed Schematic
-  [[nodiscard]] ParseResult<Schema> DecodeFromParsed(
-      schem::Schematic&& src) const;
+  [[nodiscard]] ParseResult<Schematic> DecodeFromParsed(
+      sponge::Schematic&& src) const;
 };
 
 }  // namespace fschema::ir::format
 
-#endif  // FSCHEMA_IR_SCHEM_HANDLER_H_
+#endif  // FSCHEMA_IR_SPONGE_HANDLER_H_

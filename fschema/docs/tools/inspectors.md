@@ -33,7 +33,7 @@ Inspectors that only read `r.palette`, `r.entities`, or
 
 Some inspectors return `std::string_view` fields that point into the
 region's owned byte buffer. Those views are valid only as long as the
-region, and transitively its `Schema::owner`, is alive. Copy the string
+region, and transitively its `Schematic::owner`, is alive. Copy the string
 data if the result must outlive the region.
 
 ## Pages

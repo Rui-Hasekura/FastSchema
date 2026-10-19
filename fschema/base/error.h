@@ -61,7 +61,7 @@ struct ParseError {
     // Width * Height * Length calculation overflowed the 64-bit limit.
     kVolumeOverflow,
 
-    // Schem Layer Errors
+    // Sponge Schematic Layer Errors
 
     // A varint sequence exceeded 5 bytes (32-bit limit) or was malformed.
     kVarintOverflow,

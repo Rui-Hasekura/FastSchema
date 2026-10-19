@@ -13,8 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef FSCHEMA_SCHEM_PARSE_H_
-#define FSCHEMA_SCHEM_PARSE_H_
+#ifndef FSCHEMA_SPONGE_PARSE_H_
+#define FSCHEMA_SPONGE_PARSE_H_
 
 #include <expected>
 #include <filesystem>
@@ -23,9 +23,9 @@
 
 #include "fschema/base/error.h"
 #include "fschema/base/limits.h"
-#include "fschema/schem/types.h"
+#include "fschema/sponge/types.h"
 
-namespace fschema::schem {
+namespace fschema::sponge {
 
 // Decompresses and parses a .schem file.
 // Supports both v2 and v3 of the Sponge Schematic specification.
@@ -41,6 +41,6 @@ namespace fschema::schem {
     std::unique_ptr<std::vector<std::byte>> bytes,
     const base::DecodeLimits& limits = {});
 
-}  // namespace fschema::schem
+}  // namespace fschema::sponge
 
-#endif  // FSCHEMA_SCHEM_PARSE_H_
+#endif  // FSCHEMA_SPONGE_PARSE_H_

@@ -153,7 +153,7 @@ GetSupportRuleLookup() noexcept {
 }
 
 /// Extracts a string property value by key from a BlockState
-/// (supports Schem k=v and Litematica NBT).
+/// (supports Sponge k=v and Litematica NBT).
 /// @return The property value, or empty string_view if not found.
 [[nodiscard]] inline std::string_view ExtractStringProp(
     const ir::BlockState& bs,

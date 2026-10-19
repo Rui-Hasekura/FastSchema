@@ -43,7 +43,7 @@ auto filter = [rng](fl::LocalPos p, std::uint16_t idx) {
   return (*rng)(p, idx);
 };
 
-auto view_res = fl::MakeView(region, filter, *schema.arena);
+auto view_res = fl::MakeView(region, filter, *schematic.arena);
 if (!view_res) {
   const fschema::ParseError& e = view_res.error();
   return;

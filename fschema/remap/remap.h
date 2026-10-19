@@ -28,9 +28,9 @@ namespace fschema::remap {
 
 // Public API of the cross-version remap pass.
 //
-// Rewrites an in-memory ir::Schema so its data semantics match a target
-// Minecraft DataVersion. On success, schema.data_version == target_dv and
-// schema.source_version is set to the container version implied by target_dv.
+// Rewrites an in-memory ir::Schematic so its data semantics match a target
+// Minecraft DataVersion. On success, schematic.data_version == target_dv and
+// schematic.source_version is set to the container version implied by target_dv.
 
 enum class RemapDirection : std::uint8_t {
   kDowngrade = 0,  // source dv > target dv
@@ -210,11 +210,11 @@ struct RemapStats {
 
 // Entry points
 
-// Rewrites `schema` in place to target-version semantics.
+// Rewrites `schematic` in place to target-version semantics.
 // Hard failures (returned via `std::expected`): unsupported target
 // container, IR corrupted mid-walk. Everything else is a diagnostic.
 [[nodiscard]] ParseResult<RemapStats> RemapToDataVersion(
-    ir::Schema& schema,
+    ir::Schematic& schematic,
     std::int32_t target_data_version,
     const RemapOptions& options = {});
 
@@ -222,7 +222,7 @@ struct RemapStats {
 // derived from the target container) and remaps only when it differs from
 // the source.
 [[nodiscard]] ParseResult<void> MaybeRemapForTarget(
-    ir::Schema& schema,
+    ir::Schematic& schematic,
     ir::SourceFormat target_format,
     std::int32_t target_container_version,
     const RemapOptions& remap_options,
@@ -230,7 +230,7 @@ struct RemapStats {
 
 // Resolve the canonical Minecraft DataVersion for a container target.
 // v6 -> 3463 (1.20).
-// v7 / unknown / schem -> 0 (round-trip).
+// v7 / unknown / Sponge -> 0 (round-trip).
 // v5 -> -1 (rejected).
 [[nodiscard]] constexpr std::int32_t ResolveDataVersionForContainer(
     ir::SourceFormat fmt,

@@ -47,7 +47,7 @@ fl::BoxFilter all{0, 0, 0,
                   region.bounds.size[0] - 1,
                   region.bounds.size[1] - 1,
                   region.bounds.size[2] - 1};
-auto view_res = fl::MakeView(region, all, *schema.arena);
+auto view_res = fl::MakeView(region, all, *schematic.arena);
 if (!view_res) {
   const fschema::ParseError& e = view_res.error();
   return;
@@ -59,7 +59,7 @@ std::vector<std::string_view> ids = {
 };
 std::vector<std::string_view> fields = {"Lock", "CustomName"};
 
-auto res = ed::EraseNbt(*view_res, ids, fields, *schema.arena);
+auto res = ed::EraseNbt(*view_res, ids, fields, *schematic.arena);
 if (!res) {
   const fschema::ParseError& e = res.error();
   return;

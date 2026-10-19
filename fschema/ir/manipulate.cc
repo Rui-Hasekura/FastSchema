@@ -29,19 +29,19 @@
 
 namespace fschema::ir {
 
-ParseResult<void> ExtractRegion(Schema& ir, std::string_view region_name) {
+ParseResult<void> ExtractRegion(Schematic& schematic, std::string_view region_name) {
   auto it =
-      std::find_if(ir.regions.begin(), ir.regions.end(), [&](const Region& r) {
+      std::find_if(schematic.regions.begin(), schematic.regions.end(), [&](const Region& r) {
         return r.name == region_name;
       });
-  if (it == ir.regions.end()) {
+  if (it == schematic.regions.end()) {
     return std::unexpected(
         ParseError{ParseError::Code::kMissingField, "ExtractRegion", 0});
   }
   Region extracted = std::move(*it);
-  ir.regions.clear();
-  ir.regions.push_back(std::move(extracted));
-  ir.source_version = 0;
+  schematic.regions.clear();
+  schematic.regions.push_back(std::move(extracted));
+  schematic.source_version = 0;
   return {};
 }
 

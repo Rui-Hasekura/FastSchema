@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "fschema/schem/internal/root.h"
+#include "fschema/sponge/internal/root.h"
 
 #include <array>
 #include <cstddef>
@@ -28,12 +28,12 @@
 #include "fschema/base/nbt/scope.h"
 #include "fschema/base/nbt/skip.h"
 #include "fschema/base/nbt/tag.h"
-#include "fschema/schem/internal/block_entities.h"
-#include "fschema/schem/internal/entities.h"
-#include "fschema/schem/internal/palette.h"
-#include "fschema/schem/types.h"
+#include "fschema/sponge/internal/block_entities.h"
+#include "fschema/sponge/internal/entities.h"
+#include "fschema/sponge/internal/palette.h"
+#include "fschema/sponge/types.h"
 
-namespace fschema::schem::internal {
+namespace fschema::sponge::internal {
 
 [[nodiscard]] static ParseResult<void> ParseMetadata(base::ByteReader& reader,
                                                      Schematic& out) {
@@ -307,4 +307,4 @@ ParseSchematicFields(base::ByteReader& reader, Schematic& out, bool is_v3) {
   return {};
 }
 
-}  // namespace fschema::schem::internal
+}  // namespace fschema::sponge::internal

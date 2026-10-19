@@ -35,7 +35,7 @@
 #include "fschema/ir/format_handler.h"
 #include "fschema/ir/litematica_handler.h"
 #include "fschema/ir/materialize.h"
-#include "fschema/ir/schem_handler.h"
+#include "fschema/ir/sponge_handler.h"
 #include "fschema/ir/types.h"
 #include "fschema/tests/testdata_util.h"
 
@@ -46,13 +46,13 @@ namespace filt = fschema::filters;
 
 namespace {
 
-struct LoadedSchema {
+struct LoadedSchematic {
   std::string filename;
-  std::unique_ptr<fir::Schema> schema;
+  std::unique_ptr<fir::Schematic> schematic;
 };
 
-[[nodiscard]] std::vector<LoadedSchema> LoadAllSchemas() {
-  std::vector<LoadedSchema> out;
+[[nodiscard]] std::vector<LoadedSchematic> LoadAllSchemas() {
+  std::vector<LoadedSchematic> out;
   const fs::path dir = fschema::test::GetTestDataDir();
   if (!fs::exists(dir)) return out;
 
@@ -61,7 +61,7 @@ struct LoadedSchema {
     firc::FormatRegistry::Instance().Register(
         std::make_unique<firc::LitematicaHandler>());
     firc::FormatRegistry::Instance().Register(
-        std::make_unique<firc::SchemHandler>());
+        std::make_unique<firc::SpongeHandler>());
     initialized = true;
   }
 
@@ -78,18 +78,18 @@ struct LoadedSchema {
         std::make_unique<std::vector<std::byte>>(std::move(*decompressed));
     fir::SourceFormat fmt = (ext == ".litematic")
                                 ? fir::SourceFormat::kLitematica
-                                : fir::SourceFormat::kSchem;
+                                : fir::SourceFormat::kSponge;
 
-    auto schema_res = firc::DecodeFromFormat(fmt, std::move(owner));
-    if (!schema_res) continue;
+    auto schematic_res = firc::DecodeFromFormat(fmt, std::move(owner));
+    if (!schematic_res) continue;
 
-    LoadedSchema ls;
+    LoadedSchematic ls;
     ls.filename = path.filename().string();
-    ls.schema = std::make_unique<fir::Schema>(std::move(*schema_res));
+    ls.schematic = std::make_unique<fir::Schematic>(std::move(*schematic_res));
 
-    if (!ls.schema->regions.empty()) {
+    if (!ls.schematic->regions.empty()) {
       auto mat_res =
-          fir::EnsureMaterialized(ls.schema->regions[0], *ls.schema->arena);
+          fir::EnsureMaterialized(ls.schematic->regions[0], *ls.schematic->arena);
       if (!mat_res) continue;
     }
     out.push_back(std::move(ls));
@@ -97,8 +97,8 @@ struct LoadedSchema {
   return out;
 }
 
-const std::vector<LoadedSchema>& GetTestSchemas() {
-  static const std::vector<LoadedSchema> schemas = LoadAllSchemas();
+const std::vector<LoadedSchematic>& GetTestSchemas() {
+  static const std::vector<LoadedSchematic> schemas = LoadAllSchemas();
   return schemas;
 }
 
@@ -110,16 +110,16 @@ void RunFilterBenchmark(benchmark::State& st, FilterType filter) {
     return;
   }
 
-  const auto& schema = schemas[st.range(0)];
-  if (schema.schema->regions.empty()) {
+  const auto& schematic = schemas[st.range(0)];
+  if (schematic.schematic->regions.empty()) {
     st.SkipWithError("No regions found");
     return;
   }
-  fir::Region& region = schema.schema->regions[0];
+  fir::Region& region = schematic.schematic->regions[0];
 
   std::size_t total_blocks = 0;
   for (auto _ : st) {
-    auto view_res = filt::MakeView(region, filter, *schema.schema->arena);
+    auto view_res = filt::MakeView(region, filter, *schematic.schematic->arena);
     if (!view_res) {
       st.SkipWithError("MakeView failed");
       return;
@@ -137,7 +137,7 @@ void RunFilterBenchmark(benchmark::State& st, FilterType filter) {
 void BM_BoxFilter(benchmark::State& st) {
   const auto& schemas = GetTestSchemas();
   if (schemas.empty()) return;
-  const auto& region = schemas[st.range(0)].schema->regions[0];
+  const auto& region = schemas[st.range(0)].schematic->regions[0];
   const auto& b = region.bounds;
 
   // Lower half along each axis; roughly one eighth of the volume.
@@ -148,7 +148,7 @@ void BM_BoxFilter(benchmark::State& st) {
 void BM_SphereFilter(benchmark::State& st) {
   const auto& schemas = GetTestSchemas();
   if (schemas.empty()) return;
-  const auto& region = schemas[st.range(0)].schema->regions[0];
+  const auto& region = schemas[st.range(0)].schematic->regions[0];
   const auto& b = region.bounds;
 
   std::int32_t cx = b.size[0] / 2;
@@ -165,7 +165,7 @@ void BM_SphereFilter(benchmark::State& st) {
 void BM_AxisFilter(benchmark::State& st) {
   const auto& schemas = GetTestSchemas();
   if (schemas.empty()) return;
-  const auto& region = schemas[st.range(0)].schema->regions[0];
+  const auto& region = schemas[st.range(0)].schematic->regions[0];
   const auto& b = region.bounds;
 
   filt::AxisFilter axis{filt::Axis::kY, filt::Cmp::kGe, b.size[1] / 2};
@@ -175,7 +175,7 @@ void BM_AxisFilter(benchmark::State& st) {
 void BM_BlockNameFilter(benchmark::State& st) {
   const auto& schemas = GetTestSchemas();
   if (schemas.empty()) return;
-  const auto& region = schemas[st.range(0)].schema->regions[0];
+  const auto& region = schemas[st.range(0)].schematic->regions[0];
   if (region.palette.empty()) return;
 
   // Use the last palette entry, which is typically a non-trivial block.
@@ -186,7 +186,7 @@ void BM_BlockNameFilter(benchmark::State& st) {
 void BM_IsAirFilter(benchmark::State& st) {
   const auto& schemas = GetTestSchemas();
   if (schemas.empty()) return;
-  const auto& region = schemas[st.range(0)].schema->regions[0];
+  const auto& region = schemas[st.range(0)].schematic->regions[0];
 
   filt::IsAirFilter filter(region);
   RunFilterBenchmark(st, filter);
@@ -195,7 +195,7 @@ void BM_IsAirFilter(benchmark::State& st) {
 void BM_SurfaceFilter(benchmark::State& st) {
   const auto& schemas = GetTestSchemas();
   if (schemas.empty()) return;
-  const auto& region = schemas[st.range(0)].schema->regions[0];
+  const auto& region = schemas[st.range(0)].schematic->regions[0];
 
   filt::SurfaceFilter filter(region);
   RunFilterBenchmark(st, filter);
@@ -204,7 +204,7 @@ void BM_SurfaceFilter(benchmark::State& st) {
 void BM_NeighborFilter(benchmark::State& st) {
   const auto& schemas = GetTestSchemas();
   if (schemas.empty()) return;
-  const auto& region = schemas[st.range(0)].schema->regions[0];
+  const auto& region = schemas[st.range(0)].schematic->regions[0];
 
   filt::IsAirFilter air_filter(region);
   filt::NeighborFilter neighbor_filter(region, air_filter);
@@ -214,7 +214,7 @@ void BM_NeighborFilter(benchmark::State& st) {
 void BM_CompositeFilter(benchmark::State& st) {
   const auto& schemas = GetTestSchemas();
   if (schemas.empty()) return;
-  const auto& region = schemas[st.range(0)].schema->regions[0];
+  const auto& region = schemas[st.range(0)].schematic->regions[0];
   const auto& b = region.bounds;
 
   filt::BoxFilter box{0, 0, 0, b.size[0] - 1, b.size[1] - 1, b.size[2] - 1};

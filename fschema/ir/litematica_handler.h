@@ -23,23 +23,20 @@ namespace fschema::ir::format {
 
 class LitematicaHandler final : public FormatHandler {
  public:
-  [[nodiscard]] std::string_view id() const noexcept override {
-    return "litematica";
-  }
   [[nodiscard]] SourceFormat format() const noexcept override {
     return SourceFormat::kLitematica;
   }
 
-  [[nodiscard]] ParseResult<Schema> Decode(
+  [[nodiscard]] ParseResult<Schematic> Decode(
       std::unique_ptr<std::vector<std::byte>> bytes,
       const base::DecodeLimits& limits) const override;
 
   [[nodiscard]] ParseResult<std::vector<std::byte>> Encode(
-      const Schema& ir,
+      const Schematic& schematic,
       const EncodeOptions& options) const override;
 
   // High-efficiency path: build IR directly from already parsed Litematica
-  [[nodiscard]] ParseResult<Schema> DecodeFromParsed(
+  [[nodiscard]] ParseResult<Schematic> DecodeFromParsed(
       litematica::Litematica&& src) const;
 };
 

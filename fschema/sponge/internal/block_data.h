@@ -13,8 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef FSCHEMA_SCHEM_INTERNAL_BLOCK_DATA_H_
-#define FSCHEMA_SCHEM_INTERNAL_BLOCK_DATA_H_
+#ifndef FSCHEMA_SPONGE_INTERNAL_BLOCK_DATA_H_
+#define FSCHEMA_SPONGE_INTERNAL_BLOCK_DATA_H_
 
 #include <atomic>
 #include <cstddef>
@@ -26,7 +26,7 @@
 #include "fschema/memory/arena.h"
 #include "fschema/memory/uninit_buffer.h"
 
-namespace fschema::schem::internal {
+namespace fschema::sponge::internal {
 
 struct ChunkBoundary {
   std::vector<const std::uint8_t*> ptrs;
@@ -75,6 +75,6 @@ void DecodeVarintChunks(const std::uint8_t* const* chunk_ptrs,
                         std::atomic<std::uint32_t>& error_flag,
                         std::uint16_t* out);
 
-}  // namespace fschema::schem::internal
+}  // namespace fschema::sponge::internal
 
-#endif  // FSCHEMA_SCHEM_INTERNAL_BLOCK_DATA_H_
+#endif  // FSCHEMA_SPONGE_INTERNAL_BLOCK_DATA_H_

@@ -43,7 +43,7 @@ Under these conditions the encoder writes `lazy_source.raw_bytes` into `BlockSta
 
 ## Sponge passthrough
 
-`SchemHandler::Encode` takes the passthrough path when:
+`SpongeHandler::Encode` takes the passthrough path when:
 
 - `lazy_source.encoding == kSpongeVarint`.
 
@@ -82,7 +82,7 @@ conditions depend only on `encoding`, `palette_pristine`, and
 
 The encoders read `region.palette` at serialization time. The palette
 section of the output carries the renamed ids; the packed block data is
-the bytes from decode. See [DataVersion Remap](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/advanced/remap.md).
+the bytes from decode. See [DataVersion Remap](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/remap.md).
 
 Entity and block entity NBT rewrite is independent of this path. Those
 fields are serialized from their IR values on every encode; the remap

@@ -38,7 +38,7 @@ Deduction helper. Prefer this over writing the template parameters manually.
 fl::IsAirFilter is_air{region};
 auto exposed = fl::MakeNeighborFilter(region, is_air);
 
-auto view_res = fl::MakeView(region, exposed, *schema.arena);
+auto view_res = fl::MakeView(region, exposed, *schematic.arena);
 if (!view_res) {
   const fschema::ParseError& e = view_res.error();
   return;
@@ -67,7 +67,7 @@ The filter reads `block_indices` and `palette` on every candidate block. It does
 
 ```cpp
 fl::SurfaceFilter surface{region};
-auto view_res = fl::MakeView(region, surface, *schema.arena);
+auto view_res = fl::MakeView(region, surface, *schematic.arena);
 if (!view_res) {
   const fschema::ParseError& e = view_res.error();
   return;

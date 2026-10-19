@@ -38,13 +38,13 @@ The region is materialized through `EnsureMaterialized` at the start of the call
 #include "fschema/filters/view.h"
 
 fl::BoxFilter box{0, 0, 0, 9, 9, 9};
-auto view_res = fl::MakeView(region, box, *schema.arena);
+auto view_res = fl::MakeView(region, box, *schematic.arena);
 if (!view_res) {
   const fschema::ParseError& e = view_res.error();
   return;
 }
 
-auto placed = ed::Overlay(*view_res, "minecraft:snow_block", *schema.arena);
+auto placed = ed::Overlay(*view_res, "minecraft:snow_block", *schematic.arena);
 if (!placed) {
   const fschema::ParseError& e = placed.error();
   return;

@@ -49,7 +49,7 @@ const FormatHandler* FormatRegistry::Find(SourceFormat fmt) const noexcept {
   return impl_->table[static_cast<std::size_t>(fmt)];
 }
 
-ParseResult<Schema> DecodeFromFormat(
+ParseResult<Schematic> DecodeFromFormat(
     SourceFormat fmt,
     std::unique_ptr<std::vector<std::byte>> bytes,
     const base::DecodeLimits& limits) {
@@ -79,7 +79,7 @@ ParseResult<Schema> DecodeFromFormat(
 
 ParseResult<std::vector<std::byte>> EncodeToFormat(
     SourceFormat fmt,
-    const Schema& ir,
+    const Schematic& schematic,
     const EncodeOptions& options) {
   const FormatHandler* h = FormatRegistry::Instance().Find(fmt);
   if (!h) {
@@ -87,7 +87,7 @@ ParseResult<std::vector<std::byte>> EncodeToFormat(
         ParseError::Code::kUnsupportedVersion, "FormatHandlerNotFound", 0});
   }
 
-  auto result = h->Encode(ir, options);
+  auto result = h->Encode(schematic, options);
   if (!result) return std::unexpected(result.error());
 
   if (options.compress) {

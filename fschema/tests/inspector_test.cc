@@ -39,7 +39,7 @@
 #include "fschema/ir/format_handler.h"
 #include "fschema/ir/litematica_handler.h"
 #include "fschema/ir/materialize.h"
-#include "fschema/ir/schem_handler.h"
+#include "fschema/ir/sponge_handler.h"
 #include "fschema/ir/types.h"
 #include "fschema/tests/testdata_util.h"
 
@@ -51,13 +51,13 @@ namespace insp = fschema::inspectors;
 
 namespace {
 
-struct LoadedSchema {
+struct LoadedSchematic {
   std::string filename;
-  std::unique_ptr<fir::Schema> schema;
+  std::unique_ptr<fir::Schematic> schematic;
 };
 
-[[nodiscard]] std::vector<LoadedSchema> LoadAllSchemas() {
-  std::vector<LoadedSchema> out;
+[[nodiscard]] std::vector<LoadedSchematic> LoadAllSchemas() {
+  std::vector<LoadedSchematic> out;
   const fs::path dir = fschema::test::GetTestDataDir();
   if (!fs::exists(dir)) return out;
 
@@ -66,7 +66,7 @@ struct LoadedSchema {
     firc::FormatRegistry::Instance().Register(
         std::make_unique<firc::LitematicaHandler>());
     firc::FormatRegistry::Instance().Register(
-        std::make_unique<firc::SchemHandler>());
+        std::make_unique<firc::SpongeHandler>());
     initialized = true;
   }
 
@@ -83,29 +83,29 @@ struct LoadedSchema {
         std::make_unique<std::vector<std::byte>>(std::move(*decompressed));
     fir::SourceFormat fmt = (ext == ".litematic")
                                 ? fir::SourceFormat::kLitematica
-                                : fir::SourceFormat::kSchem;
+                                : fir::SourceFormat::kSponge;
 
-    auto schema_res = firc::DecodeFromFormat(fmt, std::move(owner));
-    if (!schema_res) continue;
+    auto schematic_res = firc::DecodeFromFormat(fmt, std::move(owner));
+    if (!schematic_res) continue;
 
     out.push_back({path.filename().string(),
-                   std::make_unique<fir::Schema>(std::move(*schema_res))});
+                   std::make_unique<fir::Schematic>(std::move(*schematic_res))});
   }
   return out;
 }
 
-const std::vector<LoadedSchema>& GetTestSchemas() {
-  static const std::vector<LoadedSchema> schemas = LoadAllSchemas();
-  return schemas;
+const std::vector<LoadedSchematic>& GetTestSchemas() {
+  static const std::vector<LoadedSchematic> schematics = LoadAllSchemas();
+  return schematics;
 }
 
 class InspectorTest : public ::testing::TestWithParam<size_t> {
  protected:
   void SetUp() override {
-    const auto& schemas = GetTestSchemas();
+    const auto& schematics = GetTestSchemas();
     index_ = GetParam();
-    ASSERT_LT(index_, schemas.size());
-    schema_ = schemas[index_].schema.get();
+    ASSERT_LT(index_, schematics.size());
+    schema_ = schematics[index_].schematic.get();
     ASSERT_FALSE(schema_->regions.empty());
     region_ = &schema_->regions[0];
 
@@ -123,7 +123,7 @@ class InspectorTest : public ::testing::TestWithParam<size_t> {
   }
 
   size_t index_ = 0;
-  fir::Schema* schema_ = nullptr;
+  fir::Schematic* schema_ = nullptr;
   fir::Region* region_ = nullptr;
   std::unique_ptr<filt::View> view_ = nullptr;
 };

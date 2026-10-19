@@ -34,14 +34,14 @@ Palette entries are remapped by name through `ResolveOrAppend`. Only the name is
 #include "fschema/filters/view.h"
 
 fl::BoxFilter box{0, 0, 0, 9, 9, 9};
-auto view_res = fl::MakeView(source_region, box, *schema.arena);
+auto view_res = fl::MakeView(source_region, box, *schematic.arena);
 if (!view_res) {
   const fschema::ParseError& e = view_res.error();
   return;
 }
 
 auto res = ed::Copy(*view_res, target_region, /*dx=*/10, /*dy=*/0, /*dz=*/0,
-                    *schema.arena);
+                    *schematic.arena);
 if (!res) {
   const fschema::ParseError& e = res.error();
   return;

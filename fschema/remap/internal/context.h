@@ -32,10 +32,10 @@ namespace fschema::remap::internal {
 // cheap byte-level pattern search. Unhit roots pass through unchanged
 // (their spans keep pointing into the source buffer). Hit roots are
 // materialized into an NbtCompound tree, transformed, serialized, and the
-// result is persisted into the Schema's arena.
+// result is persisted into the Schematic's arena.
 class RemapContext {
  public:
-  RemapContext(ir::Schema& schema,
+  RemapContext(ir::Schematic& schematic,
                RemapStats& stats,
                const RemapOptions& options,
                std::int32_t target_dv);
@@ -58,8 +58,8 @@ class RemapContext {
     return remap::EntityStructFamilyActive(tgt_dv_, src_dv_, dir_);
   }
 
-  // Copies `bytes` into the Schema's arena and returns a span over the copy.
-  // The span remains valid for the lifetime of the Schema.
+  // Copies `bytes` into the Schematic's arena and returns a span over the copy.
+  // The span remains valid for the lifetime of the Schematic.
   [[nodiscard]] std::span<const std::byte> PersistBytes(
       const std::vector<std::byte>& bytes) noexcept;
 
@@ -68,7 +68,7 @@ class RemapContext {
   // `code`.
   void Report(Diag code, std::uint16_t rule_id, std::string_view path) noexcept;
 
-  [[nodiscard]] ir::Schema& schema() noexcept { return schema_; }
+  [[nodiscard]] ir::Schematic& schematic() noexcept { return schematic_; }
   [[nodiscard]] RemapStats& stats() noexcept { return stats_; }
   [[nodiscard]] const RemapOptions& options() const noexcept {
     return options_;
@@ -78,7 +78,7 @@ class RemapContext {
   [[nodiscard]] RemapDirection direction() const noexcept { return dir_; }
 
  private:
-  ir::Schema& schema_;
+  ir::Schematic& schematic_;
   RemapStats& stats_;
   RemapOptions options_;
   std::int32_t src_dv_;

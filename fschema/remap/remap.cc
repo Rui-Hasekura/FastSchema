@@ -67,7 +67,7 @@ namespace {
 
 }  // namespace
 
-ParseResult<RemapStats> RemapToDataVersion(ir::Schema& schema,
+ParseResult<RemapStats> RemapToDataVersion(ir::Schematic& schematic,
                                            std::int32_t target_data_version,
                                            const RemapOptions& options) {
   RemapStats stats;
@@ -87,13 +87,13 @@ ParseResult<RemapStats> RemapToDataVersion(ir::Schema& schema,
         0));
   }
 
-  if (schema.data_version == target_data_version) {
-    internal::RemapContext ctx(schema, stats, options, target_data_version);
+  if (schematic.data_version == target_data_version) {
+    internal::RemapContext ctx(schematic, stats, options, target_data_version);
     ctx.Report(Diag::kNoOpAtTarget, 0, "");
     return stats;
   }
 
-  internal::RemapContext ctx(schema, stats, options, target_data_version);
+  internal::RemapContext ctx(schematic, stats, options, target_data_version);
 
   const std::uint32_t active =
       CountApplicableRules(ctx.tgt_dv(), ctx.src_dv(), ctx.direction());
@@ -108,8 +108,8 @@ ParseResult<RemapStats> RemapToDataVersion(ir::Schema& schema,
 
   // Family order: palette, block entities, entities. Each family runs its
   // own pre-scan internally.
-  for (std::size_t i = 0; i < schema.regions.size(); ++i) {
-    ir::Region& region = schema.regions[i];
+  for (std::size_t i = 0; i < schematic.regions.size(); ++i) {
+    ir::Region& region = schematic.regions[i];
     const std::string region_path = IndexPath("Regions", i, "");
 
     if (auto r = internal::RemapRegionPalette(ctx, region, region_path);
@@ -136,13 +136,13 @@ ParseResult<RemapStats> RemapToDataVersion(ir::Schema& schema,
   }
 
   // Record the new DataVersion and its implied container version.
-  schema.data_version = target_data_version;
-  schema.source_version = ContainerForDataVersion(target_data_version);
+  schematic.data_version = target_data_version;
+  schematic.source_version = ContainerForDataVersion(target_data_version);
 
   return stats;
 }
 
-ParseResult<void> MaybeRemapForTarget(ir::Schema& schema,
+ParseResult<void> MaybeRemapForTarget(ir::Schematic& schematic,
                                       ir::SourceFormat target_format,
                                       std::int32_t target_container_version,
                                       const RemapOptions& remap_options,
@@ -160,17 +160,17 @@ ParseResult<void> MaybeRemapForTarget(ir::Schema& schema,
   }
   if (target_dv == 0) return {};  // no remap requested (round-trip)
 
-  if (schema.data_version == target_dv) {
+  if (schematic.data_version == target_dv) {
     if (stats_out != nullptr) {
       RemapStats& s = *stats_out;
-      s.source_data_version = schema.data_version;
+      s.source_data_version = schematic.data_version;
       s.target_data_version = target_dv;
       s.watchlist.Set(static_cast<std::uint32_t>(Diag::kNoOpAtTarget));
     }
     return {};
   }
 
-  auto res = RemapToDataVersion(schema, target_dv, remap_options);
+  auto res = RemapToDataVersion(schematic, target_dv, remap_options);
   if (!res) return std::unexpected(res.error());
   if (stats_out != nullptr) *stats_out = std::move(*res);
   return {};

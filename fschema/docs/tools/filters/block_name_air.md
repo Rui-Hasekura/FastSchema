@@ -50,7 +50,7 @@ fl::BlockNameFilter stone{"minecraft:stone", region};
 fl::IsAirFilter is_air{region};
 
 if (stone.any_matched()) {
-  auto view_res = fl::MakeView(region, stone, *schema.arena);
+  auto view_res = fl::MakeView(region, stone, *schematic.arena);
   if (!view_res) {
     const fschema::ParseError& e = view_res.error();
     return;

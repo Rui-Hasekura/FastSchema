@@ -9,8 +9,8 @@ lifetime and ownership across layers. Normal callers do not need it.
 base/       byte I/O, gzip, error types, limits
 base/nbt/   NBT reader, writer, skip, parse, tags
 litematica/ Litematica-specific parser and types
-schem/      Sponge Schematic parser and types
-ir/         format-agnostic Schema and Region
+sponge/     Sponge Schematic parser and types
+ir/         format-agnostic Schematic and Region
 remap/      cross-version data rewrite pass
 filters/    selection
 editors/    mutation
@@ -18,7 +18,7 @@ inspectors/ read-only analysis
 memory/     Arena and UnInitBuffer
 ```
 
-The `base/`, `litematica/`, `schem/`, and `memory/` layers do not depend
+The `base/`, `litematica/`, `sponge/`, and `memory/` layers do not depend
 on `ir/`. The `ir/` layer depends on all of them. The `remap/` layer
 depends on `ir/` and on `base/nbt/`; it does not depend on `filters/`,
 `editors/`, or `inspectors/`. `ir/format/` depends on `remap/` because
@@ -30,24 +30,24 @@ Filters, editors, and inspectors depend on `ir/`.
 Two object graphs own bytes:
 
 - A format-layer object (`litematica::Litematica`,
-  `schem::Schematic`) owns a `std::unique_ptr<std::vector<std::byte>>`
+  `sponge::Schematic`) owns a `std::unique_ptr<std::vector<std::byte>>`
   called `owner`. Every `string_view` and `span` inside the graph points
   into that buffer.
-- The IR layer object (`ir::Schema`) owns the same buffer and an
-  additional `std::unique_ptr<memory::Arena>`. `Schema::owner` is the
-  same buffer the format layer produced; `Schema::arena` holds
+- The IR layer object (`ir::Schematic`) owns the same buffer and an
+  additional `std::unique_ptr<memory::Arena>`. `Schematic::owner` is the
+  same buffer the format layer produced; `Schematic::arena` holds
   materialized block indices and any arena-allocated property spans.
-  `Schema::regions` reference `owner` bytes and `arena` allocations. Moving
-  a `Schema` moves both pointers and leaves the spans valid. Copying is
+  `Schematic::regions` reference `owner` bytes and `arena` allocations. Moving
+  a `Schematic` moves both pointers and leaves the spans valid. Copying is
   not defined.
 
 The remap pass adds a third source of spans. Rewritten entity and block
 entity NBT is serialized to a `std::vector<std::byte>` and copied into
-`Schema::arena` by `RemapContext::PersistBytes`. The resulting
+`Schematic::arena` by `RemapContext::PersistBytes`. The resulting
 `std::span<const std::byte>` replaces the corresponding `raw_nbt` field
-and stays valid for the lifetime of the `Schema`, like every other arena
+and stays valid for the lifetime of the `Schematic`, like every other arena
 allocation. Roots that the remap pre-scan does not hit keep their original
-spans into `Schema::owner`.
+spans into `Schematic::owner`.
 
 ## Lazy fields on `ir::Region`
 
@@ -79,7 +79,7 @@ struct Region {
 ## Format handlers
 
 `ir::format::FormatHandler` is an interface with two operations, `Decode`
-and `Encode`. `LitematicaHandler` and `SchemHandler` implement it.
+and `Encode`. `LitematicaHandler` and `SpongeHandler` implement it.
 `FormatRegistry` is a function-local static that maps a `SourceFormat` to
 a handler.
 
@@ -90,9 +90,9 @@ and compresses on request. Neither calls into `remap/`.
 `Convert` is the only entry point that runs the remap pass. It decodes,
 calls `remap::MaybeRemapForTarget`, then encodes. The pass may rewrite
 palette names, block entity NBT, and entity NBT, and it updates
-`schema.data_version` and `schema.source_version`. See
+`schematic.data_version` and `schematic.source_version`. See
 [Conversion](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/conversion.md)
-and [DataVersion Remap](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/advanced/remap.md).
+and [DataVersion Remap](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/remap.md).
 
 ## Memory
 
@@ -111,6 +111,6 @@ Windows when the privilege is available.
 
 - [Passthrough Encoding](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/advanced/passthrough.md)
 
-- [DataVersion Remap](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/advanced/remap.md)
+- [DataVersion Remap](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/remap.md)
 
 - [Parsing](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/parsing.md)

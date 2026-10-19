@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "fschema/schem/internal/entities.h"
+#include "fschema/sponge/internal/entities.h"
 
 #include <array>
 #include <cstring>
@@ -29,9 +29,9 @@
 #include "fschema/base/nbt/tag.h"
 #include "fschema/base/nbt/writer.h"
 #include "fschema/memory/arena.h"
-#include "fschema/schem/types.h"
+#include "fschema/sponge/types.h"
 
-namespace fschema::schem::internal {
+namespace fschema::sponge::internal {
 
 [[nodiscard]] ParseResult<Entity> ParseEntityCompound(base::ByteReader& reader,
                                                       bool is_v3,
@@ -153,4 +153,4 @@ namespace fschema::schem::internal {
   return {};
 }
 
-}  // namespace fschema::schem::internal
+}  // namespace fschema::sponge::internal

@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "fschema/schem/parse.h"
+#include "fschema/sponge/parse.h"
 
 #include <cstddef>
 #include <expected>
@@ -27,10 +27,10 @@
 #include "fschema/base/limits.h"
 #include "fschema/base/nbt/reader.h"
 #include "fschema/memory/arena.h"
-#include "fschema/schem/internal/root.h"
-#include "fschema/schem/types.h"
+#include "fschema/sponge/internal/root.h"
+#include "fschema/sponge/types.h"
 
-namespace fschema::schem {
+namespace fschema::sponge {
 
 namespace {
 
@@ -75,4 +75,4 @@ ParseSchematicFromOwnedBuffer(
   return ParseSchematicFromOwnedBuffer(std::move(bytes), limits);
 }
 
-}  // namespace fschema::schem
+}  // namespace fschema::sponge

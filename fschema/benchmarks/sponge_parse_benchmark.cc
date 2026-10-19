@@ -30,15 +30,15 @@
 #include "fschema/base/limits.h"
 #include "fschema/base/nbt/reader.h"
 #include "fschema/memory/arena.h"
-#include "fschema/schem/internal/block_data.h"
-#include "fschema/schem/internal/root.h"
-#include "fschema/schem/types.h"
+#include "fschema/sponge/internal/block_data.h"
+#include "fschema/sponge/internal/root.h"
+#include "fschema/sponge/types.h"
 #include "fschema/tests/testdata_util.h"
 #include "hwy/targets.h"
 
 namespace fb = fschema::base;
 namespace fm = fschema::memory;
-namespace fsc = fschema::schem;
+namespace fsp = fschema::sponge;
 
 namespace {
 
@@ -67,7 +67,7 @@ struct TestFile {
 
       auto r = fb::DecompressGzipFile(path);
       if (!r) {
-        std::println("  [warn] Decompress error or invalid schem: {}",
+        std::println("  [warn] Decompress error or invalid sponge: {}",
                      filename);
         continue;
       }
@@ -89,14 +89,14 @@ void PrintErrorFn(const fschema::ParseError& e) {
                e.offset);
 }
 
-[[nodiscard]] bool ValidateSchematic(const fsc::Schematic& s,
+[[nodiscard]] bool ValidateSchematic(const fsp::Schematic& s,
                                      bool full,
                                      fm::Arena& arena) {
   bool ok = true;
-  const std::uint64_t expected = fsc::VolumeOf(s);
+  const std::uint64_t expected = fsp::VolumeOf(s);
   if (expected == 0) return s.raw_block_data.empty();
 
-  auto res = fsc::internal::DecodeVarintArray(
+  auto res = fsp::internal::DecodeVarintArray(
       s.raw_block_data, expected, s.palette.size(), arena);
   if (!res) return false;
 
@@ -123,15 +123,15 @@ void PrintErrorFn(const fschema::ParseError& e) {
   return ok;
 }
 
-[[nodiscard]] std::uint64_t NonAirCount(const fsc::Schematic& s,
+[[nodiscard]] std::uint64_t NonAirCount(const fsp::Schematic& s,
                                         fm::Arena& arena) {
   if (s.palette.empty() || s.raw_block_data.empty()) {
     return 0;
   }
-  const std::uint64_t expected = fsc::VolumeOf(s);
+  const std::uint64_t expected = fsp::VolumeOf(s);
   if (expected == 0) return 0;
 
-  auto res = fsc::internal::DecodeVarintArray(
+  auto res = fsp::internal::DecodeVarintArray(
       s.raw_block_data, expected, s.palette.size(), arena);
   if (!res) return 0;
 
@@ -148,7 +148,7 @@ void PrintErrorFn(const fschema::ParseError& e) {
   return non_air;
 }
 
-static void BM_ParseSchem(benchmark::State& st) {
+static void BM_ParseSponge(benchmark::State& st) {
   const auto& files = GetFiles();
   if (files.empty()) {
     st.SkipWithError("No test files loaded");
@@ -161,7 +161,7 @@ static void BM_ParseSchem(benchmark::State& st) {
   std::vector<std::byte> reusable_buffer = tf.bytes;
 
   for (auto _ : st) {
-    fsc::Schematic schematic;
+    fsp::Schematic schematic;
     schematic.arena = std::make_unique<fm::Arena>();
     schematic.owner =
         std::make_unique<std::vector<std::byte>>(std::move(reusable_buffer));
@@ -171,7 +171,7 @@ static void BM_ParseSchem(benchmark::State& st) {
                                                      schematic.owner->size()),
                           limits);
 
-    auto result = fsc::internal::ParseRoot(reader, schematic);
+    auto result = fsp::internal::ParseRoot(reader, schematic);
     if (!result) {
       PrintErrorFn(result.error());
       st.SkipWithError("parse failed");
@@ -184,7 +184,7 @@ static void BM_ParseSchem(benchmark::State& st) {
                        static_cast<std::int64_t>(bytes_size));
 
   {
-    fsc::Schematic schematic;
+    fsp::Schematic schematic;
     schematic.arena = std::make_unique<fm::Arena>();
     schematic.owner = std::make_unique<std::vector<std::byte>>(tf.bytes);
 
@@ -193,9 +193,9 @@ static void BM_ParseSchem(benchmark::State& st) {
                                                      schematic.owner->size()),
                           limits);
 
-    auto r = fsc::internal::ParseRoot(reader, schematic);
+    auto r = fsp::internal::ParseRoot(reader, schematic);
     if (r) {
-      std::uint64_t total_blocks = fsc::VolumeOf(schematic);
+      std::uint64_t total_blocks = fsp::VolumeOf(schematic);
       st.counters["blocks"] = benchmark::Counter(total_blocks);
       st.counters["MiB_in"] = benchmark::Counter(
           static_cast<double>(bytes_size) / (1024.0 * 1024.0));
@@ -203,7 +203,7 @@ static void BM_ParseSchem(benchmark::State& st) {
   }
 }
 
-static void BM_UnpackSchem(benchmark::State& st) {
+static void BM_UnpackSponge(benchmark::State& st) {
   const auto& files = GetFiles();
   if (files.empty()) {
     st.SkipWithError("No test files loaded");
@@ -212,7 +212,7 @@ static void BM_UnpackSchem(benchmark::State& st) {
 
   const auto& tf = files[st.range(0)];
 
-  fsc::Schematic schematic;
+  fsp::Schematic schematic;
   schematic.arena = std::make_unique<fm::Arena>();
   schematic.owner = std::make_unique<std::vector<std::byte>>(tf.bytes);
 
@@ -220,18 +220,18 @@ static void BM_UnpackSchem(benchmark::State& st) {
   fb::ByteReader reader(std::span<const std::byte>(schematic.owner->data(),
                                                    schematic.owner->size()),
                         limits);
-  auto r = fsc::internal::ParseRoot(reader, schematic);
+  auto r = fsp::internal::ParseRoot(reader, schematic);
   if (!r) {
     st.SkipWithError("Parse failed");
     return;
   }
 
-  std::uint64_t volume = fsc::VolumeOf(schematic);
+  std::uint64_t volume = fsp::VolumeOf(schematic);
   std::size_t bytes_size = schematic.raw_block_data.size();
 
   for (auto _ : st) {
     fschema::memory::Arena arena;
-    auto res = fsc::internal::DecodeVarintArray(
+    auto res = fsp::internal::DecodeVarintArray(
         schematic.raw_block_data, volume, schematic.palette.size(), arena);
     if (!res) {
       st.SkipWithError("Unpack failed");
@@ -267,7 +267,7 @@ int main(int argc, char* argv[]) {
     const auto& tf = files[fi];
     std::println("\n--- Verify: {} ---", tf.filename);
 
-    fsc::Schematic schematic;
+    fsp::Schematic schematic;
     schematic.arena = std::make_unique<fm::Arena>();
     schematic.owner = std::make_unique<std::vector<std::byte>>(tf.bytes);
 
@@ -276,7 +276,7 @@ int main(int argc, char* argv[]) {
                                                      schematic.owner->size()),
                           limits);
 
-    auto r = fsc::internal::ParseRoot(reader, schematic);
+    auto r = fsp::internal::ParseRoot(reader, schematic);
     if (!r) {
       PrintErrorFn(r.error());
       all_ok = false;
@@ -295,7 +295,7 @@ int main(int argc, char* argv[]) {
                  schematic.width,
                  schematic.height,
                  schematic.length);
-    std::println("  Volume:       {}", fsc::VolumeOf(schematic));
+    std::println("  Volume:       {}", fsp::VolumeOf(schematic));
     std::println("  Palette:      {}", schematic.palette.size());
     std::println("  BlockEnts:    {}", schematic.block_entities.size());
     std::println("  Entities:     {}", schematic.entities.size());
@@ -306,13 +306,13 @@ int main(int argc, char* argv[]) {
   ::benchmark::Initialize(&argc, argv);
 
   for (std::size_t i = 0; i < files.size(); ++i) {
-    benchmark::RegisterBenchmark(("SchemParse/" + files[i].filename).c_str(),
-                                 BM_ParseSchem)
+    benchmark::RegisterBenchmark(("SpongeParse/" + files[i].filename).c_str(),
+                                 BM_ParseSponge)
         ->Arg(i)
         ->Unit(benchmark::kMillisecond)
         ->MinTime(2.0);
-    benchmark::RegisterBenchmark(("SchemUnpack/" + files[i].filename).c_str(),
-                                 BM_UnpackSchem)
+    benchmark::RegisterBenchmark(("SpongeUnpack/" + files[i].filename).c_str(),
+                                 BM_UnpackSponge)
         ->Arg(i)
         ->Unit(benchmark::kMillisecond)
         ->MinTime(2.0);

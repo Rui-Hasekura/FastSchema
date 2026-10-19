@@ -22,16 +22,16 @@
 
 namespace fschema::remap::internal {
 
-RemapContext::RemapContext(ir::Schema& schema,
+RemapContext::RemapContext(ir::Schematic& schematic,
                            RemapStats& stats,
                            const RemapOptions& options,
                            std::int32_t target_dv)
-    : schema_(schema),
+    : schematic_(schematic),
       stats_(stats),
       options_(options),
-      src_dv_(schema.data_version),
+      src_dv_(schematic.data_version),
       tgt_dv_(target_dv),
-      dir_(schema.data_version > target_dv ? RemapDirection::kDowngrade
+      dir_(schematic.data_version > target_dv ? RemapDirection::kDowngrade
                                            : RemapDirection::kUpgrade) {
   stats_.direction = dir_;
   stats_.source_data_version = src_dv_;
@@ -41,11 +41,11 @@ RemapContext::RemapContext(ir::Schema& schema,
 std::span<const std::byte> RemapContext::PersistBytes(
     const std::vector<std::byte>& bytes) noexcept {
   if (bytes.empty()) return {};
-  // The Schema's arena outlives every IR span, so spans returned here stay
-  // valid for the Schema's remaining lifetime. Alignment 8 is sufficient.
+  // The Schematic's arena outlives every IR span, so spans returned here stay
+  // valid for the Schematic's remaining lifetime. Alignment 8 is sufficient.
   // Returns an empty span on arena failure; the caller keeps the original
   // bytes in that case.
-  void* p = schema_.arena->Allocate(bytes.size(), 8);
+  void* p = schematic_.arena->Allocate(bytes.size(), 8);
   if (p == nullptr) return {};
   std::memcpy(p, bytes.data(), bytes.size());
   return std::span<const std::byte>(static_cast<const std::byte*>(p),

@@ -17,7 +17,7 @@ struct LazyBlockData {
 };
 ```
 
-`raw_bytes` points into `Schema::owner`. It is not owned by the region.
+`raw_bytes` points into `Schematic::owner`. It is not owned by the region.
 
 `encoding` is one of:
 
@@ -47,14 +47,14 @@ struct LazyBlockData {
 
 On failure, `lazy_source` and `is_materialized` are left untouched.
 
-`EnsureMaterialized` takes `const Region&` because the fields it writes are `mutable`. The arena is passed in by the caller. For a `Schema`, the usual arena is `*schema.arena`.
+`EnsureMaterialized` takes `const Region&` because the fields it writes are `mutable`. The arena is passed in by the caller. For a `Schematic`, the usual arena is `*schematic.arena`.
 
 ## Dispatch
 
 For `kLitematicaLongArray`, the call is 
 `litematica::internal::UnpackIndicesFused`. It allocates an `UnInitBuffer` sized to the volume and runs a SIMD kernel.
 
-For `kSpongeVarint`, the call is `schem::internal::DecodeVarintArray`. It has three paths:
+For `kSpongeVarint`, the call is `sponge::internal::DecodeVarintArray`. It has three paths:
 
 - Single-byte fast path when `palette_size <= 128`.
 
@@ -83,14 +83,14 @@ The remap pass parses some entity and block entity NBT into an
 `remap::internal::MaterializeCompound` in
 `fschema/remap/internal/nbt_utils.h` takes a raw NBT body span and returns
 an `NbtCompound`. The pass transforms the tree and serializes it back with
-`SerializeCompoundBody`. The result is copied into `Schema::arena` by
+`SerializeCompoundBody`. The result is copied into `Schematic::arena` by
 `RemapContext::PersistBytes`. This flow runs per root, and only for roots
 that a byte-level pre-scan identified as containing data for an active
 rule family.
 
 It does not read or write `Region::block_indices`, `Region::lazy_source`,
 or `Region::is_materialized`. The block data stays in its packed form.
-See [DataVersion Remap](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/advanced/remap.md).
+See [DataVersion Remap](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/remap.md).
 
 ## Iterating unmaterialized
 

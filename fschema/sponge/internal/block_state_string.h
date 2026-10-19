@@ -13,31 +13,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "fschema/schem/internal/block_state_string.h"
+#ifndef FSCHEMA_SPONGE_INTERNAL_BLOCK_STATE_STRING_H_
+#define FSCHEMA_SPONGE_INTERNAL_BLOCK_STATE_STRING_H_
 
 #include <string_view>
 
-#include "fschema/schem/types.h"
+#include "fschema/sponge/types.h"
 
-namespace fschema::schem::internal {
+namespace fschema::sponge::internal {
 
-void ParseBlockStateString(std::string_view full, BlockState& out) {
-  const auto bracket = full.find('[');
-  if (bracket == std::string_view::npos) {
-    out.name = full;
-    out.properties = {};
-    return;
-  }
+void ParseBlockStateString(std::string_view full, BlockState& out);
 
-  out.name = full.substr(0, bracket);
+}  // namespace fschema::sponge::internal
 
-  const auto close = full.rfind(']');
-  if (close == std::string_view::npos || close <= bracket) {
-    out.properties = full.substr(bracket + 1);
-    return;
-  }
-
-  out.properties = full.substr(bracket + 1, close - bracket - 1);
-}
-
-}  // namespace fschema::schem::internal
+#endif  // FSCHEMA_SPONGE_INTERNAL_BLOCK_STATE_STRING_H_

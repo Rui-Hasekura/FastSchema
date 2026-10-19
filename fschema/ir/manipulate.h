@@ -26,7 +26,7 @@
 namespace fschema::ir {
 
 // Extracts the specified region and discards others (zero-copy).
-[[nodiscard]] ParseResult<void> ExtractRegion(Schema& ir,
+[[nodiscard]] ParseResult<void> ExtractRegion(Schematic& schematic,
                                               std::string_view region_name);
 
 // Merges a list of regions into a single new region.

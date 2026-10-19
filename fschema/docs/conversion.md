@@ -1,17 +1,17 @@
 # Conversion
 
-Format conversion goes through `ir::Schema`. The entry points are in
+Format conversion goes through `ir::Schematic`. The entry points are in
 `fschema/ir/format_handler.h`.
 
 ```cpp
-[[nodiscard]] ParseResult<Schema> DecodeFromFormat(
+[[nodiscard]] ParseResult<Schematic> DecodeFromFormat(
     SourceFormat fmt,
     std::unique_ptr<std::vector<std::byte>> bytes,
     const base::DecodeLimits& limits = {});
 
 [[nodiscard]] ParseResult<std::vector<std::byte>> EncodeToFormat(
     SourceFormat fmt,
-    const Schema& ir,
+    const Schematic& schematic,
     const EncodeOptions& options = {});
 
 [[nodiscard]] ParseResult<std::vector<std::byte>> Convert(
@@ -21,7 +21,7 @@ Format conversion goes through `ir::Schema`. The entry points are in
     const base::DecodeLimits& limits = {});
 ```
 
-`SourceFormat` is `kLitematica` or `kSchem`. See `parsing.md` for the decode side.
+`SourceFormat` is `kLitematica` or `kSponge`. See `parsing.md` for the decode side.
 
 `Convert` is decode, optional DataVersion remap, encode. `DecodeFromFormat`
 and `EncodeToFormat` do not remap on their own.
@@ -33,14 +33,14 @@ Handlers are looked up through a singleton. Register them once at startup:
 ```cpp
 #include "fschema/ir/format_handler.h"
 #include "fschema/ir/litematica_handler.h"
-#include "fschema/ir/schem_handler.h"
+#include "fschema/ir/sponge_handler.h"
 
 namespace firc = fschema::ir::format;
 
 firc::FormatRegistry::Instance().Register(
     std::make_unique<firc::LitematicaHandler>());
 firc::FormatRegistry::Instance().Register(
-    std::make_unique<firc::SchemHandler>());
+    std::make_unique<firc::SpongeHandler>());
 ```
 
 If a lookup fails, `EncodeToFormat` returns `ParseError{UnsupportedVersion, "FormatHandlerNotFound", 0}`.
@@ -69,7 +69,7 @@ struct EncodeOptions {
 ```
 
 `target_version` is the format version to write. Litematica: 5, 6, or 7.
-Sponge: 2 or 3. A value of `0` selects from `ir.data_version`: 1205 or later
+Sponge: 2 or 3. A value of `0` selects from `schematic.data_version`: 1205 or later
 maps to Litematica 7, 118 to 6, earlier to 5. Sponge defaults to 3.
 
 `multi_region` applies only when the target is Sponge and the schema has more
@@ -93,12 +93,12 @@ from the pass. It is ignored when no remap runs.
 
 ## Multi-Region Strategies
 
-When the target is Sponge and `ir.regions` has more than one entry:
+When the target is Sponge and `schematic.regions` has more than one entry:
 
 - `kStrictSingle`: return `UnsupportedVersion` with path `"MultiRegion"`.
   This is the default.
 
-- `kExtractFirst`: use `ir.regions[0]`.
+- `kExtractFirst`: use `schematic.regions[0]`.
 
 - `kExtractByName`: use the region whose `name` matches
   `extract_region_name`. If none matches, return `MissingField` with path
@@ -120,8 +120,8 @@ The merge allocates its own arena, which lives only for the encode call.
 - Sponge: `Version`, and root layout switches between v2 (flat) and v3
   (nested under `"Schematic"`).
 
-For Litematica, when `target_version` equals `ir.source_version`, the encoder
-writes extension fields from `ir.metadata.raw_compound` and each region's
+For Litematica, when `target_version` equals `schematic.source_version`, the encoder
+writes extension fields from `schematic.metadata.raw_compound` and each region's
 `raw_compound`. When versions differ, it writes empty defaults.
 
 The same logic applies to Sponge via `ShouldUseExtensions`.
@@ -147,9 +147,9 @@ from the target container version:
 | Litematica    | 5              | -1                   | `Convert` fails with `UnsupportedVersion`, message `"litematica v5 target rejected by remap policy"` |
 | Litematica    | 6              | 3463 (1.20 anchor)   | Remaps when the source DV differs                                                                    |
 | Litematica    | 7 or 0         | 0                    | No remap; round-trip                                                                                 |
-| Schem         | any            | 0                    | No remap                                                                                             |
+| Sponge        | any            | 0                    | No remap                                                                                             |
 
-If the resolved target equals `schema.data_version`, the pass reports
+If the resolved target equals `schematic.data_version`, the pass reports
 `kNoOpAtTarget` and returns.
 
 The rule set currently implements downgrades only. An upgrade request (target
@@ -165,10 +165,10 @@ DV above source DV) leaves the data and the version fields untouched and emits
 - `block_entities` and `entities` are pre-scanned at the byte level. A root
   that does not contain a pattern for any active family keeps its original
   `raw_nbt` span. A hit root is parsed into an NBT tree, transformed, and
-  re-serialized into `Schema::arena`.
+  re-serialized into `Schematic::arena`.
 
-- `schema.data_version` is set to the resolved target, and
-  `schema.source_version` is set to `ContainerForDataVersion(target DataVersion)`.
+- `schematic.data_version` is set to the resolved target, and
+  `schematic.source_version` is set to `ContainerForDataVersion(target DataVersion)`.
 
 Remap does not call `EnsureMaterialized`. `Region::block_indices` stays lazy.
 
@@ -252,7 +252,7 @@ if (auto r = remap::MaybeRemapForTarget(*ir_result, to,
 return EncodeToFormat(to, *ir_result, options);
 ```
 
-The `owner` and `arena` inside the decoded `Schema` stay alive for the
+The `owner` and `arena` inside the decoded `Schematic` stay alive for the
 duration of the call, including the remap step. Remapped entity and block
 entity NBT is persisted in the same arena.
 
@@ -267,7 +267,7 @@ entity NBT is persisted in the same arena.
 #include "fschema/base/error.h"
 #include "fschema/ir/format_handler.h"
 #include "fschema/ir/litematica_handler.h"
-#include "fschema/ir/schem_handler.h"
+#include "fschema/ir/sponge_handler.h"
 
 namespace fir = fschema::ir;
 namespace firc = fschema::ir::format;
@@ -276,7 +276,7 @@ int main() {
   firc::FormatRegistry::Instance().Register(
       std::make_unique<firc::LitematicaHandler>());
   firc::FormatRegistry::Instance().Register(
-      std::make_unique<firc::SchemHandler>());
+      std::make_unique<firc::SpongeHandler>());
 
   std::ifstream in("input.litematic", std::ios::binary | std::ios::ate);
   if (!in) return 1;
@@ -299,7 +299,7 @@ int main() {
 
   auto result = firc::Convert(
       fir::SourceFormat::kLitematica,
-      fir::SourceFormat::kSchem,
+      fir::SourceFormat::kSponge,
       std::move(bytes),
       opts);
   if (!result) {
@@ -326,7 +326,7 @@ auto owner = std::make_unique<std::vector<std::byte>>(file_size);
 // read file into owner ...
 auto result = firc::Convert(
     fir::SourceFormat::kLitematica,
-    fir::SourceFormat::kSchem,
+    fir::SourceFormat::kSponge,
     std::move(owner),
     opts);
 ```

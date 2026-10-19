@@ -23,7 +23,7 @@ auto diagonal = [](fl::LocalPos p, std::uint16_t /*idx*/) {
   return p.x == p.z;
 };
 
-auto view_res = fl::MakeView(region, diagonal, *schema.arena);
+auto view_res = fl::MakeView(region, diagonal, *schematic.arena);
 ```
 
 A capturing lambda works as long as `operator()` is const. A `mutable` lambda does not satisfy the concept because its `operator()` is non-const. 
@@ -134,6 +134,6 @@ If the inspector reads `r.block_indices`, the region must be materialized.
 
 Inspectors that only read `r.palette`, `r.entities`, or `r.block_entities` do not require materialization.
 
-Results that contain `std::string_view` fields point into the region's owned byte buffer. Those views are valid only while the region, and transitively its `Schema::owner`, is alive.
+Results that contain `std::string_view` fields point into the region's owned byte buffer. Those views are valid only while the region, and transitively its `Schematic::owner`, is alive.
 
 

@@ -38,7 +38,7 @@ Sets every selected block to `block_name`. The palette index is resolved through
 #include "fschema/filters/view.h"
 
 fl::BoxFilter box{0, 0, 0, 9, 9, 9};
-auto view_res = fl::MakeView(region, box, *schema.arena);
+auto view_res = fl::MakeView(region, box, *schematic.arena);
 if (!view_res) {
   const fschema::ParseError& e = view_res.error();
   return;
@@ -76,7 +76,7 @@ If no palette entry matches `from`, the function returns without iterating and w
 #include "fschema/filters/block_name_filter.h"
 
 fl::BlockNameFilter stone{"minecraft:stone", region};
-auto view_res = fl::MakeView(region, stone, *schema.arena);
+auto view_res = fl::MakeView(region, stone, *schematic.arena);
 if (!view_res) {
   const fschema::ParseError& e = view_res.error();
   return;

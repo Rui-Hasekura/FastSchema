@@ -86,7 +86,7 @@ fl::NbtQuery query{
 
 fl::NbtFilter has_diamond{region, query};
 
-auto view_res = fl::MakeView(region, has_diamond, *schema.arena);
+auto view_res = fl::MakeView(region, has_diamond, *schematic.arena);
 if (!view_res) {
   const fschema::ParseError& e = view_res.error();
   return;

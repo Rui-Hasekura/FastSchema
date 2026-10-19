@@ -46,13 +46,13 @@ fl::BoxFilter all{0, 0, 0,
                   region.bounds.size[1] - 1,
                   region.bounds.size[2] - 1};
 
-auto view_res = fl::MakeView(region, all, *schema.arena);
+auto view_res = fl::MakeView(region, all, *schematic.arena);
 if (!view_res) {
   const fschema::ParseError& e = view_res.error();
   return;
 }
 
-auto res = ed::Hollow(*view_res, *schema.arena);
+auto res = ed::Hollow(*view_res, *schematic.arena);
 if (!res) {
   const fschema::ParseError& e = res.error();
   return;

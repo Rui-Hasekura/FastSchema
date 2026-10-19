@@ -16,7 +16,7 @@
 #include "fschema/ir/materialize.h"
 
 #include "fschema/litematica/internal/block_states.h"
-#include "fschema/schem/internal/block_data.h"
+#include "fschema/sponge/internal/block_data.h"
 
 namespace fschema::ir {
 
@@ -36,7 +36,7 @@ ParseResult<void> EnsureMaterialized(const Region& reg, memory::Arena& arena) {
     if (!res) return std::unexpected(res.error());
     reg.block_indices = std::move(*res);
   } else if (reg.lazy_source.encoding == BlockDataEncoding::kSpongeVarint) {
-    auto res = schem::internal::DecodeVarintArray(
+    auto res = sponge::internal::DecodeVarintArray(
         reg.lazy_source.raw_bytes, volume, reg.lazy_source.palette_size, arena);
     if (!res) return std::unexpected(res.error());
     reg.block_indices = std::move(*res);

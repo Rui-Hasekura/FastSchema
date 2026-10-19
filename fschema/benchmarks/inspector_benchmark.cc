@@ -34,7 +34,7 @@
 #include "fschema/ir/format_handler.h"
 #include "fschema/ir/litematica_handler.h"
 #include "fschema/ir/materialize.h"
-#include "fschema/ir/schem_handler.h"
+#include "fschema/ir/sponge_handler.h"
 #include "fschema/ir/types.h"
 #include "fschema/tests/testdata_util.h"
 
@@ -46,14 +46,14 @@ namespace insp = fschema::inspectors;
 
 namespace {
 
-struct LoadedSchema {
+struct LoadedSchematic {
   std::string filename;
-  std::unique_ptr<fir::Schema> schema;
+  std::unique_ptr<fir::Schematic> schematic;
   std::unique_ptr<filt::View> view;
 };
 
-[[nodiscard]] std::vector<LoadedSchema> LoadAllSchemas() {
-  std::vector<LoadedSchema> out;
+[[nodiscard]] std::vector<LoadedSchematic> LoadAllSchemas() {
+  std::vector<LoadedSchematic> out;
   const fs::path dir = fschema::test::GetTestDataDir();
   if (!fs::exists(dir)) return out;
 
@@ -62,7 +62,7 @@ struct LoadedSchema {
     firc::FormatRegistry::Instance().Register(
         std::make_unique<firc::LitematicaHandler>());
     firc::FormatRegistry::Instance().Register(
-        std::make_unique<firc::SchemHandler>());
+        std::make_unique<firc::SpongeHandler>());
     initialized = true;
   }
 
@@ -79,27 +79,27 @@ struct LoadedSchema {
         std::make_unique<std::vector<std::byte>>(std::move(*decompressed));
     fir::SourceFormat fmt = (ext == ".litematic")
                                 ? fir::SourceFormat::kLitematica
-                                : fir::SourceFormat::kSchem;
+                                : fir::SourceFormat::kSponge;
 
-    auto schema_res = firc::DecodeFromFormat(fmt, std::move(owner));
-    if (!schema_res) continue;
+    auto schematic_res = firc::DecodeFromFormat(fmt, std::move(owner));
+    if (!schematic_res) continue;
 
-    LoadedSchema ls;
+    LoadedSchematic ls;
     ls.filename = path.filename().string();
-    ls.schema = std::make_unique<fir::Schema>(std::move(*schema_res));
+    ls.schematic = std::make_unique<fir::Schematic>(std::move(*schematic_res));
 
-    if (!ls.schema->regions.empty()) {
+    if (!ls.schematic->regions.empty()) {
       auto mat_res =
-          fir::EnsureMaterialized(ls.schema->regions[0], *ls.schema->arena);
+          fir::EnsureMaterialized(ls.schematic->regions[0], *ls.schematic->arena);
       if (!mat_res) continue;
 
       // Cache a full-region view so view-based inspectors do not pay for
       // filter construction inside the timed loop.
-      const auto& b = ls.schema->regions[0].bounds;
+      const auto& b = ls.schematic->regions[0].bounds;
       filt::BoxFilter all_box{
           0, 0, 0, b.size[0] - 1, b.size[1] - 1, b.size[2] - 1};
       auto view_res =
-          filt::MakeView(ls.schema->regions[0], all_box, *ls.schema->arena);
+          filt::MakeView(ls.schematic->regions[0], all_box, *ls.schematic->arena);
       if (view_res) {
         ls.view = std::make_unique<filt::View>(*view_res);
       }
@@ -109,8 +109,8 @@ struct LoadedSchema {
   return out;
 }
 
-const std::vector<LoadedSchema>& GetTestSchemas() {
-  static const std::vector<LoadedSchema> schemas = LoadAllSchemas();
+const std::vector<LoadedSchematic>& GetTestSchemas() {
+  static const std::vector<LoadedSchematic> schemas = LoadAllSchemas();
   return schemas;
 }
 
@@ -133,7 +133,7 @@ void BM_ListMaterial(benchmark::State& st) {
   const auto& schemas = GetTestSchemas();
   if (schemas.empty()) return;
   const auto& ls = schemas[st.range(0)];
-  const auto& region = ls.schema->regions[0];
+  const auto& region = ls.schematic->regions[0];
 
   std::vector<insp::MaterialEntry> materials;
   for (auto _ : st) {
@@ -150,7 +150,7 @@ void BM_Diff(benchmark::State& st) {
   const auto& schemas = GetTestSchemas();
   if (schemas.empty()) return;
   const auto& ls = schemas[st.range(0)];
-  const auto& region = ls.schema->regions[0];
+  const auto& region = ls.schematic->regions[0];
 
   std::vector<insp::DiffEntry> diffs;
   for (auto _ : st) {
@@ -169,7 +169,7 @@ void BM_FloatingCheck(benchmark::State& st) {
   const auto& schemas = GetTestSchemas();
   if (schemas.empty()) return;
   const auto& ls = schemas[st.range(0)];
-  const auto& region = ls.schema->regions[0];
+  const auto& region = ls.schematic->regions[0];
 
   insp::FloatingCheckResult result;
   for (auto _ : st) {
@@ -186,7 +186,7 @@ void BM_SupportCheck(benchmark::State& st) {
   const auto& schemas = GetTestSchemas();
   if (schemas.empty()) return;
   const auto& ls = schemas[st.range(0)];
-  const auto& region = ls.schema->regions[0];
+  const auto& region = ls.schematic->regions[0];
 
   std::vector<insp::UnsupportedBlock> unsupported;
   for (auto _ : st) {
@@ -211,7 +211,7 @@ void BM_VersionCheck(benchmark::State& st) {
     benchmark::DoNotOptimize(version);
   }
 
-  std::uint64_t volume = ls.schema->regions[0].block_indices.size();
+  std::uint64_t volume = ls.schematic->regions[0].block_indices.size();
   st.SetBytesProcessed(static_cast<std::int64_t>(volume) *
                        sizeof(std::uint16_t) * st.iterations());
 }

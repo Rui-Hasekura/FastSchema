@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "fschema/ir/schem_handler.h"
+#include "fschema/ir/sponge_handler.h"
 
 #include <array>
 #include <expected>
@@ -29,50 +29,50 @@
 #include "fschema/ir/internal/varint_pack.h"
 #include "fschema/ir/manipulate.h"
 #include "fschema/ir/materialize.h"
-#include "fschema/schem/parse.h"
+#include "fschema/sponge/parse.h"
 
 namespace fschema::ir::format {
 
 namespace {
 
-inline bool ShouldUseExtensions(const Schema& ir, bool is_v3) {
-  if (ir.source_format != SourceFormat::kSchem) return false;
-  return (is_v3 == (ir.source_version == 3));
+inline bool ShouldUseExtensions(const Schematic& schematic, bool is_v3) {
+  if (schematic.source_format != SourceFormat::kSponge) return false;
+  return (is_v3 == (schematic.source_version == 3));
 }
 
 }  // namespace
 
-ParseResult<Schema> SchemHandler::Decode(
+ParseResult<Schematic> SpongeHandler::Decode(
     std::unique_ptr<std::vector<std::byte>> bytes,
     const base::DecodeLimits& limits) const {
-  auto schem = schem::ParseSchematicFromBytes(std::move(bytes), limits);
-  if (!schem) return std::unexpected(schem.error());
-  return DecodeFromParsed(std::move(*schem));
+  auto parsed = sponge::ParseSchematicFromBytes(std::move(bytes), limits);
+  if (!parsed) return std::unexpected(parsed.error());
+  return DecodeFromParsed(std::move(*parsed));
 }
 
-ParseResult<std::vector<std::byte>> SchemHandler::Encode(
-    const Schema& ir,
+ParseResult<std::vector<std::byte>> SpongeHandler::Encode(
+    const Schematic& schematic,
     const EncodeOptions& options) const {
   const Region* target_region = nullptr;
   std::unique_ptr<Region> merged_region;
   std::unique_ptr<memory::Arena> merge_arena;
 
-  if (ir.regions.empty()) {
+  if (schematic.regions.empty()) {
     return std::unexpected(
         ParseError{ParseError::Code::kMissingField, "Regions", 0});
   }
-  if (ir.regions.size() == 1) {
-    target_region = &ir.regions[0];
+  if (schematic.regions.size() == 1) {
+    target_region = &schematic.regions[0];
   } else {
     switch (options.multi_region) {
       case EncodeOptions::MultiRegionStrategy::kStrictSingle:
         return std::unexpected(
             ParseError{ParseError::Code::kUnsupportedVersion, "MultiRegion", 0});
       case EncodeOptions::MultiRegionStrategy::kExtractFirst:
-        target_region = &ir.regions[0];
+        target_region = &schematic.regions[0];
         break;
       case EncodeOptions::MultiRegionStrategy::kExtractByName:
-        for (const auto& r : ir.regions) {
+        for (const auto& r : schematic.regions) {
           if (r.name == options.extract_region_name) {
             target_region = &r;
             break;
@@ -85,7 +85,7 @@ ParseResult<std::vector<std::byte>> SchemHandler::Encode(
       case EncodeOptions::MultiRegionStrategy::kMergeBoundingBox: {
         merge_arena = std::make_unique<memory::Arena>();
         auto merge_res =
-            MergeRegions(ir.regions, options.fill_block, *merge_arena);
+            MergeRegions(schematic.regions, options.fill_block, *merge_arena);
         if (!merge_res) return std::unexpected(merge_res.error());
         merged_region = std::make_unique<Region>(std::move(*merge_res));
         target_region = merged_region.get();
@@ -100,7 +100,7 @@ ParseResult<std::vector<std::byte>> SchemHandler::Encode(
         ParseError{ParseError::Code::kUnsupportedVersion, "TargetVersion", 0});
   }
   bool is_v3 = (options.target_version == 0 || options.target_version == 3);
-  bool use_ext = ShouldUseExtensions(ir, is_v3);
+  bool use_ext = ShouldUseExtensions(schematic, is_v3);
 
   std::size_t nbt_hint = 0;
   nbt_hint += target_region->palette.size() * 128;
@@ -123,19 +123,19 @@ ParseResult<std::vector<std::byte>> SchemHandler::Encode(
   }
 
   writer.WriteIntField("Version", is_v3 ? 3 : 2);
-  writer.WriteIntField("DataVersion", ir.data_version);
+  writer.WriteIntField("DataVersion", schematic.data_version);
 
   // Metadata
   writer.BeginCompoundField("Metadata");
-  if (!ir.metadata.name.empty())
-    writer.WriteStringField("Name", ir.metadata.name);
-  if (!ir.metadata.author.empty())
-    writer.WriteStringField("Author", ir.metadata.author);
+  if (!schematic.metadata.name.empty())
+    writer.WriteStringField("Name", schematic.metadata.name);
+  if (!schematic.metadata.author.empty())
+    writer.WriteStringField("Author", schematic.metadata.author);
 
   if (use_ext) {
-    if (!ir.metadata.raw_compound.empty()) {
+    if (!schematic.metadata.raw_compound.empty()) {
       auto res = internal::FilterAndWriteFields(
-          ir.metadata.raw_compound, internal::kSchemMetadataSkip, writer);
+          schematic.metadata.raw_compound, internal::kSpongeMetadataSkip, writer);
       if (!res) return std::unexpected(res.error());
     }
   }
@@ -207,7 +207,7 @@ ParseResult<std::vector<std::byte>> SchemHandler::Encode(
                 target_region->lazy_source.raw_bytes.data()),
             target_region->lazy_source.raw_bytes.size()));
   } else {
-    auto mat_res = ir::EnsureMaterialized(*target_region, *ir.arena);
+    auto mat_res = ir::EnsureMaterialized(*target_region, *schematic.arena);
     if (!mat_res) return std::unexpected(mat_res.error());
 
     const std::size_t n = target_region->block_indices.size();
@@ -257,8 +257,8 @@ ParseResult<std::vector<std::byte>> SchemHandler::Encode(
   if (use_ext) {
     if (!target_region->raw_compound.empty()) {
       auto skip =
-          is_v3 ? std::span<const std::string_view>(internal::kSchemV3Skip)
-                : std::span<const std::string_view>(internal::kSchemV2Skip);
+          is_v3 ? std::span<const std::string_view>(internal::kSpongeV3Skip)
+                : std::span<const std::string_view>(internal::kSpongeV2Skip);
       auto res = internal::FilterAndWriteFields(
           target_region->raw_compound, skip, writer);
       if (!res) return std::unexpected(res.error());
@@ -306,10 +306,10 @@ ParseResult<std::vector<std::byte>> SchemHandler::Encode(
   return std::move(writer).Finalize();
 }
 
-ParseResult<Schema> SchemHandler::DecodeFromParsed(
-    schem::Schematic&& src) const {
-  Schema ir;
-  ir.source_format = SourceFormat::kSchem;
+ParseResult<Schematic> SpongeHandler::DecodeFromParsed(
+    sponge::Schematic&& src) const {
+  Schematic ir;
+  ir.source_format = SourceFormat::kSponge;
   ir.source_version = static_cast<std::int32_t>(src.version);
   ir.data_version = src.data_version;
   ir.arena = std::move(src.arena);

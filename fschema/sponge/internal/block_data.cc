@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "fschema/schem/internal/block_data.h"
+#include "fschema/sponge/internal/block_data.h"
 
 #include <algorithm>
 #include <atomic>
@@ -28,7 +28,7 @@
 #include "fschema/memory/arena.h"
 #include "fschema/memory/uninit_buffer.h"
 
-namespace fschema::schem::internal {
+namespace fschema::sponge::internal {
 
 namespace {
 
@@ -185,4 +185,4 @@ DecodeVarintArray(std::span<const std::byte> data,
   return DecodeVarintParallel(data, volume, palette_size, arena);
 }
 
-}  // namespace fschema::schem::internal
+}  // namespace fschema::sponge::internal

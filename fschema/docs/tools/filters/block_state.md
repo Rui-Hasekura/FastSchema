@@ -55,7 +55,7 @@ std::vector<fl::BlockStateCondition> conds = {
 
 fl::BlockStateFilter powered_north{region, std::move(conds)};
 
-auto view_res = fl::MakeView(region, powered_north, *schema.arena);
+auto view_res = fl::MakeView(region, powered_north, *schematic.arena);
 if (!view_res) {
   const fschema::ParseError& e = view_res.error();
   return;

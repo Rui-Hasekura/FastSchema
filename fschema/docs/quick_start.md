@@ -12,14 +12,14 @@ program startup.
 ```cpp
 #include "fschema/ir/format_handler.h"
 #include "fschema/ir/litematica_handler.h"
-#include "fschema/ir/schem_handler.h"
+#include "fschema/ir/sponge_handler.h"
 
 namespace firc = fschema::ir::format;
 
 firc::FormatRegistry::Instance().Register(
  std::make_unique<firc::LitematicaHandler>());
 firc::FormatRegistry::Instance().Register(
- std::make_unique<firc::SchemHandler>());
+ std::make_unique<firc::SpongeHandler>());
 ```
 
 Without registration, `DecodeFromFormat`, `EncodeToFormat`, and `Convert`
@@ -42,7 +42,7 @@ view over a region, apply an editor, and encode the result.
 #include "fschema/filters/view.h"
 #include "fschema/ir/format_handler.h"
 #include "fschema/ir/litematica_handler.h"
-#include "fschema/ir/schem_handler.h"
+#include "fschema/ir/sponge_handler.h"
 #include "fschema/memory/arena.h"
 
 namespace fir = fschema::ir;
@@ -55,7 +55,7 @@ int main() {
   firc::FormatRegistry::Instance().Register(
       std::make_unique<firc::LitematicaHandler>());
   firc::FormatRegistry::Instance().Register(
-      std::make_unique<firc::SchemHandler>());
+      std::make_unique<firc::SpongeHandler>());
 
   // Read the input file into memory.
   std::ifstream in("input.litematic", std::ios::binary | std::ios::ate);
@@ -69,23 +69,23 @@ int main() {
   if (!in) return 1;
 
   // Decode from Litematica to IR. DecodeFromFormat auto-detects gzip.
-  auto schema_res = firc::DecodeFromFormat(
+  auto schematic_res = firc::DecodeFromFormat(
       fir::SourceFormat::kLitematica, std::move(bytes));
-  if (!schema_res) {
-    const fschema::ParseError& e = schema_res.error();
+  if (!schematic_res) {
+    const fschema::ParseError& e = schematic_res.error();
     // e.code, e.path, e.offset
     return 1;
   }
-  fir::Schema& schema = *schema_res;
+  fir::Schematic& schematic = *schematic_res;
 
-  if (schema.regions.empty()) return 1;
-  fir::Region& region = schema.regions[0];
+  if (schematic.regions.empty()) return 1;
+  fir::Region& region = schematic.regions[0];
 
   // Select a 10x10x10 box in local coordinates.
   fl::BoxFilter box{0, 0, 0, 9, 9, 9};
 
   // MakeView materializes the region on demand.
-  auto view_res = fl::MakeView(region, box, *schema.arena);
+  auto view_res = fl::MakeView(region, box, *schematic.arena);
   if (!view_res) {
     const fschema::ParseError& e = view_res.error();
     return 1;
@@ -103,7 +103,7 @@ int main() {
   opts.compress = true;
 
   auto encoded = firc::EncodeToFormat(
-      fir::SourceFormat::kLitematica, schema, opts);
+      fir::SourceFormat::kLitematica, schematic, opts);
   if (!encoded) {
     const fschema::ParseError& e = encoded.error();
     return 1;
@@ -136,7 +136,7 @@ buffer and returns the encoded bytes.
 #include "fschema/base/error.h"
 #include "fschema/ir/format_handler.h"
 #include "fschema/ir/litematica_handler.h"
-#include "fschema/ir/schem_handler.h"
+#include "fschema/ir/sponge_handler.h"
 
 namespace fir = fschema::ir;
 namespace firc = fschema::ir::format;
@@ -145,7 +145,7 @@ int main() {
   firc::FormatRegistry::Instance().Register(
       std::make_unique<firc::LitematicaHandler>());
   firc::FormatRegistry::Instance().Register(
-      std::make_unique<firc::SchemHandler>());
+      std::make_unique<firc::SpongeHandler>());
 
   std::ifstream in("input.litematic", std::ios::binary | std::ios::ate);
   if (!in) return 1;
@@ -165,7 +165,7 @@ int main() {
 
   auto result = firc::Convert(
       fir::SourceFormat::kLitematica,
-      fir::SourceFormat::kSchem,
+      fir::SourceFormat::kSponge,
       std::move(bytes),
       opts);
   if (!result) {
@@ -186,7 +186,7 @@ example above converts blocks and metadata without touching item or entity
 data. Litematica targets resolve differently: v6 maps to DataVersion 3463 and
 triggers a remap, v5 is rejected, v7 round-trips. See
 [Conversion](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/conversion.md) for the resolution table and
-[DataVersion Remap](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/advanced/remap.md) for the rules.
+[DataVersion Remap](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/remap.md) for the rules.
 
 ## Pitfalls
 
@@ -194,14 +194,14 @@ triggers a remap, v5 is rejected, v7 round-trips. See
   `"FormatHandlerNotFound"`.
 
 - Passing compressed bytes to the format-layer parsers
-  (`ParseLitematic`, `ParseSchematicFromBytes`). Those expect decompressed
+  (`ParseLitematica`, `ParseSchematicFromBytes`). Those expect decompressed
   bytes. The IR-layer `DecodeFromFormat` auto-detects gzip.
 
 - Reading `Region::block_indices` without calling `EnsureMaterialized` or
   going through `MakeView`. The buffer is empty until materialized.
 
-- Holding a `std::string_view` from a palette entry after the `Schema` is
-  destroyed. All views point into the schema's owned buffer.
+- Holding a `std::string_view` from a palette entry after the `Schematic` is
+  destroyed. All views point into the schematic's owned buffer.
 
 - Confusing `CompressorError` and `ParseError`. They are separate enums.
   `Convert` wraps compression failures into `ParseError`.

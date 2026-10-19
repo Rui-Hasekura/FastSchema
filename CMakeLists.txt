@@ -147,19 +147,19 @@ target_sources(fschema
     fschema/litematica/internal/root.cc
     fschema/litematica/internal/simd_block_states.cc
     fschema/litematica/internal/tile_entity.cc
-    fschema/schem/parse.cc
-    fschema/schem/internal/block_data.cc
-    fschema/schem/internal/block_entities.cc
-    fschema/schem/internal/block_state_string.cc
-    fschema/schem/internal/entities.cc
-    fschema/schem/internal/palette.cc
-    fschema/schem/internal/root.cc
-    fschema/schem/internal/simd_block_data.cc
+    fschema/sponge/parse.cc
+    fschema/sponge/internal/block_data.cc
+    fschema/sponge/internal/block_entities.cc
+    fschema/sponge/internal/block_state_string.cc
+    fschema/sponge/internal/entities.cc
+    fschema/sponge/internal/palette.cc
+    fschema/sponge/internal/root.cc
+    fschema/sponge/internal/simd_block_data.cc
     fschema/ir/format_handler.cc
     fschema/ir/litematica_handler.cc
     fschema/ir/manipulate.cc
     fschema/ir/materialize.cc
-    fschema/ir/schem_handler.cc
+    fschema/ir/sponge_handler.cc
     fschema/ir/internal/bit_pack.cc
     fschema/ir/internal/codec_utils.cc
     fschema/ir/internal/varint_pack.cc
@@ -191,12 +191,12 @@ target_sources(fschema
     fschema/litematica/internal/region.h
     fschema/litematica/internal/root.h
     fschema/litematica/internal/tile_entity.h
-    fschema/schem/internal/block_data.h
-    fschema/schem/internal/block_entities.h
-    fschema/schem/internal/block_state_string.h
-    fschema/schem/internal/entities.h
-    fschema/schem/internal/palette.h
-    fschema/schem/internal/root.h
+    fschema/sponge/internal/block_data.h
+    fschema/sponge/internal/block_entities.h
+    fschema/sponge/internal/block_state_string.h
+    fschema/sponge/internal/entities.h
+    fschema/sponge/internal/palette.h
+    fschema/sponge/internal/root.h
 )
 
 # Public headers
@@ -261,14 +261,14 @@ target_sources(fschema
       fschema/ir/litematica_handler.h
       fschema/ir/manipulate.h
       fschema/ir/materialize.h
-      fschema/ir/schem_handler.h
+      fschema/ir/sponge_handler.h
       fschema/ir/types.h
       fschema/litematica/parse.h
       fschema/litematica/types.h
       fschema/memory/arena.h
       fschema/memory/uninit_buffer.h
-      fschema/schem/parse.h
-      fschema/schem/types.h
+      fschema/sponge/parse.h
+      fschema/sponge/types.h
       fschema/editors/internal/state_transform.h
       fschema/filters/internal/neighbors.h
       fschema/inspectors/internal/block_version_data.h
@@ -389,8 +389,8 @@ if(FASTSCHEMA_BUILD_TESTS)
 
     # Parsing
     fschema_add_test(fschema_litematica_parse_test fschema/tests/litematica_parse_test.cc)
-    fschema_add_test(fschema_nbt_parse_test    fschema/tests/nbt_parse_test.cc)
-    fschema_add_test(fschema_schem_parse_test  fschema/tests/schem_parse_test.cc)
+    fschema_add_test(fschema_nbt_parse_test        fschema/tests/nbt_parse_test.cc)
+    fschema_add_test(fschema_sponge_parse_test     fschema/tests/sponge_parse_test.cc)
 
     # Tools
     fschema_add_test(fschema_filter_test       fschema/tests/filter_test.cc)
@@ -419,8 +419,8 @@ if(FASTSCHEMA_BUILD_BENCHMARKS)
     endfunction()
 
     # Parsing
-    fschema_add_bench(fschema_schem_parse_benchmark      fschema/benchmarks/schem_parse_benchmark.cc)
-    fschema_add_bench(fschema_litematica_parse_benchmark  fschema/benchmarks/litematica_parse_benchmark.cc)
+    fschema_add_bench(fschema_sponge_parse_benchmark     fschema/benchmarks/sponge_parse_benchmark.cc)
+    fschema_add_bench(fschema_litematica_parse_benchmark fschema/benchmarks/litematica_parse_benchmark.cc)
     fschema_add_bench(fschema_nbt_parse_benchmark        fschema/benchmarks/nbt_parse_benchmark.cc)
 
     # Conversion

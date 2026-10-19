@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "fschema/schem/internal/palette.h"
+#include "fschema/sponge/internal/palette.h"
 
 #include <cstdint>
 #include <expected>
@@ -24,10 +24,10 @@
 #include "fschema/base/nbt/scope.h"
 #include "fschema/base/nbt/skip.h"
 #include "fschema/base/nbt/tag.h"
-#include "fschema/schem/internal/block_state_string.h"
-#include "fschema/schem/types.h"
+#include "fschema/sponge/internal/block_state_string.h"
+#include "fschema/sponge/types.h"
 
-namespace fschema::schem::internal {
+namespace fschema::sponge::internal {
 
 struct PaletteEntry {
   std::string_view key;
@@ -78,4 +78,4 @@ struct PaletteEntry {
   return {};
 }
 
-}  // namespace fschema::schem::internal
+}  // namespace fschema::sponge::internal

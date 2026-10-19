@@ -9,9 +9,9 @@ bytes
   ├─ NBT        base/nbt/parse.h            NbtTag tree
   │
   ├─ Format     litematica/parse.h          litematica::Litematica
-  │             schem/parse.h               schem::Schematic
+  │             sponge/parse.h              sponge::Schematic
   │
-  └─ IR         ir/format_handler.h         ir::Schema
+  └─ IR         ir/format_handler.h         ir::Schematic
 ```
 
 The format layer and the IR layer are zero-copy. Both hold a
@@ -110,7 +110,7 @@ if (!lit) {
 
 ## Sponge Schematic Layer
 
-`fschema/schem/parse.h` has two entry points:
+`fschema/sponge/parse.h` has two entry points:
 
 ```cpp
 [[nodiscard]] std::expected<Schematic, ParseError> ParseSchematic(
@@ -132,10 +132,10 @@ Both v2 and v3 are detected in `ParseRoot`. A root tag named `"Schematic"` selec
 
 ## IR Layer
 
-`fschema/ir/format_handler.h` unifies both formats behind `ir::Schema`.
+`fschema/ir/format_handler.h` unifies both formats behind `ir::Schematic`.
 
 ```cpp
-[[nodiscard]] ParseResult<Schema> DecodeFromFormat(
+[[nodiscard]] ParseResult<Schematic> DecodeFromFormat(
     SourceFormat fmt,
     std::unique_ptr<std::vector<std::byte>> bytes,
     const base::DecodeLimits& limits = {});
@@ -146,26 +146,26 @@ Register handlers before calling:
 ```cpp
 #include "fschema/ir/format_handler.h"
 #include "fschema/ir/litematica_handler.h"
-#include "fschema/ir/schem_handler.h"
+#include "fschema/ir/sponge_handler.h"
 
 namespace firc = fschema::ir::format;
 
 firc::FormatRegistry::Instance().Register(
     std::make_unique<firc::LitematicaHandler>());
 firc::FormatRegistry::Instance().Register(
-    std::make_unique<firc::SchemHandler>());
+    std::make_unique<firc::SpongeHandler>());
 ```
 
 `DecodeFromFormat` checks the first two bytes for the gzip magic `1f 8b`
 and decompresses in place. This differs from the format layers, which
 require the caller to decompress first.
 
-`DecodeFromFormat` does not remap. It produces an `ir::Schema` at the
+`DecodeFromFormat` does not remap. It produces an `ir::Schematic` at the
 file's own DataVersion. Cross-version rewriting happens in `Convert`;
 see [Conversion](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/conversion.md)
-and [DataVersion Remap](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/advanced/remap.md).
+and [DataVersion Remap](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/remap.md).
 
-`ir::Schema` holds `regions`, `metadata`, `owner`, and `arena`. Each
+`ir::Schematic` holds `regions`, `metadata`, `owner`, and `arena`. Each
 `ir::Region` has `bounds`, `position`, `size`, `palette`,
 `block_indices`, `lazy_source`, `is_materialized`, `edited`, `entities`,
 `block_entities`, and `raw_compound`.
@@ -176,7 +176,7 @@ reading it.
 ```cpp
 #include "fschema/ir/materialize.h"
 
-auto mat_res = fschema::ir::EnsureMaterialized(region, *schema.arena);
+auto mat_res = fschema::ir::EnsureMaterialized(region, *schematic.arena);
 if (!mat_res) {
   const fschema::ParseError& e = mat_res.error();
   return;
@@ -201,13 +201,13 @@ normalization.
 | --------------------------------------------------------- | ----------------------------- |
 | Inspect raw NBT structure                                 | NBT layer                     |
 | Read Litematica-only fields (pending ticks, preview data) | Litematica layer              |
-| Read Sponge-only fields (biomes, required mods)           | Schem layer                   |
+| Read Sponge-only fields (biomes, required mods)           | Sponge layer                  |
 | Convert formats                                           | IR layer, see `conversion.md` |
 | Apply filters, editors, inspectors                        | IR layer                      |
 
-Converting a format-layer object into `ir::Schema` is not a public  
+Converting a format-layer object into `ir::Schematic` is not a public  
 operation. The conversion lives in `LitematicaHandler::DecodeFromParsed`  
-and `SchemHandler::DecodeFromParsed`, reachable only through  
+and `SpongeHandler::DecodeFromParsed`, reachable only through  
 `DecodeFromFormat`.
 
 ## Errors

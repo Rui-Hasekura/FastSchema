@@ -53,13 +53,13 @@ is_materialized = true
 #include "fschema/filters/view.h"
 
 fl::BoxFilter box{0, 0, 0, 9, 9, 9};
-auto view_res = fl::MakeView(region, box, *schema.arena);
+auto view_res = fl::MakeView(region, box, *schematic.arena);
 if (!view_res) {
   const fschema::ParseError& e = view_res.error();
   return;
 }
 
-auto extracted = ed::Extract(*view_res, *schema.arena);
+auto extracted = ed::Extract(*view_res, *schematic.arena);
 if (!extracted) {
   const fschema::ParseError& e = extracted.error();
   return;
@@ -88,7 +88,7 @@ is_materialized = true
 ```cpp
 #include "fschema/editors/bounding_box_trim.h"
 
-auto trimmed = ed::BoundingBoxTrim(region, *schema.arena);
+auto trimmed = ed::BoundingBoxTrim(region, *schematic.arena);
 if (!trimmed) {
   const fschema::ParseError& e = trimmed.error();
   return;

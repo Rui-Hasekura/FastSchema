@@ -13,17 +13,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef FSCHEMA_SCHEM_INTERNAL_ENTITIES_H_
-#define FSCHEMA_SCHEM_INTERNAL_ENTITIES_H_
+#ifndef FSCHEMA_SPONGE_INTERNAL_ENTITIES_H_
+#define FSCHEMA_SPONGE_INTERNAL_ENTITIES_H_
 
 #include <vector>
 
 #include "fschema/base/error.h"
 #include "fschema/base/nbt/reader.h"
 #include "fschema/memory/arena.h"
-#include "fschema/schem/types.h"
+#include "fschema/sponge/types.h"
 
-namespace fschema::schem::internal {
+namespace fschema::sponge::internal {
 
 // Parses an Entities List<Compound>.
 // v2: { Pos: List<Double>[3], Id: String, ...extra fields directly }
@@ -33,6 +33,6 @@ namespace fschema::schem::internal {
                                               bool is_v3,
                                               memory::Arena& arena);
 
-}  // namespace fschema::schem::internal
+}  // namespace fschema::sponge::internal
 
-#endif  // FSCHEMA_SCHEM_INTERNAL_ENTITIES_H_
+#endif  // FSCHEMA_SPONGE_INTERNAL_ENTITIES_H_

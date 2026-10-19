@@ -45,8 +45,8 @@ inline constexpr std::string_view kLitRegionSkip[] = {"Position",
                                                       "TileEntities",
                                                       "Entities"};
 
-inline constexpr std::string_view kSchemMetadataSkip[] = {"Name", "Author"};
-inline constexpr std::string_view kSchemV2Skip[] = {"Version",
+inline constexpr std::string_view kSpongeMetadataSkip[] = {"Name", "Author"};
+inline constexpr std::string_view kSpongeV2Skip[] = {"Version",
                                                     "DataVersion",
                                                     "Metadata",
                                                     "Width",
@@ -58,7 +58,7 @@ inline constexpr std::string_view kSchemV2Skip[] = {"Version",
                                                     "BlockData",
                                                     "BlockEntities",
                                                     "Entities"};
-inline constexpr std::string_view kSchemV3Skip[] = {"Version",
+inline constexpr std::string_view kSpongeV3Skip[] = {"Version",
                                                     "DataVersion",
                                                     "Metadata",
                                                     "Width",

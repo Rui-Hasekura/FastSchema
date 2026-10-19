@@ -42,11 +42,11 @@ namespace fschema::ir::format {
 
 namespace {
 
-inline bool ShouldUseExtensions(const Schema& ir, std::int32_t target_version) {
-  if (ir.source_format != SourceFormat::kLitematica) return false;
+inline bool ShouldUseExtensions(const Schematic& schematic, std::int32_t target_version) {
+  if (schematic.source_format != SourceFormat::kLitematica) return false;
   const std::int32_t effective_version =
-      (target_version == 0) ? ir.source_version : target_version;
-  return effective_version == ir.source_version;
+      (target_version == 0) ? schematic.source_version : target_version;
+  return effective_version == schematic.source_version;
 }
 
 [[nodiscard]] inline std::uint32_t PaletteBpb(std::size_t palette_size) {
@@ -59,21 +59,21 @@ inline bool ShouldUseExtensions(const Schema& ir, std::int32_t target_version) {
 
 }  // namespace
 
-ParseResult<Schema> LitematicaHandler::Decode(
+ParseResult<Schematic> LitematicaHandler::Decode(
     std::unique_ptr<std::vector<std::byte>> bytes,
     const base::DecodeLimits& limits) const {
-  auto lit = litematica::ParseLitematica(std::move(bytes), limits);
-  if (!lit) return std::unexpected(lit.error());
-  return DecodeFromParsed(std::move(*lit));
+  auto parsed = litematica::ParseLitematica(std::move(bytes), limits);
+  if (!parsed) return std::unexpected(parsed.error());
+  return DecodeFromParsed(std::move(*parsed));
 }
 
 constexpr std::uint16_t kAirIdxSentinel = 0xFFFF;
 
 ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
-    const Schema& ir,
+    const Schematic& schematic,
     const EncodeOptions& options) const {
   std::size_t nbt_hint = 0;
-  for (const auto& reg : ir.regions) {
+  for (const auto& reg : schematic.regions) {
     nbt_hint += static_cast<std::size_t>(reg.bounds.size[0]) *
                 static_cast<std::size_t>(reg.bounds.size[1]) *
                 static_cast<std::size_t>(reg.bounds.size[2]) * 2;
@@ -88,13 +88,13 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
   std::int32_t version = 5;
   if (options.target_version >= 5 && options.target_version <= 7) {
     version = options.target_version;
-  } else if (ir.data_version >= kDataVersion1205) {
+  } else if (schematic.data_version >= kDataVersion1205) {
     version = 7;
-  } else if (ir.data_version >= kDataVersion118) {
+  } else if (schematic.data_version >= kDataVersion118) {
     version = 6;
   }
 
-  const bool use_ext = ShouldUseExtensions(ir, options.target_version);
+  const bool use_ext = ShouldUseExtensions(schematic, options.target_version);
 
   // Anonymous root (name = ""), to match Litematica mod's on-disk format.
   // Disk: 0A 00 00 ...  (TAG_Compound + u16 name length = 0)
@@ -104,17 +104,17 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
   if (version >= 7) {
     writer.WriteIntField("SubVersion", 1);
   }
-  writer.WriteIntField("MinecraftDataVersion", ir.data_version);
+  writer.WriteIntField("MinecraftDataVersion", schematic.data_version);
 
   // Compute common values for cross-format path
   std::int32_t total_blocks = 0;
   std::int64_t total_volume = 0;
   if (!use_ext) {
-    for (const auto& reg : ir.regions) {
+    for (const auto& reg : schematic.regions) {
       total_volume += static_cast<std::int64_t>(std::abs(reg.bounds.size[0])) *
                       static_cast<std::int64_t>(std::abs(reg.bounds.size[1])) *
                       static_cast<std::int64_t>(std::abs(reg.bounds.size[2]));
-      auto mat_res = ir::EnsureMaterialized(reg, *ir.arena);
+      auto mat_res = ir::EnsureMaterialized(reg, *schematic.arena);
       if (!mat_res) return std::unexpected(mat_res.error());
 
       if (reg.block_indices.empty()) continue;
@@ -129,9 +129,9 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
   // Metadata
   std::int64_t ms = absl::ToUnixMillis(absl::Now());
   std::string_view name =
-      ir.metadata.name.empty() ? "Unnamed" : ir.metadata.name;
+      schematic.metadata.name.empty() ? "Unnamed" : schematic.metadata.name;
   std::string_view author =
-      ir.metadata.author.empty() ? "Unknown" : ir.metadata.author;
+      schematic.metadata.author.empty() ? "Unknown" : schematic.metadata.author;
 
   writer.BeginCompoundField("Metadata");
   writer.WriteStringField("Name", name);
@@ -140,24 +140,24 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
   if (use_ext) {
     // Round-trip: write extensions
     // (Description, RegionCount, TotalBlocks, etc.)
-    if (!ir.metadata.raw_compound.empty()) {
+    if (!schematic.metadata.raw_compound.empty()) {
       auto res = internal::FilterAndWriteFields(
-          ir.metadata.raw_compound, internal::kLitMetadataSkip, writer);
+          schematic.metadata.raw_compound, internal::kLitMetadataSkip, writer);
       if (!res) return std::unexpected(res.error());
     }
   } else {
     // Cross-format: compute all format-specific fields
     writer.WriteStringField("Description", "");
     writer.WriteIntField("RegionCount",
-                         static_cast<std::int32_t>(ir.regions.size()));
+                         static_cast<std::int32_t>(schematic.regions.size()));
     writer.WriteIntField("TotalBlocks", total_blocks);
     writer.WriteIntField("TotalVolume", total_volume);
 
     writer.BeginCompoundField("EnclosingSize");
     std::array<std::int32_t, 3> enc_size = {0, 0, 0};
-    if (!ir.regions.empty()) {
+    if (!schematic.regions.empty()) {
       for (int i = 0; i < 3; ++i) {
-        enc_size[i] = std::abs(ir.regions[0].bounds.size[i]);
+        enc_size[i] = std::abs(schematic.regions[0].bounds.size[i]);
       }
     }
     writer.WriteIntField("x", enc_size[0]);
@@ -172,7 +172,7 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
 
   // Regions
   writer.BeginCompoundField("Regions");
-  for (const auto& reg : ir.regions) {
+  for (const auto& reg : schematic.regions) {
     writer.BeginCompoundField(reg.name);
 
     // Position
@@ -219,13 +219,13 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
     if (block_states_passthrough) {
       out_palette.assign(reg.palette.begin(), reg.palette.end());
     } else if (air_idx == 0) {
-      auto mat_res = ir::EnsureMaterialized(reg, *ir.arena);
+      auto mat_res = ir::EnsureMaterialized(reg, *schematic.arena);
       if (!mat_res) return std::unexpected(mat_res.error());
       out_palette.assign(reg.palette.begin(), reg.palette.end());
       pack_src = std::span<const std::uint16_t>(reg.block_indices.data(),
                                                 reg.block_indices.size());
     } else if (air_idx != kAirIdxSentinel) {
-      auto mat_res = ir::EnsureMaterialized(reg, *ir.arena);
+      auto mat_res = ir::EnsureMaterialized(reg, *schematic.arena);
       if (!mat_res) return std::unexpected(mat_res.error());
 
       out_palette.assign(reg.palette.begin(), reg.palette.end());
@@ -266,7 +266,7 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
 #endif
       pack_src = std::span<const std::uint16_t>(dst, n);
     } else {
-      auto mat_res = ir::EnsureMaterialized(reg, *ir.arena);
+      auto mat_res = ir::EnsureMaterialized(reg, *schematic.arena);
       if (!mat_res) return std::unexpected(mat_res.error());
 
       if (reg.palette.size() >= 65536) {
@@ -418,22 +418,22 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
   return std::move(writer).Finalize();
 }
 
-ParseResult<Schema> LitematicaHandler::DecodeFromParsed(
+ParseResult<Schematic> LitematicaHandler::DecodeFromParsed(
     litematica::Litematica&& src) const {
-  Schema ir;
-  ir.source_format = SourceFormat::kLitematica;
-  ir.source_version = static_cast<std::int32_t>(src.version);
-  ir.data_version = src.data_version;
-  ir.arena = std::move(src.arena);
-  ir.owner = std::move(src.owner);
+  Schematic schematic;
+  schematic.source_format = SourceFormat::kLitematica;
+  schematic.source_version = static_cast<std::int32_t>(src.version);
+  schematic.data_version = src.data_version;
+  schematic.arena = std::move(src.arena);
+  schematic.owner = std::move(src.owner);
 
   // Common metadata
-  ir.metadata.name = src.metadata.name;
-  ir.metadata.author = src.metadata.author;
-  ir.metadata.raw_compound = src.metadata.raw_compound;
+  schematic.metadata.name = src.metadata.name;
+  schematic.metadata.author = src.metadata.author;
+  schematic.metadata.raw_compound = src.metadata.raw_compound;
 
   // Regions
-  ir.regions.reserve(src.regions.size());
+  schematic.regions.reserve(src.regions.size());
   for (auto& reg : src.regions) {
     Region r;
     r.name = reg.name;
@@ -493,9 +493,9 @@ ParseResult<Schema> LitematicaHandler::DecodeFromParsed(
 
     r.raw_compound = reg.raw_compound;
 
-    ir.regions.push_back(std::move(r));
+    schematic.regions.push_back(std::move(r));
   }
-  return ir;
+  return schematic;
 }
 
 }  // namespace fschema::ir::format

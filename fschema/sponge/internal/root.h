@@ -13,14 +13,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef FSCHEMA_SCHEM_INTERNAL_ROOT_H_
-#define FSCHEMA_SCHEM_INTERNAL_ROOT_H_
+#ifndef FSCHEMA_SPONGE_INTERNAL_ROOT_H_
+#define FSCHEMA_SPONGE_INTERNAL_ROOT_H_
 
 #include "fschema/base/error.h"
 #include "fschema/base/nbt/reader.h"
-#include "fschema/schem/types.h"
+#include "fschema/sponge/types.h"
 
-namespace fschema::schem::internal {
+namespace fschema::sponge::internal {
 
 // Root parser entry point.
 //
@@ -37,6 +37,6 @@ namespace fschema::schem::internal {
 [[nodiscard]] ParseResult<void> ParseRoot(base::ByteReader& reader,
                                           Schematic& out);
 
-}  // namespace fschema::schem::internal
+}  // namespace fschema::sponge::internal
 
-#endif  // FSCHEMA_SCHEM_INTERNAL_ROOT_H_
+#endif  // FSCHEMA_SPONGE_INTERNAL_ROOT_H_

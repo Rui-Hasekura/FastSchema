@@ -14,7 +14,7 @@
 // limitations under the License.
 
 #undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "fschema/schem/internal/simd_block_data.cc"
+#define HWY_TARGET_INCLUDE "fschema/sponge/internal/simd_block_data.cc"
 
 #include <atomic>
 #include <cstddef>
@@ -39,10 +39,10 @@
 #include "fschema/base/port.h"
 #include "fschema/memory/arena.h"
 #include "fschema/memory/uninit_buffer.h"
-#include "fschema/schem/internal/block_data.h"
+#include "fschema/sponge/internal/block_data.h"
 
 HWY_BEFORE_NAMESPACE();
-namespace fschema::schem::internal {
+namespace fschema::sponge::internal {
 namespace HWY_NAMESPACE {
 
 namespace hn = hwy::HWY_NAMESPACE;
@@ -571,11 +571,11 @@ void DecodeVarintChunksKernelImpl(const std::uint8_t* const* chunk_ptrs,
 }
 
 }  // namespace HWY_NAMESPACE
-}  // namespace fschema::schem::internal
+}  // namespace fschema::sponge::internal
 HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
-namespace fschema::schem::internal {
+namespace fschema::sponge::internal {
 HWY_EXPORT(BuildChunkBoundariesImpl);
 HWY_EXPORT(DecodeSingleByteFastImpl);
 HWY_EXPORT(Decode2ByteUniformFastImpl);
@@ -619,5 +619,5 @@ void DecodeVarintChunks(const std::uint8_t* const* chunk_ptrs,
                                                      out);
 }
 
-}  // namespace fschema::schem::internal
+}  // namespace fschema::sponge::internal
 #endif  // HWY_ONCE

@@ -42,7 +42,7 @@ constexpr std::int32_t kDataVersion1205 = 3837;
 
 enum class SourceFormat : std::uint8_t {
   kLitematica = 0,
-  kSchem = 1,
+  kSponge = 1,
 };
 
 enum class PropertyEncoding : std::uint8_t {
@@ -113,7 +113,7 @@ enum class BlockDataEncoding : std::uint8_t {
 struct LazyBlockData {
   // The raw byte span of the packed block data
   // (e.g., Litematica LongArray or Sponge Varint ByteArray).
-  // Points into the Schema's owned byte buffer.
+  // Points into the Schematic's owned byte buffer.
   std::span<const std::byte> raw_bytes;
 
   // The encoding scheme used by `raw_bytes`.
@@ -212,11 +212,12 @@ struct Metadata {
 // The root IR object.
 // Represents a fully parsed schematic file,
 // independent of the original source format.
-struct Schema {
-  // The format this schema was originally decoded from.
+struct Schematic {
+  // The format this schematic was originally decoded from.
   SourceFormat source_format;
 
-  // The version of the source format (e.g., Litematica v5/v6/v7, Schem v2/v3).
+  // The version of the source format
+  // (e.g., Litematica v5/v6/v7, Sponge v2/v3).
   std::int32_t source_version = 0;
 
   // The Minecraft DataVersion (e.g., 2860 for 1.18, 3837 for 1.20.5).

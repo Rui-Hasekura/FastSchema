@@ -43,13 +43,13 @@ The caller is responsible for ensuring the structure does not contain blocks tha
 #include "fschema/filters/view.h"
 
 fl::BoxFilter box{0, 0, 0, 9, 9, 9};
-auto view_res = fl::MakeView(region, box, *schema.arena);
+auto view_res = fl::MakeView(region, box, *schematic.arena);
 if (!view_res) {
   const fschema::ParseError& e = view_res.error();
   return;
 }
 
-auto mirrored = ed::Mirror(*view_res, fl::Axis::kX, *schema.arena);
+auto mirrored = ed::Mirror(*view_res, fl::Axis::kX, *schematic.arena);
 if (!mirrored) {
   const fschema::ParseError& e = mirrored.error();
   return;
@@ -65,7 +65,7 @@ Rotates the selection by `steps * 90` degrees clockwise around `axis`.
 The caller is responsible for ensuring the structure does not contain blocks that become invalid when rotated.
 
 ```cpp
-auto rotated = ed::Rotate(*view_res, fl::Axis::kY, 1, *schema.arena);
+auto rotated = ed::Rotate(*view_res, fl::Axis::kY, 1, *schematic.arena);
 if (!rotated) {
   const fschema::ParseError& e = rotated.error();
   return;
@@ -88,7 +88,7 @@ The mapping in `editors/internal/state_transform.h` must match the geometric tra
 
 ```cpp
 auto mirrored_states = ed::Mirror(
-    *view_res, fl::Axis::kX, *schema.arena,
+    *view_res, fl::Axis::kX, *schematic.arena,
     ed::StateTransformMode::kTransformStates);
 ```
 

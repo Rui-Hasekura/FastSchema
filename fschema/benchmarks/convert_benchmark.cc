@@ -32,7 +32,7 @@
 #include "fschema/ir/format_handler.h"
 #include "fschema/ir/litematica_handler.h"
 #include "fschema/ir/materialize.h"
-#include "fschema/ir/schem_handler.h"
+#include "fschema/ir/sponge_handler.h"
 #include "fschema/ir/types.h"
 #include "fschema/tests/testdata_util.h"
 #include "hwy/targets.h"
@@ -75,7 +75,7 @@ struct TestFile {
       out.push_back({filename,
                      std::move(*r),
                      (ext == ".litematic") ? fir::SourceFormat::kLitematica
-                                           : fir::SourceFormat::kSchem});
+                                           : fir::SourceFormat::kSponge});
     }
   }
   return out;
@@ -92,12 +92,12 @@ void RegisterHandlers() {
     firc::FormatRegistry::Instance().Register(
         std::make_unique<firc::LitematicaHandler>());
     firc::FormatRegistry::Instance().Register(
-        std::make_unique<firc::SchemHandler>());
+        std::make_unique<firc::SpongeHandler>());
     initialized = true;
   }
 }
 
-[[nodiscard]] std::uint64_t CalculateTotalBlocks(const fir::Schema& ir) {
+[[nodiscard]] std::uint64_t CalculateTotalBlocks(const fir::Schematic& ir) {
   std::uint64_t total = 0;
   for (const auto& reg : ir.regions) {
     if (reg.palette.empty()) continue;
@@ -132,7 +132,7 @@ struct IrStats {
   unsigned bpb_max = 0;
 };
 
-[[nodiscard]] IrStats ComputeIrStats(const fir::Schema& ir) {
+[[nodiscard]] IrStats ComputeIrStats(const fir::Schematic& ir) {
   IrStats s;
   s.regions = ir.regions.size();
   for (const auto& reg : ir.regions) {
@@ -152,7 +152,7 @@ struct IrStats {
 }
 
 [[nodiscard]] fir::SourceFormat OtherFormat(fir::SourceFormat f) noexcept {
-  return f == fir::SourceFormat::kLitematica ? fir::SourceFormat::kSchem
+  return f == fir::SourceFormat::kLitematica ? fir::SourceFormat::kSponge
                                              : fir::SourceFormat::kLitematica;
 }
 
@@ -364,8 +364,8 @@ void BM_CopyOnly(benchmark::State& st) {
 
     std::vector<TargetConfig> targets;
     if (tf.format == fir::SourceFormat::kLitematica) {
-      targets.push_back({fir::SourceFormat::kSchem, 2, ".schem", "SchemV2"});
-      targets.push_back({fir::SourceFormat::kSchem, 3, ".schem", "SchemV3"});
+      targets.push_back({fir::SourceFormat::kSponge, 2, ".schem", "SpongeV2"});
+      targets.push_back({fir::SourceFormat::kSponge, 3, ".schem", "SpongeV3"});
       targets.push_back(
           {fir::SourceFormat::kLitematica, 6, ".litematic", "LitematicaV6"});
       targets.push_back(
@@ -375,8 +375,8 @@ void BM_CopyOnly(benchmark::State& st) {
           {fir::SourceFormat::kLitematica, 6, ".litematic", "LitematicaV6"});
       targets.push_back(
           {fir::SourceFormat::kLitematica, 7, ".litematic", "LitematicaV7"});
-      targets.push_back({fir::SourceFormat::kSchem, 2, ".schem", "SchemV2"});
-      targets.push_back({fir::SourceFormat::kSchem, 3, ".schem", "SchemV3"});
+      targets.push_back({fir::SourceFormat::kSponge, 2, ".schem", "SpongeV2"});
+      targets.push_back({fir::SourceFormat::kSponge, 3, ".schem", "SpongeV3"});
     }
 
     for (const auto& tgt : targets) {

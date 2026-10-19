@@ -63,7 +63,7 @@ A composite has a concrete type. To store it where the filter type is unknown, c
 
 ```cpp
 filters::View erased =
-    *filters::MakeView(region, box && !is_air, *schema.arena);
+    *filters::MakeView(region, box && !is_air, *schematic.arena);
 ```
 
 `View` is `BasicView<std::function<bool(LocalPos, std::uint16_t)>>`; see [Views](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/tools/views.md).

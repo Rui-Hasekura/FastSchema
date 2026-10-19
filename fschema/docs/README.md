@@ -4,7 +4,7 @@
 
 - [Quick Start](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/quick_start.md)
 
-## Schema Operations
+## Schematic Operations
 
 - [Parsing](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/parsing.md)
 - [Conversion](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/conversion.md)
@@ -23,7 +23,7 @@
 - [Architecture](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/advanced/architecture.md)
 - [Materialization](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/advanced/materialization.md)
 - [Passthrough Encoding](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/advanced/passthrough.md)
-- [DataVersion Remap](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/advanced/remap.md)
+- [DataVersion Remap](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/remap.md)
 
 ## Format Specs
 

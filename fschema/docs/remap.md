@@ -1,6 +1,6 @@
 # DataVersion Remap
 
-The remap pass rewrites an `ir::Schema` in place so its data semantics
+The remap pass rewrites an `ir::Schematic` in place so its data semantics
 match a target Minecraft DataVersion. `Convert` runs it between decode
 and encode. `DecodeFromFormat` and `EncodeToFormat` do not.
 
@@ -11,12 +11,12 @@ The pass lives in `fschema/remap/`. The public API is
 
 ```cpp
 [[nodiscard]] ParseResult<RemapStats> RemapToDataVersion(
-    ir::Schema& schema,
+    ir::Schematic& schematic,
     std::int32_t target_data_version,
     const RemapOptions& options = {});
 
 [[nodiscard]] ParseResult<void> MaybeRemapForTarget(
-    ir::Schema& schema,
+    ir::Schematic& schematic,
     ir::SourceFormat target_format,
     std::int32_t target_container_version,
     const RemapOptions& remap_options,
@@ -25,13 +25,13 @@ The pass lives in `fschema/remap/`. The public API is
 
 `RemapToDataVersion` runs the pass at an explicit DataVersion. It rejects
 `target_data_version <= 0` and targets whose container is below 2860
-(Litematica v5). When `schema.data_version` already equals the target,
-it returns a `RemapStats` with `kNoOpAtTarget` set and leaves the schema
+(Litematica v5). When `schematic.data_version` already equals the target,
+it returns a `RemapStats` with `kNoOpAtTarget` set and leaves the schematic
 unchanged.
 
 `MaybeRemapForTarget` resolves the target DataVersion and runs
 `RemapToDataVersion` only when the resolved value differs from
-`schema.data_version`. `Convert` calls this one.
+`schematic.data_version`. `Convert` calls this one.
 
 ## Target resolution
 
@@ -44,7 +44,7 @@ the container version via `ResolveDataVersionForContainer`:
 | Litematica    | 5              | -1          | Rejected by policy    |
 | Litematica    | 6              | 3463        | 1.20 anchor           |
 | Litematica    | 7 or 0         | 0           | No remap (round-trip) |
-| Schem         | any            | 0           | No remap              |
+| Sponge        | any            | 0           | No remap              |
 
 A resolved value of `-1` makes `MaybeRemapForTarget` return
 `UnsupportedVersion`. A resolved value of `0` means the caller did not
@@ -64,7 +64,7 @@ enum class RemapDirection : std::uint8_t {
 
 `CountApplicableRules` returns zero for an upgrade request. The pass then
 emits `kNoRulesCoverage` and returns the original schema unchanged.
-`schema.data_version` and `schema.source_version` stay where they were.
+`schematic.data_version` and `schematic.source_version` stay where they were.
 
 ## Rule window
 
@@ -148,10 +148,10 @@ A hit root goes through:
 1. `MaterializeCompound(raw_nbt)` into a `base::NbtCompound`.
 2. The family rewrites.
 3. `SerializeCompoundBody` back into bytes.
-4. `RemapContext::PersistBytes` copies the bytes into `Schema::arena`.
+4. `RemapContext::PersistBytes` copies the bytes into `Schematic::arena`.
 
 The new span replaces `Entity::raw_nbt` or `BlockEntity::raw_nbt`. It
-stays valid for the lifetime of the schema, like every other arena
+stays valid for the lifetime of the schematic, like every other arena
 allocation. `PersistBytes` returns an empty span when the arena
 allocation fails; the caller keeps the original bytes in that case.
 

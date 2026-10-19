@@ -34,7 +34,7 @@ Requires a materialized region. The view-based form gets this from `MakeView`.
 fl::IsAirFilter is_air{region};
 auto solid = !is_air;
 
-auto view_res = fl::MakeView(region, solid, *schema.arena);
+auto view_res = fl::MakeView(region, solid, *schematic.arena);
 if (!view_res) {
   const fschema::ParseError& e = view_res.error();
   return;
