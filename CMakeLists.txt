@@ -17,7 +17,7 @@ cmake_minimum_required(VERSION 3.28...4.4)
 
 project(
     FastSchema
-    VERSION 1.0.0
+    VERSION 2.0.0
     DESCRIPTION "A high-performance modern C++ schematics tool library powered by SIMD."
     LANGUAGES CXX
 )
