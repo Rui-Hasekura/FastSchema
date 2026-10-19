@@ -26,13 +26,11 @@
 
 namespace fschema::remap {
 
-// ---------------------------------------------------------------------------
 // Public API of the cross-version remap pass.
 //
 // Rewrites an in-memory ir::Schema so its data semantics match a target
 // Minecraft DataVersion. On success, schema.data_version == target_dv and
 // schema.source_version is set to the container version implied by target_dv.
-// ---------------------------------------------------------------------------
 
 enum class RemapDirection : std::uint8_t {
   kDowngrade = 0,  // source dv > target dv
@@ -56,11 +54,9 @@ struct RemapOptions {
   UnmappedComponentPolicy unmapped_components = UnmappedComponentPolicy::kDrop;
 };
 
-// ---------------------------------------------------------------------------
 // Diagnostics (soft failures / informational events).
 // `RemapStats` carries them; the `std::expected` error channel is reserved
 // for hard failures only (unsupported target, corrupted IR).
-// ---------------------------------------------------------------------------
 
 enum class Diag : std::uint32_t {
   // 0x00x info
@@ -212,9 +208,7 @@ struct RemapStats {
   std::uint32_t active_rules = 0;
 };
 
-// ---------------------------------------------------------------------------
 // Entry points
-// ---------------------------------------------------------------------------
 
 // Rewrites `schema` in place to target-version semantics.
 // Hard failures (returned via `std::expected`): unsupported target

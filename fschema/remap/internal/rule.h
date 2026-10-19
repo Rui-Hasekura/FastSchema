@@ -27,7 +27,6 @@
 
 namespace fschema::remap {
 
-// ---------------------------------------------------------------------------
 // Version window predicate.
 //
 // Every rule carries `anchor_dv`, the DataVersion at which the semantic
@@ -36,7 +35,6 @@ namespace fschema::remap {
 //
 //   downgrade (target < source): target < anchor <= source
 //   upgrade   (source < target): source < anchor <= target
-// ---------------------------------------------------------------------------
 
 [[nodiscard]] constexpr bool RuleActive(std::int32_t target_dv,
                                         std::int32_t source_dv,
@@ -189,10 +187,8 @@ static_assert(ComponentTableSorted(),
   return (it != last && it->component == component) ? it : nullptr;
 }
 
-// ---------------------------------------------------------------------------
 // Rows sorted by `newer_id`. Downgrade maps newer -> older.
 // Names are static storage, so renames are zero-allocation span re-points.
-// ---------------------------------------------------------------------------
 
 struct IdRenameRule {
   std::int32_t anchor_dv;     // first dv where `newer_id` exists
@@ -241,13 +237,11 @@ static_assert(IdTableSorted(),
   return n;
 }
 
-// ---------------------------------------------------------------------------
 // Attribute id rollback table.
 // `tables/attribute_renames.inc` provides the rows. `older_id` empty =
 // the attribute has no 3463-era equivalent (drop the modifier + diagnose).
 // Used by both the item component (minecraft:attribute_modifiers) and the
 // entity root "Attributes" list.
-// ---------------------------------------------------------------------------
 
 struct AttributeRenameRule {
   std::string_view newer_id;  // sorted; source-era id
@@ -301,11 +295,9 @@ static_assert(AttributeTableSorted(),
   return n;
 }
 
-// ---------------------------------------------------------------------------
 // Status effect string id -> numeric id.
 // `tables/potion_effect_ids.inc` provides the rows; numeric values are the
 // 1.20.1 (3463) MobEffects registry ids used by legacy Id / EffectId bytes.
-// ---------------------------------------------------------------------------
 
 struct PotionEffectRule {
   std::string_view id;  // sorted; namespaced source-era id
