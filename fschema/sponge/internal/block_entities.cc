@@ -39,7 +39,7 @@ namespace fschema::sponge::internal {
     bool is_v3,
     memory::Arena& arena) {
   BlockEntity be;
-  be.pos = {0, 0, 0};
+  be.block_position = {0, 0, 0};
   std::string_view id;
   std::span<const std::byte> data_payload;
 
@@ -62,7 +62,7 @@ namespace fschema::sponge::internal {
           for (int i = 0; i < 3; ++i) {
             auto v = reader.Read<std::int32_t>();
             if (!v) return std::unexpected(v.error());
-            be.pos[i] = *v;
+            be.block_position[i] = *v;
           }
         } else if (is_v3 && name == "Data" && t == base::TagType::kCompound) {
           const auto data_start = reader.pos();
@@ -78,13 +78,13 @@ namespace fschema::sponge::internal {
 
   // Build be.data
   if (!is_v3) {
-    be.data = reader.SpanFrom(start);
+    be.raw_nbt = reader.SpanFrom(start);
   } else {
     base::NbtWriter writer;
     writer.BeginListElementCompound();
     writer.WriteStringField("Id", id);
     writer.WriteIntArrayField("Pos",
-                              std::span<const std::int32_t>(be.pos.data(), 3));
+                              std::span<const std::int32_t>(be.block_position.data(), 3));
     if (!data_payload.empty()) {
       writer.WriteListElementRawPayload(data_payload);
     }
@@ -94,7 +94,7 @@ namespace fschema::sponge::internal {
       full_payload.pop_back();
     auto* mem = arena.Allocate(full_payload.size());
     std::memcpy(mem, full_payload.data(), full_payload.size());
-    be.data = std::span<const std::byte>(static_cast<const std::byte*>(mem),
+    be.raw_nbt = std::span<const std::byte>(static_cast<const std::byte*>(mem),
                                          full_payload.size());
   }
   return be;

@@ -144,13 +144,14 @@ struct Region {
   std::string_view name;
 
   // The bounds of the region in world space.
+  // origin = minimum corner, size >= 0.
   BoundingBox bounds;
 
-  // Raw position
-  std::array<std::int32_t, 3> position{};
+  std::array<std::int32_t, 3> raw_position{};
 
-  // Raw size
-  std::array<std::int32_t, 3> size{};
+  // raw_size maybe negative because Litematica uses negative values ​
+  // to represent flipping.
+  std::array<std::int32_t, 3> raw_size{};
 
   // The palette of distinct block states.
   // Indices in `block_indices` refer to this vector.

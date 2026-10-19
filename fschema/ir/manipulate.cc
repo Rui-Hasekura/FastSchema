@@ -109,8 +109,8 @@ ParseResult<Region> MergeRegions(const std::vector<Region>& regions,
   merged.bounds.size[0] = max_x - min_x;
   merged.bounds.size[1] = max_y - min_y;
   merged.bounds.size[2] = max_z - min_z;
-  merged.position = {min_x, min_y, min_z};
-  merged.size = {max_x - min_x, max_y - min_y, max_z - min_z};
+  merged.raw_position = {min_x, min_y, min_z};
+  merged.raw_size = {max_x - min_x, max_y - min_y, max_z - min_z};
 
   // 2. Build merged palette with absl::flat_hash_map dedup.
   //    Index 0 is always the fill block (e.g. minecraft:air).

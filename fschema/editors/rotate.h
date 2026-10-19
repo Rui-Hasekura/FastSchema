@@ -146,9 +146,9 @@ template <filters::Filter F>
   }
 
   out.bounds = new_bounds;
-  out.position = {
+  out.raw_position = {
       new_bounds.origin[0], new_bounds.origin[1], new_bounds.origin[2]};
-  out.size = {new_bounds.size[0], new_bounds.size[1], new_bounds.size[2]};
+  out.raw_size = {new_bounds.size[0], new_bounds.size[1], new_bounds.size[2]};
   out.block_indices = std::move(new_data);
 
   if (mode == StateTransformMode::kTransformStates && steps != 0) {

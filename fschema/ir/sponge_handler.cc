@@ -323,8 +323,8 @@ ParseResult<Schematic> SpongeHandler::DecodeFromParsed(
   // Region
   Region r;
   r.name = "main";
-  r.position = {0, 0, 0};
-  r.size = {static_cast<std::int32_t>(src.width),
+  r.raw_position = {0, 0, 0};
+  r.raw_size = {static_cast<std::int32_t>(src.width),
             static_cast<std::int32_t>(src.height),
             static_cast<std::int32_t>(src.length)};
   r.bounds.origin[0] = 0;
@@ -356,10 +356,10 @@ ParseResult<Schematic> SpongeHandler::DecodeFromParsed(
   for (auto& ent : src.entities) {
     Entity e;
     e.id = ent.id;
-    e.position = ent.pos;
+    e.position = ent.position;
     e.motion = ent.motion;
     e.rotation = ent.rotation;
-    e.raw_nbt = ent.data;
+    e.raw_nbt = ent.raw_nbt;
     r.entities.push_back(std::move(e));
   }
 
@@ -367,8 +367,8 @@ ParseResult<Schematic> SpongeHandler::DecodeFromParsed(
   for (auto& be : src.block_entities) {
     BlockEntity out;
     out.id = be.id;
-    out.block_position = be.pos;
-    out.raw_nbt = be.data;
+    out.block_position = be.block_position;
+    out.raw_nbt = be.raw_nbt;
     r.block_entities.push_back(std::move(out));
   }
 

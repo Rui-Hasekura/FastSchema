@@ -181,8 +181,8 @@ template <filters::Filter F>
     ir::Region out;
     out.name = "extract";
     out.bounds = {{0, 0, 0}, {0, 0, 0}};
-    out.position = {0, 0, 0};
-    out.size = {0, 0, 0};
+    out.raw_position = {0, 0, 0};
+    out.raw_size = {0, 0, 0};
     out.is_materialized = true;
     return out;
   }
@@ -194,8 +194,8 @@ template <filters::Filter F>
   ir::Region out;
   out.name = "extract";
   out.bounds = bb;
-  out.position = {bb.origin[0], bb.origin[1], bb.origin[2]};
-  out.size = {bb.size[0], bb.size[1], bb.size[2]};
+  out.raw_position = {bb.origin[0], bb.origin[1], bb.origin[2]};
+  out.raw_size = {bb.size[0], bb.size[1], bb.size[2]};
 
   const std::uint64_t dst_vol = static_cast<std::uint64_t>(bb.size[0]) *
                                 static_cast<std::uint64_t>(bb.size[1]) *

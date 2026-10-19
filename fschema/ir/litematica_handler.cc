@@ -177,16 +177,16 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
 
     // Position
     writer.BeginCompoundField("Position");
-    writer.WriteIntField("x", reg.position[0]);
-    writer.WriteIntField("y", reg.position[1]);
-    writer.WriteIntField("z", reg.position[2]);
+    writer.WriteIntField("x", reg.raw_position[0]);
+    writer.WriteIntField("y", reg.raw_position[1]);
+    writer.WriteIntField("z", reg.raw_position[2]);
     writer.EndCompoundField();
 
     // Size
     writer.BeginCompoundField("Size");
-    writer.WriteIntField("x", reg.size[0]);
-    writer.WriteIntField("y", reg.size[1]);
-    writer.WriteIntField("z", reg.size[2]);
+    writer.WriteIntField("x", reg.raw_size[0]);
+    writer.WriteIntField("y", reg.raw_size[1]);
+    writer.WriteIntField("z", reg.raw_size[2]);
     writer.EndCompoundField();
 
     // Palette & index preparation
@@ -371,11 +371,11 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
       writer.WriteStringField("id", ent.id);
       writer.BeginListField("Pos", base::TagType::kDouble, 3);
       writer.WriteListElementDouble(ent.position[0] -
-                                    static_cast<double>(reg.position[0]));
+                                    static_cast<double>(reg.raw_position[0]));
       writer.WriteListElementDouble(ent.position[1] -
-                                    static_cast<double>(reg.position[1]));
+                                    static_cast<double>(reg.raw_position[1]));
       writer.WriteListElementDouble(ent.position[2] -
-                                    static_cast<double>(reg.position[2]));
+                                    static_cast<double>(reg.raw_position[2]));
       writer.EndListField();
       writer.BeginListField("Motion", base::TagType::kDouble, 3);
       writer.WriteListElementDouble(ent.motion[0]);
@@ -437,8 +437,8 @@ ParseResult<Schematic> LitematicaHandler::DecodeFromParsed(
   for (auto& reg : src.regions) {
     Region r;
     r.name = reg.name;
-    r.position = reg.position;
-    r.size = reg.size;
+    r.raw_position = reg.position;
+    r.raw_size = reg.size;
     for (int i = 0; i < 3; ++i) {
       if (reg.size[i] < 0) {
         r.bounds.origin[i] = reg.position[i] + reg.size[i];

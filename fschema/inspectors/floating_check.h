@@ -52,14 +52,14 @@ enum class FloatingCheckMode : std::uint8_t {
 }
 
 struct FloatingBlock {
-  filters::LocalPos pos;
+  filters::LocalPos local_position;
   std::string_view block_name;
   bool is_gravity_affected;
 };
 
 struct FloatingEntity {
   std::string_view id;
-  std::array<double, 3> position;
+  std::array<double, 3> world_position;
 };
 
 struct FloatingCheckResult {

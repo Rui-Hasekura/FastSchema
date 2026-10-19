@@ -55,8 +55,8 @@ spans into `Schematic::owner`.
 struct Region {
   std::string_view name;
   BoundingBox bounds;
-  std::array<std::int32_t, 3> position;
-  std::array<std::int32_t, 3> size;
+  std::array<std::int32_t, 3> raw_position;
+  std::array<std::int32_t, 3> raw_size;
 
   std::vector<BlockState> palette;
   mutable std::vector<std::uint8_t> is_air_lut;

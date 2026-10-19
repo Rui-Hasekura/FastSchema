@@ -42,8 +42,8 @@ namespace fschema::editors {
     ir::Region empty;
     empty.name = "trimmed_empty";
     empty.bounds = {{0, 0, 0}, {0, 0, 0}};
-    empty.position = {0, 0, 0};
-    empty.size = {0, 0, 0};
+    empty.raw_position = {0, 0, 0};
+    empty.raw_size = {0, 0, 0};
     empty.is_materialized = true;
     return empty;
   }

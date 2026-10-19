@@ -185,16 +185,16 @@ TEST_P(InspectorTest, FloatingCheckFindsValidBlocks) {
 
   const auto& b = region_->bounds;
   for (const auto& fb : result.blocks) {
-    ASSERT_LT(fb.pos.x, b.size[0]);
-    ASSERT_LT(fb.pos.y, b.size[1]);
-    ASSERT_LT(fb.pos.z, b.size[2]);
+    ASSERT_LT(fb.local_position.x, b.size[0]);
+    ASSERT_LT(fb.local_position.y, b.size[1]);
+    ASSERT_LT(fb.local_position.z, b.size[2]);
 
-    std::uint16_t pal = region_->block_indices[filt::LinearIndex(fb.pos, b)];
+    std::uint16_t pal = region_->block_indices[filt::LinearIndex(fb.local_position, b)];
     ASSERT_FALSE(region_->IsAir(pal));
 
     // Cross-check the reported position against the floating predicate.
     EXPECT_TRUE(
-        filt::internal::IsFloatingAt(*region_, fb.pos.x, fb.pos.y, fb.pos.z));
+        filt::internal::IsFloatingAt(*region_, fb.local_position.x, fb.local_position.y, fb.local_position.z));
   }
 }
 

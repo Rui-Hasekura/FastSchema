@@ -55,16 +55,16 @@ struct BlockState {
 
 struct BlockEntity {
   std::string_view id;
-  std::array<std::int32_t, 3> pos{0, 0, 0};
-  std::span<const std::byte> data;
+  std::array<std::int32_t, 3> block_position{0, 0, 0};
+  std::span<const std::byte> raw_nbt;
 };
 
 struct Entity {
   std::string_view id;
-  std::array<double, 3> pos{0, 0, 0};
+  std::array<double, 3> position{0, 0, 0};
   std::array<double, 3> motion{0, 0, 0};
   std::array<float, 2> rotation{0, 0};
-  std::span<const std::byte> data;
+  std::span<const std::byte> raw_nbt;
 };
 
 struct Schematic {

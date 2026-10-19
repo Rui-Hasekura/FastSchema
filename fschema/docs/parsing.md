@@ -105,7 +105,7 @@ if (!lit) {
 `Litematica` holds `metadata`, a `std::vector<Region>`, `version`, and 
 `data_version`. Version is checked against `kV5`, `kV6`, `kV7`; any other value returns `UnsupportedVersion`.
 
-`litematica::Region` stores block data as raw bits. `size` may be negative. 
+`litematica::Region` stores block data as raw bits. `size` may be negative. Because Litematica uses negative values ​​to represent flipping.
 `VolumeOf(size)` returns the absolute block count. Block indices are not unpacked during parsing; use `internal::UnpackIndicesFused` if needed. Fields without an IR equivalent, such as pending ticks and preview data, are reachable only at this layer.
 
 ## Sponge Schematic Layer
@@ -166,7 +166,7 @@ see [Conversion](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/do
 and [DataVersion Remap](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/remap.md).
 
 `ir::Schematic` holds `regions`, `metadata`, `owner`, and `arena`. Each
-`ir::Region` has `bounds`, `position`, `size`, `palette`,
+`ir::Region` has `bounds`, `raw_position`, `raw_size`, `palette`,
 `block_indices`, `lazy_source`, `is_materialized`, `edited`, `entities`,
 `block_entities`, and `raw_compound`.
 

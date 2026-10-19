@@ -37,7 +37,7 @@ namespace fschema::sponge::internal {
                                                       bool is_v3,
                                                       memory::Arena& arena) {
   Entity ent;
-  ent.pos = {0, 0, 0};
+  ent.position = {0, 0, 0};
   ent.motion = {0, 0, 0};
   ent.rotation = {0, 0};
   std::string_view id;
@@ -55,7 +55,7 @@ namespace fschema::sponge::internal {
         } else if (name == "Pos" && t == base::TagType::kList) {
           auto r = base::ReadVec3DoubleList(reader);
           if (!r) return std::unexpected(r.error());
-          ent.pos = *r;
+          ent.position = *r;
         } else if (name == "Motion" && t == base::TagType::kList) {
           auto r = base::ReadVec3DoubleList(reader);
           if (!r) return std::unexpected(r.error());
@@ -103,7 +103,7 @@ namespace fschema::sponge::internal {
   // Build ent.data
   if (!is_v3) {
     // v2: raw compound body (Id + Pos + extra fields + End).
-    ent.data = reader.SpanFrom(start);
+    ent.raw_nbt = reader.SpanFrom(start);
   } else {
     // v3: re-serialize as Id + Pos + data_payload (no End tag at tail;
     // the data_payload's own End tag terminates the compound body).
@@ -111,9 +111,9 @@ namespace fschema::sponge::internal {
     writer.BeginListElementCompound();
     writer.WriteStringField("Id", id);
     writer.BeginListField("Pos", base::TagType::kDouble, 3);
-    writer.WriteListElementDouble(ent.pos[0]);
-    writer.WriteListElementDouble(ent.pos[1]);
-    writer.WriteListElementDouble(ent.pos[2]);
+    writer.WriteListElementDouble(ent.position[0]);
+    writer.WriteListElementDouble(ent.position[1]);
+    writer.WriteListElementDouble(ent.position[2]);
     writer.EndListField();
     if (!data_payload.empty()) {
       writer.WriteListElementRawPayload(data_payload);
@@ -124,7 +124,7 @@ namespace fschema::sponge::internal {
       full_payload.pop_back();
     auto* mem = arena.Allocate(full_payload.size());
     std::memcpy(mem, full_payload.data(), full_payload.size());
-    ent.data = std::span<const std::byte>(static_cast<const std::byte*>(mem),
+    ent.raw_nbt = std::span<const std::byte>(static_cast<const std::byte*>(mem),
                                           full_payload.size());
   }
   return ent;

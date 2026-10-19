@@ -100,6 +100,4 @@ if (trimmed->bounds.size[0] == 0) {
 
 ## bounds, position, and size
 
-For the returned region, `bounds` is authoritative for iteration and filtering. `position` and `size` are the raw fields the encoder writes back for formats that carry them; both are set from `bounds`.
-
-
+For a region decoded from a file, `raw_position` and `raw_size` are the raw values read from disk (`size` may be negative for a flipped axis). Editors that produce a new region (`Extract`, `BoundingBoxTrim`, `Rotate`, `MergeRegions`) set both from the normalized `bounds`.

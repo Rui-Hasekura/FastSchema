@@ -37,14 +37,14 @@ Result types:
 
 ```cpp
 struct FloatingBlock {
-  filters::LocalPos pos;
+  filters::LocalPos local_position;
   std::string_view block_name;
   bool is_gravity_affected;
 };
 
 struct FloatingEntity {
   std::string_view id;
-  std::array<double, 3> position;
+  std::array<double, 3> world_position;
 };
 
 struct FloatingCheckResult {
@@ -53,7 +53,7 @@ struct FloatingCheckResult {
 };
 ```
 
-`FloatingBlock::pos` is region-local. `FloatingEntity::position` is world-space.
+`FloatingBlock::local_position` is region-local. `FloatingEntity::world_position` is world-space.
 
 ```cpp
 [[nodiscard]] inline bool IsGravityAffected(std::string_view name) noexcept;
