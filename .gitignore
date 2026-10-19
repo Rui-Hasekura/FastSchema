@@ -2,6 +2,8 @@
 .idea/
 .vscode/
 .qtcreator
+.clangd/
+.cache/
 
 build/
 out/
@@ -13,6 +15,7 @@ CMakePresets.json
 CMakeUserPresets.json
 Makefile
 install_manifest.txt
+.ccache/
 
 *.pro.user
 *.pro.user.*
@@ -26,6 +29,10 @@ qmlsc/
 *.exe
 *.dll
 *.lib
+*.a
+*.so
+*.dylib
+*.so.*
 *.pdb
 *.obj
 *.o
@@ -35,10 +42,14 @@ deployment/
 
 .DS_Store
 Thumbs.db
+Desktop.ini
 
-# Logs
 *.log
+*.xml
+*.json
+*.csv
 
 vtune/
-# inside samples
+
+# Inside samples
 vss.*
