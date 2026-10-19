@@ -1,6 +1,6 @@
 # FastSchema
 
-It's a super fast Minecraft schema tool library. Why it's so fast:
+It's a super fast Minecraft schematic tool library. Why it's so fast:
 
 ### 1. Features
 
@@ -83,7 +83,7 @@ include(FetchContent)
 FetchContent_Declare(
  FastSchema
  GIT_REPOSITORY https://github.com/Rui-Hasekura/FastSchema.git
- GIT_TAG v1.0.0 # Or you can replace with the latest tag
+ GIT_TAG v2.0.0 # Or you can replace with the latest tag
 )
 ```
 
@@ -117,7 +117,7 @@ cmake --install build
 After installing, locate FastSchema in your project's `CMakeLists.txt`:
 
 ```cmake
-find_package(fschema CONFIG REQUIRED)
+find_package(fschema 2.0.0 CONFIG REQUIRED)
 # ...
 target_link_libraries(your_app PRIVATE fschema::fschema)
 ```
