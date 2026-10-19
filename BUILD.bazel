@@ -17,19 +17,42 @@ load("@rules_cc//cc:defs.bzl", "cc_library", "cc_binary", "cc_test")
 
 cc_library(
     name = "fschema",
-    srcs = glob([
-        "fschema/**/*.cc",
-        "fschema/**/*.inc",
-        "fschema/**/internal/*.h",
-        "fschema/third_party/**/*.h",
-    ]),
+    # Implementation-only files (not visible to dependents).
+    srcs = glob(
+        include = [
+            "fschema/**/*.cc",
+            # Non-propagated .inc tables (remap rules).
+            "fschema/remap/internal/tables/*.inc",
+            # Private internal headers (only included from .cc files).
+            "fschema/ir/internal/bit_pack.h",
+            "fschema/ir/internal/varint_pack.h",
+            "fschema/litematica/internal/*.h",
+            "fschema/sponge/internal/*.h",
+            "fschema/remap/internal/*.h",
+        ],
+        exclude = [
+            "fschema/tests/**",
+            "fschema/benchmarks/**",
+        ],
+    ) + [
+        "fschema/base/nbt/primitives.h",
+        "fschema/base/nbt/scope.h",
+    ],
     hdrs = glob(
         include = ["fschema/**/*.h"],
         exclude = [
-            "fschema/**/internal/*.h",
-            "fschema/third_party/**/*.h",
+            "fschema/ir/internal/bit_pack.h",
+            "fschema/ir/internal/varint_pack.h",
+            "fschema/litematica/internal/*.h",
+            "fschema/sponge/internal/*.h",
+            "fschema/remap/internal/*.h",
+            "fschema/base/nbt/primitives.h",
+            "fschema/base/nbt/scope.h",
         ],
-    ),
+    ) + [
+        "fschema/inspectors/internal/block_versions.inc",
+        "fschema/inspectors/internal/data_versions.inc",
+    ],
     includes = ["."],
     copts = select({
         "@platforms//os:windows": [
@@ -105,9 +128,9 @@ cc_test(
 )
 
 cc_test(
-    name = "fschema_schem_parse_test",
+    name = "fschema_sponge_parse_test",
     srcs = [
-        "fschema/tests/schem_parse_test.cc",
+        "fschema/tests/sponge_parse_test.cc",
         "fschema/tests/testdata_util.h",
     ],
     copts = select({
@@ -187,9 +210,9 @@ cc_test(
 # Benchmarks
 
 cc_binary(
-    name = "fschema_schem_parse_benchmark",
+    name = "fschema_sponge_parse_benchmark",
     srcs = [
-        "fschema/benchmarks/schem_parse_benchmark.cc",
+        "fschema/benchmarks/sponge_parse_benchmark.cc",
         "fschema/tests/testdata_util.h",
     ],
     copts = select({

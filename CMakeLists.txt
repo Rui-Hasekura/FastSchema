@@ -43,7 +43,7 @@ if(FASTSCHEMA_BUILD_TESTS)
     if(NOT TARGET GTest::gtest_main AND NOT TARGET gtest)
         FetchContent_Declare(
             GTest
-            GIT_REPOSITORY https://github.com/google/googletest
+            GIT_REPOSITORY https://github.com/google/googletest.git
             GIT_TAG v1.18.0
             OVERRIDE_FIND_PACKAGE
         )
@@ -54,7 +54,7 @@ endif()
 
 # Google Abseil
 FetchContent_Declare(abseil
-    GIT_REPOSITORY https://github.com/abseil/abseil-cpp
+    GIT_REPOSITORY https://github.com/abseil/abseil-cpp.git
     GIT_TAG        20260817.0)
 block()
     set(ABSL_BUILD_TESTING OFF)
@@ -68,7 +68,7 @@ endblock()
 
 # Google Highway
 FetchContent_Declare(hwy
-    GIT_REPOSITORY https://github.com/google/highway
+    GIT_REPOSITORY https://github.com/google/highway.git
     GIT_TAG 1.4.0
 )
 block()
@@ -84,7 +84,7 @@ endblock()
 
 # libdeflate
 FetchContent_Declare(libdeflate
-    GIT_REPOSITORY https://github.com/ebiggers/libdeflate
+    GIT_REPOSITORY https://github.com/ebiggers/libdeflate.git
     GIT_TAG v1.26)
 block()
     set(LIBDEFLATE_BUILD_TESTS OFF)
@@ -99,7 +99,7 @@ endblock()
 
 # Intel oneTBB
 FetchContent_Declare(oneTBB
-    GIT_REPOSITORY https://github.com/oneapi-src/oneTBB
+    GIT_REPOSITORY https://github.com/oneapi-src/oneTBB.git
     GIT_TAG        v2023.1.0)
 block()
     set(TBB_TEST OFF)
@@ -111,8 +111,8 @@ endblock()
 # Google Benchmark
 if(FASTSCHEMA_BUILD_BENCHMARKS)
     FetchContent_Declare(googlebenchmark
-        GIT_REPOSITORY https://github.com/google/benchmark
-        GIT_TAG v1.9.5)
+        GIT_REPOSITORY https://github.com/google/benchmark.git
+        GIT_TAG v1.10.0)
     block()
         set(BENCHMARK_ENABLE_TESTING OFF)
         set(BENCHMARK_ENABLE_GTEST_TESTS OFF)
@@ -173,14 +173,13 @@ target_sources(fschema
     fschema/remap/internal/palette.cc
     fschema/remap/internal/text.cc
     fschema/remap/internal/walker.cc
-    fschema/remap/internal/block_entity.cc
-    fschema/remap/internal/nbt_utils.cc
-    fschema/remap/internal/walker.cc
 )
 
 # Private headers
 target_sources(fschema
   PRIVATE
+    fschema/base/nbt/primitives.h
+    fschema/base/nbt/scope.h
     fschema/ir/internal/bit_pack.h
     fschema/ir/internal/varint_pack.h
     fschema/litematica/internal/block_states.h
@@ -197,6 +196,17 @@ target_sources(fschema
     fschema/sponge/internal/entities.h
     fschema/sponge/internal/palette.h
     fschema/sponge/internal/root.h
+    fschema/remap/internal/block_entity.h
+    fschema/remap/internal/component_extra.h
+    fschema/remap/internal/context.h
+    fschema/remap/internal/entity.h
+    fschema/remap/internal/families.h
+    fschema/remap/internal/item.h
+    fschema/remap/internal/nbt_utils.h
+    fschema/remap/internal/palette.h
+    fschema/remap/internal/rule.h
+    fschema/remap/internal/text.h
+    fschema/remap/internal/walker.h
 )
 
 # Public headers
@@ -212,10 +222,8 @@ target_sources(fschema
       fschema/base/hash.h
       fschema/base/limits.h
       fschema/base/nbt/parse.h
-      fschema/base/nbt/primitives.h
       fschema/base/nbt/reader-inl.h
       fschema/base/nbt/reader.h
-      fschema/base/nbt/scope.h
       fschema/base/nbt/skip.h
       fschema/base/nbt/tag-inl.h
       fschema/base/nbt/tag.h
