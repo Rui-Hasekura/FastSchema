@@ -17,7 +17,6 @@ struct LazyBlockData {
 };
 ```
 
-
 `raw_bytes` points into `Schema::owner`. It is not owned by the region.
 
 `encoding` is one of:
@@ -53,7 +52,7 @@ On failure, `lazy_source` and `is_materialized` are left untouched.
 ## Dispatch
 
 For `kLitematicaLongArray`, the call is 
-`litematica::internal::UnpackIndicesFused`. It allocates an `UnInitBuffer` sized to the volume and runs a SIMD kernel. See [Performance](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/advanced/performance.md).
+`litematica::internal::UnpackIndicesFused`. It allocates an `UnInitBuffer` sized to the volume and runs a SIMD kernel.
 
 For `kSpongeVarint`, the call is `schem::internal::DecodeVarintArray`. It has three paths:
 
@@ -75,6 +74,24 @@ For `kNone`, an uninitialized buffer is allocated. Every element is garbage. A r
 
 - `EncodeToFormat` calls `EnsureMaterialized` only when it cannot take the passthrough path.
 
+## NBT materialization
+
+The remap pass parses some entity and block entity NBT into an
+`NbtCompound` tree. This is a different operation from
+`EnsureMaterialized`.
+
+`remap::internal::MaterializeCompound` in
+`fschema/remap/internal/nbt_utils.h` takes a raw NBT body span and returns
+an `NbtCompound`. The pass transforms the tree and serializes it back with
+`SerializeCompoundBody`. The result is copied into `Schema::arena` by
+`RemapContext::PersistBytes`. This flow runs per root, and only for roots
+that a byte-level pre-scan identified as containing data for an active
+rule family.
+
+It does not read or write `Region::block_indices`, `Region::lazy_source`,
+or `Region::is_materialized`. The block data stays in its packed form.
+See [DataVersion Remap](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/advanced/remap.md).
+
 ## Iterating unmaterialized
 
 Reading `region.block_indices` without materializing compiles and returns an empty buffer. Code that does this sees zero blocks instead of the expected data. This is not an error path; the check is not implemented on the buffer access.
@@ -91,5 +108,3 @@ In both cases the buffer is invalidated when the region is destroyed, or when th
 ## Re-materialization
 
 Setting `reg.is_materialized = false` does not free the current buffer. The next `EnsureMaterialized` call reallocates from the same arena and overwrites `block_indices`.
-
-

@@ -10,10 +10,10 @@ Two fields on `Region` control the decision.
 
 ```cpp
 mutable bool edited = false;              // set by MarkEdited
-// lazy_source.palette_pristine            // cleared by palette helpers
+// lazy_source.palette_pristine           // cleared by palette helpers
 ```
 
-`edited` is set to `true` by `editors::MarkEdited`. Editors that write to 
+`edited` is set to `true` by `editors::MarkEdited`. Editors that write to
 `block_indices` must call it. See [Palette Utilities](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/tools/editors/palette_utils.md).
 
 `lazy_source.palette_pristine` is cleared by `ResolveOrAppend`, `ResolveAir`, and `AppendPaletteEntry`. It is cleared by `MarkEdited` as well. It is not cleared by `ReplacePaletteEntry`; that editor leaves the block indices unchanged.
@@ -65,10 +65,31 @@ Editors that write to `block_indices` change the array. If neither `edited` nor 
 
 The passthrough condition is checked against the encoding of the `Region`. A Litematica region encoded as Sponge, or the reverse, never takes the passthrough path: the encodings differ. Such a region goes through `EnsureMaterialized` and a fresh pack.
 
+## Remap and passthrough
+
+`remap::internal::RemapRegionPalette` renames block ids in
+`region.palette` through the active id-rename window. It rewrites
+`BlockState::name` spans only. It does not touch `block_indices`, does not
+clear `palette_pristine`, and does not call `MarkEdited`.
+
+A region that takes the passthrough path before remap still takes it
+after remap, as long as the target format matches the source encoding. The
+Litematica conditions are unchanged: the rename table does not change
+`palette.size()` (so `PaletteBpb` is stable) and does not change whether
+`palette[0]` is an air variant (so `air_at_zero` is stable). The Sponge
+conditions depend only on `encoding`, `palette_pristine`, and
+`raw_bytes`.
+
+The encoders read `region.palette` at serialization time. The palette
+section of the output carries the renamed ids; the packed block data is
+the bytes from decode. See [DataVersion Remap](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/advanced/remap.md).
+
+Entity and block entity NBT rewrite is independent of this path. Those
+fields are serialized from their IR values on every encode; the remap
+pass replaces the spans, and the encoder reads them.
+
 ## After materialization
 
 If a region was materialized for any reason but not edited, `edited` and `palette_pristine` are unchanged. The encoder can still take the passthrough path because the packed bytes in `lazy_source` are still consistent with `palette`.
 
 Reading `block_indices` does not modify these flags.
-
-

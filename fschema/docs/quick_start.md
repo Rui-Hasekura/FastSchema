@@ -22,13 +22,12 @@ firc::FormatRegistry::Instance().Register(
  std::make_unique<firc::SchemHandler>());
 ```
 
-
-Without registration, `DecodeFromFormat`, `EncodeToFormat`, and `Convert`  
+Without registration, `DecodeFromFormat`, `EncodeToFormat`, and `Convert`
 return `ParseError{UnsupportedVersion, "FormatHandlerNotFound", 0}`.
 
 ## Read, edit, write
 
-The IR layer is the usual entry point for editing. Decode the input, build a  
+The IR layer is the usual entry point for editing. Decode the input, build a
 view over a region, apply an editor, and encode the result.
 
 ```cpp
@@ -118,9 +117,14 @@ int main() {
 }
 ```
 
+The decode-edit-encode path above does not remap. It keeps the source
+`DataVersion`. To convert block and entity data to a different Minecraft
+version, use `Convert` or call `remap::MaybeRemapForTarget` yourself. See
+[Conversion](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/conversion.md).
+
 ## Convert between formats
 
-`Convert` decodes and re-encodes in one call. It takes ownership of the byte  
+`Convert` decodes and re-encodes in one call. It takes ownership of the byte
 buffer and returns the encoded bytes.
 
 ```cpp
@@ -176,23 +180,44 @@ int main() {
 }
 ```
 
+`Convert` also runs a DataVersion remap when the resolved target differs from
+the source. For a Sponge target the default resolution is no remap; the
+example above converts blocks and metadata without touching item or entity
+data. Litematica targets resolve differently: v6 maps to DataVersion 3463 and
+triggers a remap, v5 is rejected, v7 round-trips. See
+[Conversion](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/conversion.md) for the resolution table and
+[DataVersion Remap](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/advanced/remap.md) for the rules.
+
 ## Pitfalls
 
-- Forgetting to register handlers. The error path is  
+- Forgetting to register handlers. The error path is
   `"FormatHandlerNotFound"`.
 
-- Passing compressed bytes to the format-layer parsers  
-  (`ParseLitematic`, `ParseSchematicFromBytes`). Those expect decompressed  
+- Passing compressed bytes to the format-layer parsers
+  (`ParseLitematic`, `ParseSchematicFromBytes`). Those expect decompressed
   bytes. The IR-layer `DecodeFromFormat` auto-detects gzip.
 
-- Reading `Region::block_indices` without calling `EnsureMaterialized` or  
+- Reading `Region::block_indices` without calling `EnsureMaterialized` or
   going through `MakeView`. The buffer is empty until materialized.
 
-- Holding a `std::string_view` from a palette entry after the `Schema` is  
+- Holding a `std::string_view` from a palette entry after the `Schema` is
   destroyed. All views point into the schema's owned buffer.
 
-- Confusing `CompressorError` and `ParseError`. They are separate enums.  
+- Confusing `CompressorError` and `ParseError`. They are separate enums.
   `Convert` wraps compression failures into `ParseError`.
+
+- Selecting a Litematica v5 target through `Convert`. The remap policy
+  rejects v5 with `UnsupportedVersion` and message
+  `"litematica v5 target rejected by remap policy"`. Pick v6 or v7, or set
+  `opts.remap.target_data_version` explicitly.
+
+- Expecting `EncodeToFormat` to remap. It does not. Only `Convert` runs the
+  remap step, and only when the resolved target differs from the source
+  `DataVersion`.
+
+- Expecting a remap from a Sponge target. `ResolveDataVersionForContainer`
+  returns 0 for Sponge, so no remap runs by default. Set
+  `opts.remap.target_data_version` to force one.
 
 ## Next
 

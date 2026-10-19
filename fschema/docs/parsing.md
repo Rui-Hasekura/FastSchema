@@ -156,13 +156,22 @@ firc::FormatRegistry::Instance().Register(
     std::make_unique<firc::SchemHandler>());
 ```
 
-`DecodeFromFormat` checks the first two bytes for the gzip magic `1f 8b`  and decompresses in place. This differs from the format layers, which require the caller to decompress first.
+`DecodeFromFormat` checks the first two bytes for the gzip magic `1f 8b`
+and decompresses in place. This differs from the format layers, which
+require the caller to decompress first.
 
-`ir::Schema` holds `regions`, `metadata`, `owner`, and `arena`. Each 
-`ir::Region` has `bounds`, `position`, `size`, `palette`,  `block_indices`, `lazy_source`, `is_materialized`, `edited`, `entities`, 
+`DecodeFromFormat` does not remap. It produces an `ir::Schema` at the
+file's own DataVersion. Cross-version rewriting happens in `Convert`;
+see [Conversion](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/conversion.md)
+and [DataVersion Remap](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/advanced/remap.md).
+
+`ir::Schema` holds `regions`, `metadata`, `owner`, and `arena`. Each
+`ir::Region` has `bounds`, `position`, `size`, `palette`,
+`block_indices`, `lazy_source`, `is_materialized`, `edited`, `entities`,
 `block_entities`, and `raw_compound`.
 
-`block_indices` is lazy. Use `EnsureMaterialized` or `MakeView` before reading it.
+`block_indices` is lazy. Use `EnsureMaterialized` or `MakeView` before
+reading it.
 
 ```cpp
 #include "fschema/ir/materialize.h"
@@ -183,7 +192,8 @@ if (!mat_res) {
 
 - `kNone`: no properties.
 
-The encoding is preserved so `EncodeToFormat` can round-trip without normalization.
+The encoding is preserved so `EncodeToFormat` can round-trip without
+normalization.
 
 ## Choosing a Layer
 

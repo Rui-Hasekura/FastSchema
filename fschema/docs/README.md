@@ -23,6 +23,7 @@
 - [Architecture](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/advanced/architecture.md)
 - [Materialization](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/advanced/materialization.md)
 - [Passthrough Encoding](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/advanced/passthrough.md)
+- [DataVersion Remap](https://github.com/Rui-Hasekura/FastSchema/blob/main/fschema/docs/advanced/remap.md)
 
 ## Format Specs
 
