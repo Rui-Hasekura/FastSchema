@@ -224,7 +224,8 @@ struct SchematicBuilder {
                                  std::array<std::int32_t, 3> size) {
     schematic.regions.resize(schematic.regions.size() + 1);
     fschema::ir::Region& region = schematic.regions.back();
-    region.bounds = BoundingBox{origin, size};
+    region.bounds = BoundingBox{/*.origin=*/{origin[0], origin[1], origin[2]},
+                                /*.size=*/{size[0], size[1], size[2]}};
     region.palette = {
         BlockState{.name = "minecraft:air",
                    .prop_encoding = PropertyEncoding::kNone},
