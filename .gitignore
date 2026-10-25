@@ -53,3 +53,12 @@ vtune/
 
 # Inside samples
 vss.*
+
+# Agents
+.aider*
+.claude/
+.cursor/
+.cursorrules
+.cline/
+.roo/
+.continue/
