@@ -51,12 +51,6 @@ enum class PropertyEncoding : std::uint8_t {
   kString = 2,  // Sponge Schematic: Key-value string ("k=v,k=v")
 };
 
-struct Extension {
-  std::string_view key;
-  base::TagType tag_type = base::TagType::kEnd;
-  std::span<const std::byte> raw_payload;
-};
-
 // Represents a unique block state (e.g.,
 // "minecraft:oak_stairs[facing=north]").
 // Used as an entry in a Region's palette.
@@ -149,7 +143,7 @@ struct Region {
 
   std::array<std::int32_t, 3> raw_position{};
 
-  // raw_size maybe negative because Litematica uses negative values ​
+  // raw_size maybe negative because Litematica uses negative values
   // to represent flipping.
   std::array<std::int32_t, 3> raw_size{};
 
@@ -160,24 +154,31 @@ struct Region {
   // Cached LUT for fast `IsAirVariant` lookups by palette index.
   mutable std::vector<std::uint8_t> is_air_lut;
 
+  // Rebuilds `is_air_lut` to match `palette`. Must run on a single
+  // thread before any worker reads IsAir(). Allocates on rebuild.
+  void EnsureAirLut() const {
+    if (is_air_lut.size() == palette.size()) return;
+    is_air_lut.assign(palette.size(), 0);
+    for (std::size_t i = 0; i < palette.size(); ++i) {
+      if (base::IsAirVariant(palette[i].name)) {
+        is_air_lut[i] = 1;
+      }
+    }
+  }
+
+  // O(1) air lookup via the cached LUT. Lazy-rebuilds if stale
+  // (single-threaded callers only).
+  [[nodiscard]] inline bool IsAir(std::uint16_t pal_idx) const noexcept {
+    if (is_air_lut.size() != palette.size()) {
+      EnsureAirLut();
+    }
+    return pal_idx < is_air_lut.size() && is_air_lut[pal_idx] != 0;
+  }
+
   // The materialized (decoded) block indices.
   // Memory layout is YZX (Y major, Z middle, X minor) to match disk formats.
   // Mutable: materialized on-demand via `EnsureMaterialized()`.
   mutable memory::UnInitBuffer<std::uint16_t> block_indices;
-
-  // O(1) air block lookup using a cached LUT.
-  // Automatically rebuilds the LUT if the palette size changes.
-  [[nodiscard]] inline bool IsAir(std::uint16_t pal_idx) const noexcept {
-    if (is_air_lut.size() != palette.size()) {
-      is_air_lut.assign(palette.size(), 0);
-      for (std::size_t i = 0; i < palette.size(); ++i) {
-        if (base::IsAirVariant(palette[i].name)) {
-          is_air_lut[i] = 1;
-        }
-      }
-    }
-    return pal_idx < is_air_lut.size() && is_air_lut[pal_idx] != 0;
-  }
 
   // The raw packed data, retained for lazy passthrough during encoding.
   mutable LazyBlockData lazy_source;
@@ -213,6 +214,8 @@ struct Metadata {
 // The root IR object.
 // Represents a fully parsed schematic file,
 // independent of the original source format.
+//
+// Non-copyable: region spans point into `owner`; move only.
 struct Schematic {
   // The format this schematic was originally decoded from.
   SourceFormat source_format;
@@ -238,6 +241,12 @@ struct Schematic {
   // Arena allocator for materialized block indices
   // and other temporary allocations.
   std::unique_ptr<memory::Arena> arena;
+
+  Schematic() = default;
+  Schematic(const Schematic&) = delete;
+  Schematic& operator=(const Schematic&) = delete;
+  Schematic(Schematic&&) noexcept = default;
+  Schematic& operator=(Schematic&&) noexcept = default;
 };
 
 }  // namespace fschema::ir

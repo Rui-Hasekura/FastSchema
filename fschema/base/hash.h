@@ -16,6 +16,7 @@
 #ifndef FSCHEMA_BASE_HASH_H_
 #define FSCHEMA_BASE_HASH_H_
 
+#include <cstddef>
 #include <cstdint>
 
 #define XXH_IMPLEMENTATION
@@ -25,9 +26,9 @@
 
 namespace fschema::base {
 
-FSCHEMA_ALWAYS_INLINE uint64_t Hash64WithSeed(const void* data,
-                                            size_t len,
-                                            uint64_t seed = 0) {
+FSCHEMA_ALWAYS_INLINE std::uint64_t Hash64WithSeed(const void* data,
+                                                   std::size_t len,
+                                                   std::uint64_t seed = 0) {
   return XXH3_64bits_withSeed(data, len, seed);
 }
 

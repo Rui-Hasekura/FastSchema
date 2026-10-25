@@ -19,8 +19,6 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "fschema/base/nbt/tag.h"
-
 namespace fschema::base {
 
 [[nodiscard]] constexpr bool IsValidTagType(std::uint8_t id) noexcept {

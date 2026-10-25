@@ -42,7 +42,8 @@ namespace fschema::ir::format {
 
 namespace {
 
-inline bool ShouldUseExtensions(const Schematic& schematic, std::int32_t target_version) {
+inline bool ShouldUseExtensions(const Schematic& schematic,
+                                std::int32_t target_version) {
   if (schematic.source_format != SourceFormat::kLitematica) return false;
   const std::int32_t effective_version =
       (target_version == 0) ? schematic.source_version : target_version;
@@ -116,6 +117,7 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
                       static_cast<std::int64_t>(std::abs(reg.bounds.size[2]));
       auto mat_res = ir::EnsureMaterialized(reg, *schematic.arena);
       if (!mat_res) return std::unexpected(mat_res.error());
+      reg.EnsureAirLut();
 
       if (reg.block_indices.empty()) continue;
       for (std::uint16_t idx : reg.block_indices) {
@@ -202,18 +204,15 @@ ParseResult<std::vector<std::byte>> LitematicaHandler::Encode(
       }
     }
 
-    // Passthrough conditions:
+    // Passthrough: reuse the raw Litematica long-array when nothing about
+    // the region requires repacking. Requires a Litematica long-array
+    // encoding, a pristine palette whose slot 0 is air, matching
+    // bits-per-block, no edits, and non-empty raw bytes.
     const bool block_states_passthrough =
         reg.lazy_source.encoding ==
-            // 1. Must use the Litematica long-array bit-packed format;
             ir::BlockDataEncoding::kLitematicaLongArray &&
-        // 2. Palette must be pristine;
-        // 3. Palette[0] must be air;
         reg.lazy_source.palette_pristine && reg.lazy_source.air_at_zero &&
-        // 4. Bits-per-block must match the palette size;
         PaletteBpb(reg.palette.size()) == reg.lazy_source.bits_per_block &&
-        // 5. Region must not have been edited;
-        // 6. Region must have a non-empty block_indices array.
         !reg.edited && !reg.lazy_source.raw_bytes.empty();
 
     if (block_states_passthrough) {

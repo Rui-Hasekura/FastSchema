@@ -22,14 +22,12 @@
 
 namespace fschema {
 
-/// Represents a failure during the parsing or decoding of a schematic file.
-///
-/// The library uses `std::expected` for error propagation
-/// instead of C++ exceptions.
-/// All decoding and manipulation functions return `ParseResult<T>`,
-/// which is an alias for `std::expected<T, ParseError>`.
+// Represents a failure during the parsing or decoding of a schematic file.
+// The library uses `std::expected` for error propagation instead of C++
+// exceptions. All decoding and manipulation functions return
+// `ParseResult<T>`, an alias for `std::expected<T, ParseError>`.
 struct ParseError {
-  /// Categorizes the specific type of parsing or structural failure.
+  // Categorizes the specific type of parsing or structural failure.
   enum class Code : std::uint8_t {
     // NBT Layer Errors
 
@@ -69,33 +67,55 @@ struct ParseError {
     kBlockDataTooSmall,
     // A palette index in the Sponge format was negative.
     kNegativeIndex,
+
+        // Geometry Subsystem Errors
+
+    // Resource pack directory missing or assets/minecraft/ not found.
+    kResourcePackNotFound,
+    // Resource pack's DataVersion is outside the supported range.
+    kUnsupportedResourcePackVersion,
+    // name+props in the palette cannot be found in the resource pack.
+    kUnknownBlockState,
+    // Wuffs PNG Decoder returned a non-ok status.
+    kTextureDecodeFailed,
+    // The texture atlas is too small to fit all textures.
+    kAtlasOverflow,
+    // Model JSON references a non-existent texture path.
+    kModelMissingTexture,
+    // Blockstate JSON is malformed or missing.
+    kMalformedBlockstateJson,
+    // Model JSON structure is invalid.
+    kMalformedModelJson,
+    // Multipart `when` uses OR/AND combinators that are not supported.
+    kUnsupportedMultipart,
+    // I/O error occurred while writing GLB.
+    kGltfWriteFailed,
   };
 
-  /// The specific error category.
+  // The specific error category.
   Code code;
 
-  /// A breadcrumb path indicating where in the NBT tree the error occurred
-  /// (e.g., "Regions/main/BlockStates"). May be empty for low-level errors.
+  // Breadcrumb path indicating where in the NBT tree the error occurred
+  // (e.g., "Regions/main/BlockStates"). Empty for low-level errors.
   std::string path;
 
-  /// The byte offset in the source buffer where the error was detected.
+  // Byte offset in the source buffer where the error was detected.
   std::size_t offset;
 
-  /// Constructs a ParseError with the given code, path, and offset.
+  // Constructs a ParseError with the given code, path, and offset.
   [[nodiscard]] static ParseError At(Code code,
                                      std::string path,
                                      std::size_t offset);
 };
 
-/// Convenience alias for functions that return a value or a ParseError.
-/// Used extensively throughout the parsing and IR manipulation API.
+// Convenience alias for functions that return a value or a ParseError.
 template <typename T>
 using ParseResult = std::expected<T, ParseError>;
 
-/// Converts a ParseError::Code to a static string view (e.g., for logging).
+// Converts a ParseError::Code to a static string view.
 [[nodiscard]] std::string_view ToString(ParseError::Code code) noexcept;
 
-/// Overload for converting a ParseError directly to a string view.
+// Overload for converting a ParseError directly to a string view.
 [[nodiscard]] inline std::string_view ToString(const ParseError& e) noexcept {
   return ToString(e.code);
 }

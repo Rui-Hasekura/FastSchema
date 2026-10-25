@@ -57,6 +57,24 @@ namespace fschema {
       return "BlockDataTooSmall";
     case ParseError::Code::kNegativeIndex:
       return "NegativeIndex";
+    case ParseError::Code::kUnsupportedResourcePackVersion:
+      return "UnsupportedResourcePackVersion";
+    case ParseError::Code::kUnknownBlockState:
+      return "UnknownBlockState";
+    case ParseError::Code::kTextureDecodeFailed:
+      return "TextureDecodeFailed";
+    case ParseError::Code::kAtlasOverflow:
+      return "AtlasOverflow";
+    case ParseError::Code::kModelMissingTexture:
+      return "ModelMissingTexture";
+    case ParseError::Code::kMalformedBlockstateJson:
+      return "MalformedBlockstateJson";
+    case ParseError::Code::kMalformedModelJson:
+      return "MalformedModelJson";
+    case ParseError::Code::kUnsupportedMultipart:
+      return "UnsupportedMultipart";
+    case ParseError::Code::kGltfWriteFailed:
+      return "GltfWriteFailed";
     default:
       return "Unknown";
   }
