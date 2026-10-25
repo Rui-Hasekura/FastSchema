@@ -31,6 +31,8 @@ option(FASTSCHEMA_BUILD_TESTS "Build FastSchema tests"
        ${PROJECT_IS_TOP_LEVEL})
 option(FASTSCHEMA_INSTALL "Generate install target"
        ${PROJECT_IS_TOP_LEVEL})
+option(FASTSCHEMA_BUILD_GEOMETRY "Build the geometry/tessellation subsystem"
+       ${PROJECT_IS_TOP_LEVEL})
 
 # Dependencies
 cmake_policy(SET CMP0077 NEW)
@@ -173,7 +175,51 @@ target_sources(fschema
     fschema/remap/internal/palette.cc
     fschema/remap/internal/text.cc
     fschema/remap/internal/walker.cc
+    fschema/third_party/simdjson/simdjson.cpp
 )
+
+if(FASTSCHEMA_BUILD_GEOMETRY)
+    target_sources(fschema PRIVATE
+        fschema/geometry/tessellate.cc
+        fschema/geometry/block_volume.cc
+        fschema/geometry/block_props.cc
+        fschema/geometry/resource_pack.cc
+        fschema/geometry/atlas.cc
+        fschema/geometry/tint.cc
+        fschema/geometry/export.cc
+        fschema/geometry/internal/resolver.cc
+        fschema/geometry/internal/cull.cc
+        fschema/geometry/internal/merge.cc
+        fschema/geometry/internal/ao.cc
+        fschema/geometry/internal/chunk_dispatch.cc
+        fschema/geometry/internal/png_decode.cc
+        fschema/geometry/internal/png_encode.cc
+    )
+    target_sources(fschema PRIVATE
+        fschema/geometry/resource_pack.h
+        fschema/geometry/atlas.h
+        fschema/geometry/tint.h
+        fschema/geometry/export.h
+        fschema/geometry/internal/resolver.h
+        fschema/geometry/internal/cull.h
+        fschema/geometry/internal/merge.h
+        fschema/geometry/internal/ao.h
+        fschema/geometry/internal/chunk_dispatch.h
+        fschema/geometry/internal/png_decode.h
+        fschema/geometry/internal/png_encode.h
+    )
+    target_sources(fschema
+        PUBLIC
+        FILE_SET HEADERS
+        BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
+        FILES
+          fschema/geometry/tessellate.h
+          fschema/geometry/types.h
+          fschema/geometry/block_volume.h
+          fschema/geometry/block_props.h
+    )
+    target_compile_definitions(fschema PUBLIC FSCHEMA_HAS_GEOMETRY=1)
+endif()
 
 # Private headers
 target_sources(fschema
@@ -378,6 +424,7 @@ if(FASTSCHEMA_BUILD_TESTS)
         add_executable(${name}
             ${src}
             fschema/tests/testdata_util.h
+            ${ARGN}
         )
         target_compile_definitions(${name} PRIVATE
             FASTSCHEMA_TESTDATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fschema/testdata")
@@ -404,6 +451,55 @@ if(FASTSCHEMA_BUILD_TESTS)
     fschema_add_test(fschema_filter_test       fschema/tests/filter_test.cc)
     fschema_add_test(fschema_inspector_test    fschema/tests/inspector_test.cc)
     fschema_add_test(fschema_editor_test       fschema/tests/editor_test.cc)
+
+    # Geometry (opt-in)
+    if(FASTSCHEMA_BUILD_GEOMETRY)
+        fschema_add_test(fschema_geometry_block_props_test
+            fschema/geometry/tests/block_props_test.cc)
+        fschema_add_test(fschema_geometry_block_volume_test
+            fschema/geometry/tests/block_volume_test.cc)
+        fschema_add_test(fschema_geometry_resource_pack_test
+            fschema/geometry/tests/resource_pack_test.cc
+            fschema/geometry/tests/geometry_test_util.h)
+        fschema_add_test(fschema_geometry_resolve_test
+            fschema/geometry/tests/resolve_test.cc
+            fschema/geometry/tests/resolve_test_util.h)
+        fschema_add_test(fschema_geometry_resolve_rotation_test
+            fschema/geometry/tests/resolve_rotation_test.cc
+            fschema/geometry/tests/resolve_test_util.h)
+        fschema_add_test(fschema_geometry_png_decode_test
+            fschema/geometry/tests/png_decode_test.cc
+            fschema/geometry/tests/png_writer.h)
+        fschema_add_test(fschema_geometry_atlas_test
+            fschema/geometry/tests/atlas_test.cc)
+        fschema_add_test(fschema_geometry_tessellate_test
+            fschema/geometry/tests/tessellate_test.cc
+            fschema/geometry/tests/geometry_test_util.h)
+        fschema_add_test(fschema_geometry_fluid_tessellate_test
+            fschema/geometry/tests/fluid_tessellate_test.cc
+            fschema/geometry/tests/geometry_test_util.h)
+        fschema_add_test(fschema_geometry_glb_test
+            fschema/geometry/tests/glb_test.cc
+            fschema/geometry/tests/geometry_test_util.h)
+        fschema_add_test(fschema_geometry_parallel_test
+            fschema/geometry/tests/parallel_test.cc
+            fschema/geometry/tests/geometry_test_util.h)
+        fschema_add_test(fschema_geometry_cull_test
+            fschema/geometry/tests/cull_test.cc
+            fschema/geometry/tests/geometry_test_util.h)
+        fschema_add_test(fschema_geometry_ao_test
+            fschema/geometry/tests/ao_test.cc
+            fschema/geometry/tests/geometry_test_util.h)
+        fschema_add_test(fschema_geometry_merge_test
+            fschema/geometry/tests/merge_test.cc
+            fschema/geometry/tests/geometry_test_util.h)
+        fschema_add_test(fschema_geometry_schematic_test
+            fschema/geometry/tests/schematic_test.cc
+            fschema/geometry/tests/geometry_test_util.h)
+        fschema_add_test(fschema_geometry_export_test
+            fschema/geometry/tests/export_test.cc
+            fschema/geometry/tests/geometry_test_util.h)
+    endif()
 endif()
 
 # Benchmarks (opt-in)
@@ -412,6 +508,7 @@ if(FASTSCHEMA_BUILD_BENCHMARKS)
         add_executable(${name}
             ${src}
             fschema/tests/testdata_util.h
+            ${ARGN}
         )
         target_compile_definitions(${name} PRIVATE
             FASTSCHEMA_TESTDATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fschema/testdata")
@@ -438,4 +535,28 @@ if(FASTSCHEMA_BUILD_BENCHMARKS)
     fschema_add_bench(fschema_filter_benchmark           fschema/benchmarks/filter_benchmark.cc)
     fschema_add_bench(fschema_inspector_benchmark        fschema/benchmarks/inspector_benchmark.cc)
     fschema_add_bench(fschema_editor_benchmark           fschema/benchmarks/editor_benchmark.cc)
+
+    # Geometry (opt-in)
+    if(FASTSCHEMA_BUILD_GEOMETRY)
+        fschema_add_bench(fschema_geometry_benchmark
+            fschema/benchmarks/geometry_benchmark.cc
+            fschema/geometry/tests/png_writer.h)
+    endif()
+endif()
+
+# Smoke tools (opt-in, geometry)
+if(FASTSCHEMA_BUILD_GEOMETRY)
+    add_executable(fschema_vanilla_pack_smoke
+        fschema/tools/vanilla_pack_smoke.cc
+    )
+    target_link_libraries(fschema_vanilla_pack_smoke PRIVATE fschema hwy TBB::tbb)
+
+    # Copy TBB DLL next to the executable (Windows, shared TBB)
+    if(WIN32 AND TARGET TBB::tbb)
+        add_custom_command(TARGET fschema_vanilla_pack_smoke POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:TBB::tbb>
+                $<TARGET_FILE_DIR:fschema_vanilla_pack_smoke>
+        )
+    endif()
 endif()
