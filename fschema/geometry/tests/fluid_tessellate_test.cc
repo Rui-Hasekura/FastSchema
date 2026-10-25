@@ -964,11 +964,6 @@ TEST(TessellateTest, FluidSidesKeepStillWhenPackLacksFlowTexture) {
   EXPECT_EQ(backs, 8);
 }
 
-// T1: 玻璃邻居的水侧换 overlay（主用例 + 哨兵锁定）。
-// glass | water | stone：水西面贴玻璃（HalfTransparentBlock）换
-// water_overlay 贴图、采样 flow 窗口（19/198）；东面被石头剔除；
-// 北/南保持 flow；顶/底保持 still。四角 80/99 锁定哨兵修正
-// （透明实心邻居退出均值，不再拉低水面）。
 TEST(TessellateTest, FluidSidesUseOverlayTextureAgainstHalfTransparentBlocks) {
   GlassWaterPackFixture fx(/*with_flow_textures=*/true,
                            /*with_overlay_texture=*/true);
@@ -1094,8 +1089,6 @@ TEST(TessellateTest, FluidSidesUseOverlayTextureAgainstHalfTransparentBlocks) {
   EXPECT_EQ(backs, 3);
 }
 
-// T2: pack 缺 water_overlay 时，贴玻璃的水侧回退 flow 贴图，
-// 窗口逐值不变（8x8 slot + 19/198 窗口）。
 TEST(TessellateTest, FluidOverlayMissingKeepsFlowWindow) {
   GlassWaterPackFixture fx(/*with_flow_textures=*/true);  // no overlay
   auto pack = ResourcePack::Load(fx.root.Get().generic_string());
@@ -1145,9 +1138,6 @@ TEST(TessellateTest, FluidOverlayMissingKeepsFlowWindow) {
   EXPECT_EQ(west, 1);  // the water's west face only
 }
 
-// T3: overlay 只属于水。(a) lava 贴玻璃保持 lava_flow（vanilla
-// overlayMaterial 仅水）；(b) 玻璃板（IronBarsBlock）不触发 overlay，
-// 但仍作实心哨兵（角点 80/99）。
 TEST(TessellateTest, FluidOverlayIsWaterOnlyAndSkipsPanes) {
   GlassWaterPackFixture fx(/*with_flow_textures=*/true,
                            /*with_overlay_texture=*/true);
@@ -1247,8 +1237,6 @@ TEST(TessellateTest, FluidOverlayIsWaterOnlyAndSkipsPanes) {
   EXPECT_EQ(pane_west, 1);
 }
 
-// T4: TessellateSchematic 路径镜像（烟囱测试）。单 region 复刻 T1 的
-// glass | water | stone 布局，schematic 路径必须产出同样的 overlay 面。
 TEST(TessellateTest, SchematicOverlaysWaterAgainstGlass) {
   GlassWaterPackFixture fx(/*with_flow_textures=*/true,
                            /*with_overlay_texture=*/true);
@@ -1324,10 +1312,6 @@ TEST(TessellateTest, SchematicOverlaysWaterAgainstGlass) {
   EXPECT_EQ(backs, 3);
 }
 
-// T5: 哨兵逐角锁定（water | glass 非对称）。2x1x1：水西半只看到
-// 界外空气（角点 20/27），东半的玻璃 isSolid 退出均值（角点 80/99）——
-// 旧规则会把贴玻璃一侧也拉到 20/27。顶面四角 [20/27, 80/99, 80/99,
-// 20/27]；东面 overlay 窗口 19/198；西面 flow 窗口 7/54。
 TEST(TessellateTest, FluidCornersTreatSolidTransparentNeighborAsExcluded) {
   GlassWaterPackFixture fx(/*with_flow_textures=*/true,
                            /*with_overlay_texture=*/true);
@@ -1428,10 +1412,6 @@ TEST(TessellateTest, FluidCornersTreatSolidTransparentNeighborAsExcluded) {
   EXPECT_EQ(backs, 4);
 }
 
-// B1: 背面精确锁定。孤立水源（含 flow 贴图）：6 正面 + 5 背面
-// （上表面 + 四个侧面；无 overlay）。背面 = 原面四顶点逆序
-// （vanilla addFace 367-372 的 3,2,1,0）、UV 逐顶点同值逆序、
-// AO 同值逆序、cull_face 取反（法线朝可见一侧），底面永不翻倍。
 TEST(TessellateTest, FluidFacesEmitBackFaces) {
   GlassWaterPackFixture fx(/*with_flow_textures=*/true);
   auto pack = ResourcePack::Load(fx.root.Get().generic_string());
@@ -1505,10 +1485,6 @@ TEST(TessellateTest, FluidFacesEmitBackFaces) {
   }
 }
 
-// L1: 树叶进透明网格且互不剔除（fancy 语义）。oak|birch 相邻：
-// 内部面不再剔除，两块各 6 面，全部落在 transparent 网格
-// （此前是 opaque 网格 10 面）；树叶 tint 槽位（oak=2, birch=5）
-// 随 mesh 顶点流出。
 TEST(TessellateTest, LeavesRenderTransparentWithoutSelfCull) {
   GlassWaterPackFixture fx;
   auto pack = ResourcePack::Load(fx.root.Get().generic_string());
@@ -1541,9 +1517,6 @@ TEST(TessellateTest, LeavesRenderTransparentWithoutSelfCull) {
   EXPECT_TRUE(saw_birch_tint);
 }
 
-// L2: 树叶不再剔除邻居面。stone|oak_leaves：石头的东面（贴树
-// 叶）现在保留（canOcclude=false），树叶只丢贴石头的西面。
-// 树叶面入 transparent 网格，石头留 opaque。
 TEST(TessellateTest, LeavesDoNotCullNeighborFaces) {
   GlassWaterPackFixture fx;
   auto pack = ResourcePack::Load(fx.root.Get().generic_string());
@@ -1568,11 +1541,6 @@ TEST(TessellateTest, LeavesDoNotCullNeighborFaces) {
   ASSERT_EQ(r->transparent_mesh.VertexCount(), 5u * 4u);
 }
 
-// L3: 水贴树叶的 overlay 可见性（Task 8 限制 2 解锁）。
-// leaves|water|stone：树叶组 128 不剔水，水西面贴树叶换 overlay
-// 贴图（_leaves 在资格集内）、采样 flow 窗口（19/198），与 T1 的
-// 玻璃用例完全同构；背面数同 T1（up+north+south = 3，overlay 侧
-// 单面）；树叶自身 6 面全保留（含贴水的东面）。
 TEST(TessellateTest, FluidSidesUseOverlayTextureAgainstLeaves) {
   GlassWaterPackFixture fx(/*with_flow_textures=*/true,
                            /*with_overlay_texture=*/true);
