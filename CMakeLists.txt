@@ -543,20 +543,3 @@ if(FASTSCHEMA_BUILD_BENCHMARKS)
             fschema/geometry/tests/png_writer.h)
     endif()
 endif()
-
-# Smoke tools (opt-in, geometry)
-if(FASTSCHEMA_BUILD_GEOMETRY)
-    add_executable(fschema_vanilla_pack_smoke
-        fschema/tools/vanilla_pack_smoke.cc
-    )
-    target_link_libraries(fschema_vanilla_pack_smoke PRIVATE fschema hwy TBB::tbb)
-
-    # Copy TBB DLL next to the executable (Windows, shared TBB)
-    if(WIN32 AND TARGET TBB::tbb)
-        add_custom_command(TARGET fschema_vanilla_pack_smoke POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                $<TARGET_FILE:TBB::tbb>
-                $<TARGET_FILE_DIR:fschema_vanilla_pack_smoke>
-        )
-    endif()
-endif()
