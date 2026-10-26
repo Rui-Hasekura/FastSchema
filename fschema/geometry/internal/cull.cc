@@ -29,6 +29,11 @@ void BlockGroupTable::BuildFrom(const ir::Region& region,
                                 std::span<const std::uint8_t> palette_groups) {
   // EnsureAirLut() must have run single-threaded; this catches a stale LUT.
   assert(region.is_air_lut.size() == region.palette.size());
+  // The region must be materialized: this table sizes itself from
+  // block_indices, and a lazily decoded region (empty block_indices)
+  // would silently yield an empty table whose downstream LinearIndex
+  // reads go out of range (Debug: assertion; Release: UB).
+  assert(region.is_materialized);
 
   bytes.resize(region.block_indices.size());
   for (std::size_t i = 0; i < bytes.size(); ++i) {

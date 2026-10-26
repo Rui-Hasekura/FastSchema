@@ -757,7 +757,7 @@ if(FASTSCHEMA_BUILD_TESTS)
         fschema_add_test(fschema_geometry_schematic_test
             SOURCES fschema/geometry/tests/schematic_test.cc
                     fschema/geometry/tests/geometry_test_util.h
-            LINKS fschema::geometry)
+            LINKS fschema::geometry fschema::conversion)
         fschema_add_test(fschema_geometry_export_test
             SOURCES fschema/geometry/tests/export_test.cc
                     fschema/geometry/tests/geometry_test_util.h

@@ -29,11 +29,15 @@
 #include "fschema/geometry/tessellate.h"
 #include "fschema/geometry/tests/geometry_test_util.h"
 #include "fschema/geometry/types.h"
+#include "fschema/ir/format_handler.h"
+#include "fschema/ir/litematica_handler.h"
 #include "fschema/ir/types.h"
 #include "fschema/memory/arena.h"
 #include "fschema/memory/uninit_buffer.h"
 
 namespace {
+
+namespace firc = fschema::ir::format;
 
 using fschema::ToString;
 using fschema::geometry::ExportGlb;
@@ -126,6 +130,61 @@ TEST(SchematicTest, TwoRegionSchematicProducesCorrectTriangleCount) {
   // Total: 60 triangles
   EXPECT_EQ(r->opaque_mesh.TriangleCount(), 60u);
   EXPECT_EQ(r->opaque_mesh.VertexCount(), 120u);
+}
+
+// Regression test: freshly decoded litematic/schem regions are lazily
+// materialized (block_indices empty, packed bytes in lazy_source) until
+// EnsureMaterialized runs. TessellateSchematic used to build its
+// cull/fluid tables BEFORE materializing, so a lazy region produced
+// empty tables that were then indexed with LinearIndex -- an
+// out-of-bounds read ("vector subscript out of range" under MSVC
+// Debug; UB in Release). Encode -> decode -> tessellate must now match
+// the materialized result.
+TEST(SchematicTest, TessellateSchematicMaterializesLazyDecodedRegions) {
+  ResourcePackFixture fx;
+  auto pack = ResourcePack::Load(fx.root.Get().generic_string());
+  ASSERT_TRUE(pack.has_value());
+
+  static bool handlers_registered = false;
+  if (!handlers_registered) {
+    firc::FormatRegistry::Instance().Register(
+        std::make_unique<firc::LitematicaHandler>());
+    handlers_registered = true;
+  }
+
+  // Round-trip the fixture: encode the materialized schematic, then
+  // decode it back. The decoded regions must come out lazy. The
+  // encoder persists raw_position/raw_size (Litematica's on-disk
+  // dims), so populate them from the normalized bounds first.
+  TwoRegionSchematic ts;
+  for (Region& r : ts.schematic.regions) {
+    r.raw_position = {r.bounds.origin[0], r.bounds.origin[1],
+                      r.bounds.origin[2]};
+    r.raw_size = {r.bounds.size[0], r.bounds.size[1], r.bounds.size[2]};
+  }
+  auto bytes = firc::EncodeToFormat(SourceFormat::kLitematica, ts.schematic);
+  ASSERT_TRUE(bytes.has_value()) << ToString(bytes.error());
+
+  auto owner = std::make_unique<std::vector<std::byte>>(std::move(*bytes));
+  auto decoded =
+      firc::DecodeFromFormat(SourceFormat::kLitematica, std::move(owner));
+  ASSERT_TRUE(decoded.has_value()) << ToString(decoded.error());
+  ASSERT_EQ(decoded->regions.size(), 2u);
+  for (const Region& r : decoded->regions) {
+    // Precondition of the regression: decode leaves regions lazy.
+    ASSERT_FALSE(r.is_materialized);
+    ASSERT_TRUE(r.block_indices.empty());
+    ASSERT_EQ(r.lazy_source.encoding,
+              fschema::ir::BlockDataEncoding::kLitematicaLongArray);
+  }
+
+  auto lazy = TessellateSchematic(*decoded, **pack, TessellationOptions{});
+  ASSERT_TRUE(lazy.has_value()) << ToString(lazy.error());
+
+  // Same geometry as tessellating the materialized original:
+  // 2x2x2 stone cube (24 faces) + lone block (6 faces) = 60 triangles.
+  EXPECT_EQ(lazy->opaque_mesh.TriangleCount(), 60u);
+  EXPECT_EQ(lazy->opaque_mesh.VertexCount(), 120u);
 }
 
 TEST(SchematicTest, WorldSpacePositionsSpanBothRegions) {

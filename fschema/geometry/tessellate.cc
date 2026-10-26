@@ -39,6 +39,7 @@
 #include "fschema/geometry/internal/resolver.h"
 #include "fschema/geometry/resource_pack.h"
 #include "fschema/geometry/types.h"
+#include "fschema/ir/materialize.h"
 #include "fschema/ir/types.h"
 #include "fschema/memory/arena.h"
 #include "tbb/blocked_range.h"
@@ -1075,6 +1076,17 @@ ParseResult<TessellationResult> TessellateSchematic(
   per_region_overlay.reserve(schematic.regions.size());
   bool any_water = false;
   for (const ir::Region& region : schematic.regions) {
+    // Materialize before anything below reads region.block_indices:
+    // freshly decoded litematic/schem regions are lazy (block_indices
+    // stays empty until EnsureMaterialized runs), and the per-region
+    // group/fluid tables size themselves from it -- building them
+    // first would yield empty tables whose LinearIndex reads go out
+    // of range. Hoisting the call here also fails fast on corrupt
+    // packed data, before pack.Resolve and the atlas build.
+    if (auto mat = ir::EnsureMaterialized(region, *schematic.arena);
+        !mat) {
+      return std::unexpected(mat.error());
+    }
     // Build the air LUT; the palette loop below queries region.IsAir().
     region.EnsureAirLut();
 
@@ -1158,9 +1170,8 @@ ParseResult<TessellationResult> TessellateSchematic(
         any_fluid ? BuildFluidTable(region, palette_fluid)
                   : std::vector<std::uint8_t>{};
 
-    RegionVolume vol(region, *schematic.arena);
-    auto ready = vol.EnsureReady();
-    if (!ready) return std::unexpected(ready.error());
+    // block_indices was materialized in the first loop above; the
+    // group/fluid tables built here are sized and filled from it.
 
     const ir::BoundingBox& b = region.bounds;
     const std::int32_t ox = b.origin[0];
