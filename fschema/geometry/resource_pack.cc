@@ -17,7 +17,6 @@
 
 #include <algorithm>
 #include <array>
-#include <charconv>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -32,6 +31,7 @@
 #include "absl/container/flat_hash_set.h"
 #include "absl/hash/hash.h"
 #include "absl/synchronization/mutex.h"
+#include "fast_float/fast_float.h"
 #include "fschema/base/error.h"
 #include "fschema/geometry/internal/png_decode.h"
 #include "fschema/geometry/internal/resolver.h"
@@ -422,7 +422,7 @@ void ApplyElementRotation(ModelFace& mf, const ElementRotation& rot) {
   if (auto lv = props.Get("level"); lv.has_value() && !lv->empty()) {
     const char* first = lv->data();
     const char* last = first + lv->size();
-    std::from_chars(first, last, level);  // unparsable stays level 0
+    fast_float::from_chars(first, last, level);  // unparsable stays level 0
   }
   if (level < 0) level = 0;
   if (level > 15) level = 15;

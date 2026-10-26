@@ -17,7 +17,6 @@
 
 #include <algorithm>
 #include <array>
-#include <charconv>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -29,6 +28,7 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "fast_float/fast_float.h"
 #include "fschema/base/error.h"
 #include "fschema/geometry/atlas.h"
 #include "fschema/geometry/block_volume.h"
@@ -177,7 +177,7 @@ struct FluidPaletteInfo {
   if (auto lv = props.Get("level"); lv.has_value() && !lv->empty()) {
     const char* first = lv->data();
     const char* last = first + lv->size();
-    std::from_chars(first, last, level);
+    fast_float::from_chars(first, last, level);
   }
   if (level < 0) level = 0;
   if (level > 15) level = 15;
@@ -724,13 +724,8 @@ void ProcessBlock(
     auto slot_it = texture_to_slot.find(fp->texture_path);
     if (slot_it == texture_to_slot.end()) continue;
 
-    internal::VisibleFaceInfo info = BuildFaceRecord(*fp,
-                                                     p,
-                                                     p,
-                                                     slot_it->second,
-                                                     group_table,
-                                                     region.bounds,
-                                                     ao_strength);
+    internal::VisibleFaceInfo info = BuildFaceRecord(
+        *fp, p, p, slot_it->second, group_table, region.bounds, ao_strength);
     if (info.is_transparent) {
       out_transparent.push_back(info);
     } else {
@@ -744,11 +739,8 @@ void ProcessBlock(
       const auto dir = static_cast<internal::FaceDir>(fp->CullFace());
       bool back = false;
       if (dir == internal::FaceDir::kPosY) {
-        back = ShouldRenderBackwardUpFace(fluid_table,
-                                          group_table,
-                                          region.bounds,
-                                          p,
-                                          fluid.kind);
+        back = ShouldRenderBackwardUpFace(
+            fluid_table, group_table, region.bounds, p, fluid.kind);
       } else if (dir != internal::FaceDir::kNegY) {
         back = !overlay_side;
       }
@@ -1262,11 +1254,8 @@ ParseResult<TessellationResult> TessellateSchematic(
               const auto dir = static_cast<internal::FaceDir>(fp->CullFace());
               bool back = false;
               if (dir == internal::FaceDir::kPosY) {
-                back = ShouldRenderBackwardUpFace(fluid_table,
-                                                  group_table,
-                                                  b,
-                                                  local_p,
-                                                  fluid.kind);
+                back = ShouldRenderBackwardUpFace(
+                    fluid_table, group_table, b, local_p, fluid.kind);
               } else if (dir != internal::FaceDir::kNegY) {
                 back = !overlay_side;
               }
