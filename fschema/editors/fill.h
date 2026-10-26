@@ -42,7 +42,7 @@ namespace internal {
 namespace hn = hwy::HWY_NAMESPACE;
 
 template <filters::Filter F>
-[[nodiscard]] ParseResult<void> FillInternal(const filters::BasicView<F> v,
+[[nodiscard]] ParseResult<void> FillInternal(const filters::BasicView<F>& v,
                                              std::uint16_t target_idx) {
   ir::Region& r = v.region();
   std::uint16_t* FSCHEMA_RESTRICT data = r.block_indices.data();
@@ -158,7 +158,7 @@ template <filters::Filter F>
 }  // namespace internal
 
 template <filters::Filter F>
-[[nodiscard]] ParseResult<void> Fill(const filters::BasicView<F> v,
+[[nodiscard]] ParseResult<void> Fill(const filters::BasicView<F>& v,
                                      std::string_view block_name) {
   ir::Region& r = v.region();
   const std::uint16_t target_idx = ResolveOrAppend(r, block_name);
@@ -166,7 +166,7 @@ template <filters::Filter F>
 }
 
 template <filters::Filter F>
-[[nodiscard]] ParseResult<void> Delete(filters::BasicView<F> v) {
+[[nodiscard]] ParseResult<void> Delete(const filters::BasicView<F>& v) {
   ir::Region& r = v.region();
   const std::uint16_t air_idx = ResolveAir(r);
   return internal::FillInternal(v, air_idx);

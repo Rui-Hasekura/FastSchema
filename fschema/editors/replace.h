@@ -42,7 +42,7 @@ namespace fschema::editors {
 /// Builds a boolean LUT of matching source palette indices during setup to
 /// avoid string comparisons entirely.
 template <filters::Filter F>
-[[nodiscard]] ParseResult<void> ReplaceWith(const filters::BasicView<F> v,
+[[nodiscard]] ParseResult<void> ReplaceWith(const filters::BasicView<F>& v,
                                             std::string_view from,
                                             std::string_view to) {
   ir::Region& r = v.region();
@@ -183,7 +183,7 @@ template <filters::Filter F, class Mapper>
            std::convertible_to<
                std::invoke_result_t<const Mapper&, std::uint16_t>,
                std::uint16_t>
-[[nodiscard]] ParseResult<void> Replace(const filters::BasicView<F> v,
+[[nodiscard]] ParseResult<void> Replace(const filters::BasicView<F>& v,
                                         Mapper mapper) {
   ir::Region& r = v.region();
   std::uint16_t* FSCHEMA_RESTRICT data = r.block_indices.data();
