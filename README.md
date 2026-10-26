@@ -14,6 +14,8 @@ It's a super fast Minecraft schematic tool library. Why it's so fast:
   (1.20.5+ item components → 1.20.1 tags, 1.21.5 entity structure reorg,
   block / attribute id rollback), driven by version-windowed rule tables.
 
+- **Mesher**: It is still under development...
+
 But... How fast is it?
 
 ### 2. Benchmark
@@ -66,7 +68,7 @@ You can download it from [here](https://2b2t.miraheze.org/wiki/Space_Valkyria_3_
 
 Before building or integrating, ensure your environment meets the following requirements:
 
-- **CMake**: 3.28 or higher. ([Update](https://cmake.org/download/))
+- **CMake**: 4.0 or higher. ([Update](https://cmake.org/download/))
 - **C++ Compiler**: Must support C++23.
   - Recommended: **Clang** 17+, **GCC** 14+, MSVC 19.38+
   - Compatible: Clang 16+, GCC 13.1+, MSVC 19.36+
@@ -83,7 +85,7 @@ include(FetchContent)
 FetchContent_Declare(
  FastSchema
  GIT_REPOSITORY https://github.com/Rui-Hasekura/FastSchema.git
- GIT_TAG v2.0.0 # Or you can replace with the latest tag
+ GIT_TAG 0.5.0 # Or you can replace with the latest tag
 )
 ```
 
@@ -117,14 +119,14 @@ cmake --install build
 After installing, locate FastSchema in your project's `CMakeLists.txt`:
 
 ```cmake
-find_package(fschema 2.0.0 CONFIG REQUIRED)
+find_package(fschema 0.5.0 CONFIG REQUIRED)
 # ...
 target_link_libraries(your_app PRIVATE fschema::fschema)
 ```
 
-### 4. How to use
+### 4. Documentation / Usage & Other
 
-It features a high-performance parser, converters(not because the implementation is bad or I lack confidence, but ideally avoid cross-converting if you can), and tools(quite a few, actually).
+It features some high-performance parsers, converters(avoid cross-converting if you can), tools(quite a few, actually), and a mesher(under development).
 
 About remap:
 
@@ -136,7 +138,7 @@ About remap:
   otherwise it is rejected by policy. The policy floor means the data lands
   at v6-or-later semantics even though the container version field is 5.
 
-[Documentation](https://github.com/Rui-Hasekura/FastSchema/tree/main/fschema/docs/) is now available.
+[Documentation](https://github.com/Rui-Hasekura/FastSchema/tree/main/fschema/docs/) **is now available**.
 
 ### 5. License
 
@@ -148,20 +150,26 @@ This project also includes a [NOTICE](https://github.com/Rui-Hasekura/FastSchema
 
 #### Core Libraries
 
-- [Google Highway](https://github.com/google/highway)
-
-- [libdeflate](https://github.com/ebiggers/libdeflate)
-
-- [Intel oneTBB](https://github.com/oneapi-src/oneTBB)
+- [fast_float](https://github.com/fastfloat/fast_float)
 
 - [Google Abseil](https://github.com/abseil/abseil-cpp)
 
-- [xxHash](https://github.com/cyan4973/xxhash)
+- [Google Highway](https://github.com/google/highway)
+
+- [Intel oneTBB](https://github.com/oneapi-src/oneTBB)
+
+- [libdeflate](https://github.com/ebiggers/libdeflate)
 
 - [pdqsort](https://github.com/orlp/pdqsort)
 
+- [simdjson](https://github.com/simdjson/simdjson)
+
+- [Wuffs](https://github.com/google/wuffs)
+
+- [xxHash](https://github.com/cyan4973/xxhash)
+
 #### Testing & Benchmarking
 
-- [Google Test](https://github.com/google/googletest)
-
 - [Google Benchmark](https://github.com/google/benchmark)
+
+- [Google Test](https://github.com/google/googletest)
