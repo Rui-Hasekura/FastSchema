@@ -28,6 +28,7 @@
 #include <vector>
 
 #include "fschema/base/error.h"
+#include "fschema/base/random.h"
 #include "fschema/geometry/types.h"
 
 namespace {
@@ -216,7 +217,7 @@ TEST(AtlasTest, PaddingPreventsBleeding) {
 }
 
 TEST(AtlasTest, RandomTexturesNeverOverlap) {
-  std::mt19937_64 gen(42);
+  fschema::base::Xoshiro256PP gen(42);
   std::uniform_int_distribution<std::uint32_t> size_dist(1, 16);
 
   TextureAtlasBuilder builder(128, 1);

@@ -28,6 +28,7 @@
 #include <string_view>
 #include <vector>
 
+#include "fschema/base/random.h"
 #include "fschema/geometry/internal/cull.h"
 #include "fschema/geometry/tests/png_writer.h"
 #include "fschema/geometry/types.h"
@@ -54,7 +55,7 @@ class TempDir {
  public:
   TempDir() {
     std::random_device rd;
-    std::mt19937_64 gen(rd());
+    base::Xoshiro256PP gen(rd());
     std::uniform_int_distribution<int> dist(0, 100'000'000);
     path_ = std::filesystem::temp_directory_path() /
             ("fschema_geometry_test_" + std::to_string(dist(gen)));

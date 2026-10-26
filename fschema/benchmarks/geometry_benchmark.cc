@@ -30,6 +30,7 @@
 #include <utility>
 #include <vector>
 
+#include "fschema/base/random.h"
 #include "fschema/geometry/export.h"
 #include "fschema/geometry/resource_pack.h"
 #include "fschema/geometry/tessellate.h"
@@ -61,7 +62,7 @@ struct GeometryFixture {
 
   GeometryFixture() {
     std::random_device rd;
-    std::mt19937_64 gen(rd());
+    fschema::base::Xoshiro256PP gen(rd());
     std::uniform_int_distribution<int> dist(0, 100'000'000);
     root = std::filesystem::temp_directory_path() /
            ("fschema_bench_" + std::to_string(dist(gen)));
