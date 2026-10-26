@@ -20,6 +20,7 @@
 #include <functional>
 #include <utility>
 
+#include "absl/functional/any_invocable.h"
 #include "tbb/blocked_range.h"
 #include "tbb/parallel_reduce.h"
 
@@ -196,7 +197,7 @@ class BasicView {
 
 /// Type-erased View alias for storage when the filter type `F` is
 /// unknown at compile time (e.g., in runtime polymorphic contexts).
-using View = BasicView<std::function<bool(LocalPos, std::uint16_t)>>;
+using View = BasicView<absl::AnyInvocable<bool(LocalPos, std::uint16_t) const>>;
 
 /// Factory function to safely construct a View.
 /// Triggers `EnsureMaterialized()` on demand if the region is not yet decoded.
