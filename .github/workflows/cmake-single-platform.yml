@@ -40,6 +40,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ninja-build g++-14 ccache
 
+      - name: Setup CMake
+        uses: lukka/get-cmake@v3
+        with:
+          cmakeVersion: '4.4.2'
+
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
