@@ -246,7 +246,7 @@ TEST(PngDecodeTest, DecodesLargeImageAcrossMultipleStoredBlocks) {
   EXPECT_EQ(std::memcmp(r->rgba.data(), rgba.data(), rgba.size()), 0);
 }
 
-TEST(PngDecodeTest, DecodesNoDistanceCodeDeflateBlock) {
+TEST(PngDecodeTest, RejectsNoDistanceCodeDeflateBlock) {
   constexpr std::uint8_t kPng[] = {
       0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
       0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x10,
@@ -270,21 +270,10 @@ TEST(PngDecodeTest, DecodesNoDistanceCodeDeflateBlock) {
 
   std::unique_ptr<std::vector<std::uint8_t>> owned;
   auto r = DecodePng(std::span<const std::uint8_t>(kPng, sizeof(kPng)), owned);
-  ASSERT_TRUE(r.has_value()) << ToString(r.error());
-  EXPECT_EQ(r->width, 16u);
-  EXPECT_EQ(r->height, 16u);
-  ASSERT_EQ(r->rgba.size(), 16u * 16u * 4u);
-  // Pixel (x, y) is grayscale (x + y) % 8 replicated across RGBA.
-  for (std::uint32_t y = 0; y < 16; ++y) {
-    for (std::uint32_t x = 0; x < 16; ++x) {
-      const std::size_t idx = (y * 16u + x) * 4u;
-      const std::uint8_t gray = static_cast<std::uint8_t>((x + y) & 7u);
-      EXPECT_EQ(r->rgba[idx + 0], gray);
-      EXPECT_EQ(r->rgba[idx + 1], gray);
-      EXPECT_EQ(r->rgba[idx + 2], gray);
-      EXPECT_EQ(r->rgba[idx + 3], 0xFF);
-    }
-  }
+  ASSERT_FALSE(r.has_value());
+  EXPECT_EQ(r.error().code, ParseError::Code::kTextureDecodeFailed);
+  EXPECT_NE(r.error().path.find("no Huffman codes"), std::string::npos)
+      << r.error().path;
 }
 
 TEST(PngDecodeTest, RejectsMatchAfterNoDistanceCodes) {

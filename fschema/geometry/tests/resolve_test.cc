@@ -556,7 +556,7 @@ TEST(ResolveTest, ElementFaceUvDefaultsFollowVanillaBounds) {
   ASSERT_TRUE(r.has_value()) << ToString(r.error());
   ASSERT_EQ(r->faces.size(), 6u);
 
-  for (const ModelFace& f : r->faces) {
+  for (const fschema::geometry::ModelFace& f : r->faces) {
     const float (*want)[2] = nullptr;
     switch (f.CullFace()) {
       case 6: {  // north: bW, bE, tE, tW

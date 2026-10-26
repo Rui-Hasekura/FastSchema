@@ -1008,17 +1008,20 @@ TEST(TessellateTest, FluidSidesUseOverlayTextureAgainstHalfTransparentBlocks) {
       ++backs;
       continue;
     }
-    float ymax = -1e30f;
+    float xmin = 1e30f, xmax = -1e30f;
     for (int k = 0; k < 4; ++k) {
-      ymax = std::max(ymax, m.positions[(q * 4 + k) * 3 + 1]);
-    }
-    if (ymax > 0.9f) {  // glass: every face reaches the full block top
-      ++glass;
-      continue;
+      const float px = m.positions[(q * 4 + k) * 3 + 0];
+      xmin = std::min(xmin, px);
+      xmax = std::max(xmax, px);
     }
     const float ny = m.normals[q * 12 + 1];
     const float nx = m.normals[q * 12 + 0];
     const float nz = m.normals[q * 12 + 2];
+    const bool is_water_west = nx < -0.5f && xmin > 1.0f - kEps;
+    if (xmax < 1.5f && !is_water_west) {
+      ++glass;
+      continue;
+    }
     float u[4], v[4];
     std::size_t slot = 0;
     ASSERT_TRUE(FaceUvsOfQuad(m, r->atlas, q, u, v, &slot));
@@ -1575,15 +1578,19 @@ TEST(TessellateTest, FluidSidesUseOverlayTextureAgainstLeaves) {
       ++backs;
       continue;
     }
-    float ymax = -1e30f;
+    float xmin = 1e30f, xmax = -1e30f;
     for (int k = 0; k < 4; ++k) {
-      ymax = std::max(ymax, m.positions[(q * 4 + k) * 3 + 1]);
+      const float px = m.positions[(q * 4 + k) * 3 + 0];
+      xmin = std::min(xmin, px);
+      xmax = std::max(xmax, px);
     }
-    if (ymax > 0.9f) {  // leaves: full-height faces
+    const float nx = m.normals[q * 12 + 0];
+    const bool is_water_west = nx < -0.5f && xmin > 1.0f - kEps;
+    if (xmax < 1.5f && !is_water_west) {
       ++leaves;
       continue;
     }
-    if (m.normals[q * 12 + 0] < -0.5f) {  // water west side
+    if (nx < -0.5f) {  // water west side
       ++overlay_sides;
       float u[4], v[4];
       std::size_t slot = 0;
