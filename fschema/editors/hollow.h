@@ -41,7 +41,7 @@ namespace fschema::editors {
 /// Uses a pre-calculated `exposed[]` mask to avoid repeated 6-neighbor
 /// checks and cascading in-place mutations during the scan.
 template <filters::Filter F>
-[[nodiscard]] ParseResult<void> Hollow(filters::BasicView<F> v,
+[[nodiscard]] ParseResult<void> Hollow(const filters::BasicView<F> v,
                                        memory::Arena& arena) {
   ir::Region& r = v.region();
   auto mat_res = ir::EnsureMaterialized(r, arena);

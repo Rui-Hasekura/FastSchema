@@ -37,7 +37,7 @@ namespace fschema::editors {
 /// To support overlapping moves without extra buffer allocation,
 /// we traverse the region in reverse order of the shift direction.
 template <filters::Filter F>
-[[nodiscard]] ParseResult<void> Move(filters::BasicView<F> v,
+[[nodiscard]] ParseResult<void> Move(const filters::BasicView<F> v,
                                      std::int32_t dx,
                                      std::int32_t dy,
                                      std::int32_t dz) {
