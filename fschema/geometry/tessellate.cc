@@ -109,6 +109,15 @@ namespace {
   }
 }
 
+// Whether a cull-face byte is a horizontal direction; the fluid
+// overlay and back-face decisions below apply to sides only, never
+// to the up or down face.
+[[nodiscard]] constexpr bool IsHorizontalFace(
+    std::uint8_t cull_face) noexcept {
+  const auto dir = static_cast<internal::FaceDir>(cull_face);
+  return dir != internal::FaceDir::kPosY && dir != internal::FaceDir::kNegY;
+}
+
 // The leaves family (every *_leaves block plus azalea and
 // flowering_azalea, whose class is AzaleaLeavesBlock even though the
 // name lacks the suffix). Name-classified like the overlay classifier.
@@ -126,12 +135,17 @@ namespace {
 // they must not consume a self-culling id.
 [[nodiscard]] std::vector<std::uint8_t> BuildPaletteGroups(
     const ir::Region& region,
-    const std::vector<ResolvedModel>& palette_models) {
+    const std::vector<ResolvedModel>& palette_models,
+    const std::vector<bool>& skipped) {
   std::vector<std::uint8_t> groups(region.palette.size(), 1);
   absl::flat_hash_map<std::string_view, std::uint8_t> transparent_ids;
   std::uint8_t next_id = 2;
   for (std::size_t i = 0; i < region.palette.size(); ++i) {
-    if (region.IsAir(static_cast<std::uint16_t>(i))) {
+    // Air and kSkipAndWarn-skipped entries occlude nothing: their
+    // neighbors keep every face, so an unresolvable block leaves a
+    // hole instead of a black box.
+    if (region.IsAir(static_cast<std::uint16_t>(i)) ||
+        (i < skipped.size() && skipped[i])) {
       groups[i] = 0;
     } else if (i < palette_models.size() && palette_models[i].is_transparent) {
       if (IsLeavesBlock(region.palette[i].name)) {
@@ -145,6 +159,17 @@ namespace {
     }
   }
   return groups;
+}
+
+// Records one resource skipped under kSkipAndWarn. Called only from
+// the single-threaded palette/texture resolution phases, so the sink
+// needs no locking.
+void RecordWarning(const TessellationOptions& opts,
+                   std::string_view resource,
+                   const ParseError& error) {
+  if (opts.warnings_sink == nullptr) return;
+  opts.warnings_sink->push_back(
+      TessellationWarning{std::string(resource), error});
 }
 
 // Fluid slopes (vanilla FluidRenderer port).
@@ -233,6 +258,21 @@ struct FluidOverlayInfo {
   return fluid;
 }
 
+// Whether the block in the cull direction is overlay-eligible:
+// vanilla swaps a fluid side's sprite when the touched block is a
+// HalfTransparentBlock or leaves, so the check reads the neighbor's
+// palette entry (region-local, like block_indices).
+[[nodiscard]] bool NeighborGetsFluidOverlay(
+    const ir::Region& region,
+    const FluidOverlayInfo& overlay,
+    filters::LocalPos p,
+    std::uint8_t cull_face) noexcept {
+  const filters::LocalPos nb = NeighborInCullDir(p, cull_face);
+  if (!InBounds(region.bounds, nb)) return false;
+  return overlay.palette_eligible
+      [region.block_indices[filters::LinearIndex(nb, region.bounds)]];
+}
+
 // Per-cell fluid byte: 0xFF = none, else (kind << 4) | amount. Same
 // shape as the group table (one byte per block, LinearIndex order);
 // read-only after build, shared with the TBB workers.
@@ -246,6 +286,115 @@ struct FluidOverlayInfo {
     const FluidPaletteInfo& f = palette_fluid[pal];
     if (!f.morphable) continue;
     table[i] = static_cast<std::uint8_t>((f.kind << 4) | f.amount);
+  }
+  return table;
+}
+
+[[nodiscard]] std::int64_t CellCount(const ir::BoundingBox& b) noexcept {
+  return static_cast<std::int64_t>(b.size[0]) *
+         static_cast<std::int64_t>(b.size[1]) *
+         static_cast<std::int64_t>(b.size[2]);
+}
+
+// Union of every region's bounds, anchored at the minimum region
+// origin so table coordinates stay small.
+[[nodiscard]] ir::BoundingBox UnionBounds(const ir::Schematic& schematic) {
+  ir::BoundingBox b{};
+  bool first = true;
+  for (const ir::Region& r : schematic.regions) {
+    if (first) {
+      b = r.bounds;
+      first = false;
+      continue;
+    }
+    for (int i = 0; i < 3; ++i) {
+      const std::int32_t max_a = b.origin[i] + b.size[i];
+      const std::int32_t max_b = r.bounds.origin[i] + r.bounds.size[i];
+      b.origin[i] = std::min(b.origin[i], r.bounds.origin[i]);
+      b.size[i] = std::max(max_a, max_b) - b.origin[i];
+    }
+  }
+  return b;
+}
+
+// The union of far-apart regions is mostly empty cells; past this
+// multiple of the regions' combined cell count the walk keeps
+// per-region tables (seam faces stay visible) instead of paying for
+// the sparse allocation.
+constexpr std::int64_t kMaxUnionWaste = 4;
+
+[[nodiscard]] bool UnionWithinBudget(const ir::Schematic& schematic,
+                                     const ir::BoundingBox& union_bounds) {
+  std::int64_t cells = 0;
+  for (const ir::Region& r : schematic.regions) cells += CellCount(r.bounds);
+  return CellCount(union_bounds) <= cells * kMaxUnionWaste;
+}
+
+// One group table spanning the union bounds: each region writes its
+// cells at its origin, cells no region covers stay 0 (air), and
+// overlaps resolve last-write-wins, matching the walk order below.
+// Queries index with positions relative to union_bounds.origin
+// (filters::LinearIndex reads only the size).
+[[nodiscard]] internal::BlockGroupTable BuildUnionGroupTable(
+    const ir::Schematic& schematic,
+    const std::vector<std::vector<std::uint8_t>>& per_region_groups,
+    const ir::BoundingBox& union_bounds) {
+  internal::BlockGroupTable table;
+  table.bytes.assign(static_cast<std::size_t>(CellCount(union_bounds)), 0);
+  for (std::size_t ri = 0; ri < schematic.regions.size(); ++ri) {
+    const ir::Region& region = schematic.regions[ri];
+    const std::vector<std::uint8_t>& groups = per_region_groups[ri];
+    const ir::BoundingBox& rb = region.bounds;
+    for (std::int32_t y = 0; y < rb.size[1]; ++y) {
+      for (std::int32_t z = 0; z < rb.size[2]; ++z) {
+        for (std::int32_t x = 0; x < rb.size[0]; ++x) {
+          const filters::LocalPos local{x, y, z};
+          const filters::LocalPos table_pos{
+              rb.origin[0] + x - union_bounds.origin[0],
+              rb.origin[1] + y - union_bounds.origin[1],
+              rb.origin[2] + z - union_bounds.origin[2]};
+          const std::uint16_t pal =
+              region.block_indices[filters::LinearIndex(local, rb)];
+          table.bytes[filters::LinearIndex(table_pos, union_bounds)] =
+              pal < groups.size() ? groups[pal] : 0;
+        }
+      }
+    }
+  }
+  return table;
+}
+
+// Fluid table over the union bounds (same one-byte-per-cell layout,
+// 0xFF = no fluid), so heights, flow and back-face probes see across
+// region seams like the group table does. Call only when some region
+// holds a morphable fluid, mirroring the per-region short-circuit.
+[[nodiscard]] std::vector<std::uint8_t> BuildUnionFluidTable(
+    const ir::Schematic& schematic,
+    const std::vector<std::vector<FluidPaletteInfo>>& per_region_fluid,
+    const ir::BoundingBox& union_bounds) {
+  std::vector<std::uint8_t> table(
+      static_cast<std::size_t>(CellCount(union_bounds)), 0xFF);
+  for (std::size_t ri = 0; ri < schematic.regions.size(); ++ri) {
+    const ir::Region& region = schematic.regions[ri];
+    const std::vector<FluidPaletteInfo>& fluid = per_region_fluid[ri];
+    const ir::BoundingBox& rb = region.bounds;
+    for (std::int32_t y = 0; y < rb.size[1]; ++y) {
+      for (std::int32_t z = 0; z < rb.size[2]; ++z) {
+        for (std::int32_t x = 0; x < rb.size[0]; ++x) {
+          const filters::LocalPos local{x, y, z};
+          const filters::LocalPos table_pos{
+              rb.origin[0] + x - union_bounds.origin[0],
+              rb.origin[1] + y - union_bounds.origin[1],
+              rb.origin[2] + z - union_bounds.origin[2]};
+          const std::uint16_t pal =
+              region.block_indices[filters::LinearIndex(local, rb)];
+          if (pal >= fluid.size() || !fluid[pal].morphable) continue;
+          table[filters::LinearIndex(table_pos, union_bounds)] =
+              static_cast<std::uint8_t>((fluid[pal].kind << 4) |
+                                        fluid[pal].amount);
+        }
+      }
+    }
   }
   return table;
 }
@@ -585,13 +734,13 @@ void MorphFluidFace(ModelFace& face, const FluidMorph& fm, bool overlay_side) {
 }
 
 // Builds one visible-face record (world-space corners, UVs, per-vertex
-// AO). `local_pos` indexes the group table for AO; `world_pos` is the
-// corner base (the two differ in TessellateSchematic, where regions
-// carry world origins). Returned so callers can push derived copies
-// (fluid back faces re-emit the same record reversed).
+// AO). `table_pos` indexes the neighbor tables (region-relative on
+// the per-region path, union-relative when the shared table is in
+// use); `world_pos` is the corner base. Returned so callers can push
+// derived copies (fluid back faces re-emit the same record reversed).
 [[nodiscard]] internal::VisibleFaceInfo BuildFaceRecord(
     const ModelFace& face,
-    filters::LocalPos local_pos,
+    filters::LocalPos table_pos,
     filters::LocalPos world_pos,
     std::uint32_t slot_index,
     const internal::BlockGroupTable& group_table,
@@ -613,7 +762,7 @@ void MorphFluidFace(ModelFace& face, const FluidMorph& fm, bool overlay_side) {
     info.uvs[i] = face.uvs[i];
     info.ao[i] = internal::ComputeVertexAO(group_table,
                                            bounds,
-                                           local_pos,
+                                           table_pos,
                                            face.CullFace(),
                                            face.corners[i],
                                            ao_strength);
@@ -886,7 +1035,10 @@ ParseResult<TessellationResult> TessellateRegion(const ir::Region& region,
   auto ready = vol.EnsureReady();
   if (!ready) return std::unexpected(ready.error());
 
+  const bool skip_unresolved =
+      opts.unresolved_resources == UnresolvedResourcePolicy::kSkipAndWarn;
   std::vector<ResolvedModel> palette_models(region.palette.size());
+  std::vector<bool> skipped(region.palette.size(), false);
   absl::flat_hash_set<std::string> all_texture_paths;
   for (std::size_t i = 0; i < region.palette.size(); ++i) {
     const auto& state = region.palette[i];
@@ -898,6 +1050,11 @@ ParseResult<TessellationResult> TessellateRegion(const ir::Region& region,
       // Air without a model in the pack contributes no geometry.
       if (is_air) {
         palette_models[i] = ResolvedModel{};
+        continue;
+      }
+      if (skip_unresolved) {
+        RecordWarning(opts, state.name, m.error());
+        skipped[i] = true;
         continue;
       }
       return std::unexpected(m.error());
@@ -935,7 +1092,13 @@ ParseResult<TessellationResult> TessellateRegion(const ir::Region& region,
   texture_to_slot.reserve(all_texture_paths.size());
   for (const std::string& path : all_texture_paths) {
     auto tex = pack.LoadTexturePixels(path);
-    if (!tex) return std::unexpected(tex.error());
+    if (!tex) {
+      if (skip_unresolved) {
+        RecordWarning(opts, path, tex.error());
+        continue;
+      }
+      return std::unexpected(tex.error());
+    }
     auto slot = atlas_builder.Insert(path, tex->rgba, tex->width, tex->height);
     if (!slot) return std::unexpected(slot.error());
     texture_to_slot.emplace(path, *slot);
@@ -943,7 +1106,7 @@ ParseResult<TessellationResult> TessellateRegion(const ir::Region& region,
   TextureAtlas atlas = std::move(atlas_builder).Finalize();
 
   const std::vector<std::uint8_t> palette_groups =
-      BuildPaletteGroups(region, palette_models);
+      BuildPaletteGroups(region, palette_models, skipped);
   internal::BlockGroupTable group_table;
   group_table.BuildFrom(region, palette_groups);
 
@@ -1070,6 +1233,8 @@ ParseResult<TessellationResult> TessellateSchematic(
   // paths.
   std::vector<std::vector<ResolvedModel>> per_region_models;
   per_region_models.reserve(schematic.regions.size());
+  std::vector<std::vector<bool>> per_region_skipped;
+  per_region_skipped.reserve(schematic.regions.size());
 
   absl::flat_hash_set<std::string> all_texture_paths;
   std::vector<std::vector<std::uint8_t>> per_region_overlay;
@@ -1091,6 +1256,7 @@ ParseResult<TessellationResult> TessellateSchematic(
     region.EnsureAirLut();
 
     std::vector<ResolvedModel> models(region.palette.size());
+    std::vector<bool> skipped(region.palette.size(), false);
     for (std::size_t i = 0; i < region.palette.size(); ++i) {
       const bool is_air = region.IsAir(static_cast<std::uint16_t>(i));
       if (is_air && !opts.include_air) continue;
@@ -1099,6 +1265,11 @@ ParseResult<TessellationResult> TessellateSchematic(
       if (!m) {
         if (is_air) {
           models[i] = ResolvedModel{};
+          continue;
+        }
+        if (opts.unresolved_resources == UnresolvedResourcePolicy::kSkipAndWarn) {
+          RecordWarning(opts, region.palette[i].name, m.error());
+          skipped[i] = true;
           continue;
         }
         return std::unexpected(m.error());
@@ -1117,6 +1288,7 @@ ParseResult<TessellationResult> TessellateSchematic(
       if (FluidKindForName(region.palette[i].name) == 1) any_water = true;
     }
     per_region_overlay.push_back(std::move(overlay_eligible));
+    per_region_skipped.push_back(std::move(skipped));
     per_region_models.push_back(std::move(models));
   }
 
@@ -1153,7 +1325,7 @@ ParseResult<TessellationResult> TessellateSchematic(
 
     // Build the group table for AO and cull (within this region only).
     const std::vector<std::uint8_t> palette_groups =
-        BuildPaletteGroups(region, models);
+        BuildPaletteGroups(region, models, per_region_skipped[ri]);
     internal::BlockGroupTable group_table;
     group_table.BuildFrom(region, palette_groups);
 
@@ -1181,9 +1353,9 @@ ParseResult<TessellationResult> TessellateSchematic(
     for (std::int32_t y = 0; y < b.size[1]; ++y) {
       for (std::int32_t z = 0; z < b.size[2]; ++z) {
         for (std::int32_t x = 0; x < b.size[0]; ++x) {
-          const filters::LocalPos local_p{x, y, z};
+          const filters::LocalPos table_p{x, y, z};
           const auto pal_idx =
-              region.block_indices[filters::LinearIndex(local_p, b)];
+              region.block_indices[filters::LinearIndex(table_p, b)];
           if (!opts.include_air && region.IsAir(pal_idx)) continue;
 
           const ResolvedModel& model = models[pal_idx];
@@ -1195,7 +1367,7 @@ ParseResult<TessellationResult> TessellateSchematic(
                                                      fluid_table,
                                                      group_table,
                                                      b,
-                                                     local_p,
+                                                     table_p,
                                                      overlay_texture);
           ModelFace morphed;
           for (const ModelFace& face : model.faces) {
@@ -1211,7 +1383,7 @@ ParseResult<TessellationResult> TessellateSchematic(
                         static_cast<std::uint8_t>(internal::FaceDir::kPosY) &&
                     dir !=
                         static_cast<std::uint8_t>(internal::FaceDir::kNegY)) {
-                  const filters::LocalPos nb = NeighborInCullDir(local_p, dir);
+                  const filters::LocalPos nb = NeighborInCullDir(table_p, dir);
                   if (nb.x >= 0 && nb.x < b.size[0] && nb.y >= 0 &&
                       nb.y < b.size[1] && nb.z >= 0 && nb.z < b.size[2]) {
                     overlay_side = per_region_overlay
@@ -1225,7 +1397,7 @@ ParseResult<TessellationResult> TessellateSchematic(
             // Scalar cull (within this region only).
             if (opts.cull_interior_faces && fp->CullFace() != 0) {
               const filters::LocalPos nb =
-                  NeighborInCullDir(local_p, fp->CullFace());
+                  NeighborInCullDir(table_p, fp->CullFace());
               std::uint8_t nb_group = 0;
               if (nb.x >= 0 && nb.x < b.size[0] && nb.y >= 0 &&
                   nb.y < b.size[1] && nb.z >= 0 && nb.z < b.size[2]) {
@@ -1247,7 +1419,7 @@ ParseResult<TessellationResult> TessellateSchematic(
             const filters::LocalPos world_p{x + ox, y + oy, z + oz};
 
             internal::VisibleFaceInfo info = BuildFaceRecord(*fp,
-                                                             local_p,
+                                                             table_p,
                                                              world_p,
                                                              slot_it->second,
                                                              group_table,
@@ -1266,7 +1438,7 @@ ParseResult<TessellationResult> TessellateSchematic(
               bool back = false;
               if (dir == internal::FaceDir::kPosY) {
                 back = ShouldRenderBackwardUpFace(
-                    fluid_table, group_table, b, local_p, fluid.kind);
+                    fluid_table, group_table, b, table_p, fluid.kind);
               } else if (dir != internal::FaceDir::kNegY) {
                 back = !overlay_side;
               }

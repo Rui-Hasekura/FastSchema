@@ -18,7 +18,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <string_view>
+#include <vector>
 
 #include "fschema/base/error.h"
 #include "fschema/geometry/resource_pack.h"
@@ -27,6 +29,19 @@
 #include "fschema/memory/arena.h"
 
 namespace fschema::geometry {
+
+// What to do when the pack cannot resolve a block state or load a
+// texture.
+enum class UnresolvedResourcePolicy {
+  kFail,         // the whole tessellation fails (historical behavior)
+  kSkipAndWarn,  // skip the resource, keep tessellating, record a warning
+};
+
+// One resource skipped under UnresolvedResourcePolicy::kSkipAndWarn.
+struct TessellationWarning {
+  std::string resource;  // block name or texture path
+  ParseError error;      // the failure that caused the skip
+};
 
 struct TessellationOptions {
   // Drop faces shared between two opaque neighbors.
@@ -46,6 +61,17 @@ struct TessellationOptions {
   // Include air blocks. Air without a model produces no geometry, so
   // this only affects packs that give air a non-empty model.
   bool include_air = false;
+
+  // Policy for resources the pack cannot provide (a blockstate that
+  // fails to resolve, a texture that fails to load). Structural
+  // failures (region decode, atlas overflow) always fail regardless
+  // of this policy.
+  UnresolvedResourcePolicy unresolved_resources =
+      UnresolvedResourcePolicy::kFail;
+  // Sink for kSkipAndWarn records; may be null. Only written from the
+  // calling thread: palette and texture resolution are single
+  // threaded in both entry points.
+  std::vector<TessellationWarning>* warnings_sink = nullptr;
 };
 
 // Tessellate a single ir::Region.
