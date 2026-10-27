@@ -246,7 +246,7 @@ TEST(PngDecodeTest, DecodesLargeImageAcrossMultipleStoredBlocks) {
   EXPECT_EQ(std::memcmp(r->rgba.data(), rgba.data(), rgba.size()), 0);
 }
 
-TEST(PngDecodeTest, RejectsNoDistanceCodeDeflateBlock) {
+TEST(PngDecodeTest, DecodesAllLiteralBlockWithNoDistanceCodes) {
   constexpr std::uint8_t kPng[] = {
       0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
       0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x10,
@@ -270,10 +270,9 @@ TEST(PngDecodeTest, RejectsNoDistanceCodeDeflateBlock) {
 
   std::unique_ptr<std::vector<std::uint8_t>> owned;
   auto r = DecodePng(std::span<const std::uint8_t>(kPng, sizeof(kPng)), owned);
-  ASSERT_FALSE(r.has_value());
-  EXPECT_EQ(r.error().code, ParseError::Code::kTextureDecodeFailed);
-  EXPECT_NE(r.error().path.find("no Huffman codes"), std::string::npos)
-      << r.error().path;
+  ASSERT_TRUE(r.has_value());
+  EXPECT_EQ(r->width, 16);
+  EXPECT_EQ(r->height, 16);
 }
 
 TEST(PngDecodeTest, RejectsMatchAfterNoDistanceCodes) {
