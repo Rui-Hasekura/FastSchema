@@ -26,6 +26,12 @@
 #endif
 
 // Copyright 2017 The Wuffs Authors.
+// Copyright (C) 2026 Rui-Hasekura <ruihasekura@gmail.com>
+//
+// This file has been modified by Rui-Hasekura <ruihasekura@gmail.com>.
+// Original source from Wuffs (https://github.com/google/wuffs).
+// Backported pending upstream PR #208 (https://github.com/google/wuffs/pull/208)
+// prior to official release.
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -44344,6 +44350,12 @@ wuffs_deflate__decoder__init_huff(
     v_i += 1u;
   }
   if ((((uint32_t)(v_counts[0u])) + a_n_codes0) == a_n_codes1) {
+    if (a_which == 1u) {
+      self->private_impl.f_n_huffs_bits[1u] = 1u;
+      self->private_data.f_huffs[1u][0u] = (WUFFS_DEFLATE__DCODE_MAGIC_NUMBERS[31u] | 1u);
+      self->private_data.f_huffs[1u][1u] = (WUFFS_DEFLATE__DCODE_MAGIC_NUMBERS[31u] | 1u);
+      return wuffs_base__make_status(NULL);
+    }
     return wuffs_base__make_status(wuffs_deflate__error__no_huffman_codes);
   }
   v_remaining = 1u;
