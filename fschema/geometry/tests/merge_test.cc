@@ -23,6 +23,7 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -560,4 +561,204 @@ TEST(MergeTest, MergedQuadUvsStayInsideAtlasSlots) {
     }
   }
 }
+
+// ---- sub-cell model faces under merge (repeater regression) ----
+
+// A repeater-style model: full-width slab + two 2x5x2 torch fins,
+// both textured with the fixture's stone texture (vanilla
+// repeater_4tick shape). Under merge the fins' faces used to be
+// rebuilt as FULL-CELL quads at the fins' planes -- the occupancy
+// grid and rect reconstruction assume unit faces -- and the second
+// fin's coplanar faces silently overwrote the first's in the
+// one-pointer grid cell.
+struct RepeaterPack {
+  ResourcePackFixture fx;
+  fschema::ParseResult<std::unique_ptr<ResourcePack>> pack;
+
+  RepeaterPack() {
+    const auto base = fx.root.Get();
+    fschema::tests::WriteFile(
+        base / "assets" / "minecraft" / "blockstates" / "repeater.json",
+        R"({"variants": {"": {"model": "block/repeater_fin"}}})");
+    fschema::tests::WriteFile(
+        base / "assets" / "minecraft" / "models" / "block" /
+            "repeater_fin.json",
+        R"({"textures": {"all": "block/stone"},)"
+        R"( "elements": [{)"
+        R"(  "from": [0,0,0], "to": [16,2,16],)"
+        R"(  "faces": {)"
+        R"(   "up":   {"texture": "#all"}, "down": {"texture": "#all"},)"
+        R"(   "north":{"texture": "#all"}, "south": {"texture": "#all"},)"
+        R"(   "east": {"texture": "#all"}, "west":  {"texture": "#all"}}},)"
+        R"( {"from": [7,2,12], "to": [9,7,14],)"
+        R"(  "faces": {)"
+        R"(   "up":   {"texture": "#all"},)"
+        R"(   "north":{"texture": "#all"}, "south": {"texture": "#all"},)"
+        R"(   "east": {"texture": "#all"}, "west":  {"texture": "#all"}}},)"
+        R"( {"from": [7,2,2], "to": [9,7,4],)"
+        R"(  "faces": {)"
+        R"(   "up":   {"texture": "#all"},)"
+        R"(   "north":{"texture": "#all"}, "south": {"texture": "#all"},)"
+        R"(   "east": {"texture": "#all"}, "west":  {"texture": "#all"}}}]})");
+    pack = ResourcePack::Load(base.generic_string());
+  }
+};
+
+// Region of `w` repeater blocks in a row (palette [air, repeater]).
+struct RepeaterRegion {
+  std::unique_ptr<fschema::memory::Arena> arena =
+      std::make_unique<fschema::memory::Arena>();
+  fschema::ir::Region region{};
+
+  explicit RepeaterRegion(std::int32_t w) {
+    region.bounds = fschema::ir::BoundingBox{{0, 0, 0}, {w, 1, 1}};
+    region.palette = {
+        fschema::ir::BlockState{.name = "minecraft:air",
+                     .prop_encoding = fschema::ir::PropertyEncoding::kNone},
+        fschema::ir::BlockState{.name = "minecraft:repeater",
+                     .prop_encoding = fschema::ir::PropertyEncoding::kNone},
+    };
+    region.is_air_lut.assign(2, 0);
+    region.is_air_lut[0] = 1;
+    region.block_indices = fschema::memory::UnInitBuffer<std::uint16_t>(
+        static_cast<std::size_t>(w), arena.get());
+    std::uint16_t* data =
+        reinterpret_cast<std::uint16_t*>(region.block_indices.data());
+    for (std::int32_t i = 0; i < w; ++i) data[i] = 1;
+    region.is_materialized = true;
+    region.lazy_source.encoding = fschema::ir::BlockDataEncoding::kNone;
+  }
+};
+
+// Collects quad bboxes: (min xyz, max xyz) per quad.
+std::vector<std::array<std::array<float, 3>, 2>> QuadBoxes(
+    const fschema::geometry::Mesh& m) {
+  std::vector<std::array<std::array<float, 3>, 2>> out;
+  for (std::size_t q = 0; q < m.VertexCount() / 4; ++q) {
+    std::array<float, 3> mn{1e30f, 1e30f, 1e30f}, mx{-1e30f, -1e30f, -1e30f};
+    for (std::size_t i = 0; i < 4; ++i) {
+      for (int k = 0; k < 3; ++k) {
+        const float v = m.positions[(q * 4 + i) * 3 + k];
+        mn[k] = std::min(mn[k], v);
+        mx[k] = std::max(mx[k], v);
+      }
+    }
+    out.push_back({mn, mx});
+  }
+  return out;
+}
+
+TEST(MergeTest, SubCellFinFacesKeepExtentsAndDuplicatesUnderMerge) {
+  RepeaterPack fx;
+  ASSERT_TRUE(fx.pack.has_value());
+  RepeaterRegion sr(1);
+
+  auto direct = TessellateRegion(sr.region, *sr.arena, **fx.pack, DirectOpts());
+  ASSERT_TRUE(direct.has_value()) << ToString(direct.error());
+  auto merged = TessellateRegion(sr.region, *sr.arena, **fx.pack, MergeOpts());
+  ASSERT_TRUE(merged.has_value()) << ToString(merged.error());
+
+  // Slab (6 faces) + two fins (5 faces each): merge must not change
+  // the count -- the fins are sub-cell faces and emit verbatim, and
+  // the second fin's coplanar faces must not be dropped.
+  const std::size_t kQuads = 6 + 5 + 5;
+  EXPECT_EQ(direct->opaque_mesh.VertexCount() / 4, kQuads);
+  EXPECT_EQ(merged->opaque_mesh.VertexCount() / 4, kQuads);
+
+  // Both paths carry the first fin's west face: plane x=7/16, y
+  // [2/16, 7/16], z [12/16, 14/16].
+  auto has_fin_west = [](const fschema::geometry::Mesh& m) {
+    for (const auto& b : QuadBoxes(m)) {
+      const bool plane = std::abs(b[0][0] - 7.0f / 16.0f) < 1e-4f &&
+                         std::abs(b[1][0] - 7.0f / 16.0f) < 1e-4f;
+      const bool y = std::abs(b[0][1] - 2.0f / 16.0f) < 1e-4f &&
+                     std::abs(b[1][1] - 7.0f / 16.0f) < 1e-4f;
+      const bool z = std::abs(b[0][2] - 12.0f / 16.0f) < 1e-4f &&
+                     std::abs(b[1][2] - 14.0f / 16.0f) < 1e-4f;
+      if (plane && y && z) return true;
+    }
+    return false;
+  };
+  EXPECT_TRUE(has_fin_west(direct->opaque_mesh)) << "direct lost fin face";
+  EXPECT_TRUE(has_fin_west(merged->opaque_mesh)) << "merge lost fin face";
+
+  // And the second fin's west face (z [2/16, 4/16]) survives too.
+  auto has_fin2_west = [](const fschema::geometry::Mesh& m) {
+    for (const auto& b : QuadBoxes(m)) {
+      if (std::abs(b[0][0] - 7.0f / 16.0f) < 1e-4f &&
+          std::abs(b[1][0] - 7.0f / 16.0f) < 1e-4f &&
+          std::abs(b[0][2] - 2.0f / 16.0f) < 1e-4f &&
+          std::abs(b[1][2] - 4.0f / 16.0f) < 1e-4f) {
+        return true;
+      }
+    }
+    return false;
+  };
+  EXPECT_TRUE(has_fin2_west(merged->opaque_mesh))
+      << "merge dropped the second coplanar fin face";
+
+  // No quad at the fin plane may span the full cell (the old
+  // full-cell inflation).
+  for (const auto& b : QuadBoxes(merged->opaque_mesh)) {
+    if (std::abs(b[0][0] - 7.0f / 16.0f) < 1e-4f &&
+        std::abs(b[1][0] - 7.0f / 16.0f) < 1e-4f) {
+      EXPECT_LT(b[1][1] - b[0][1], 0.9f) << "fin quad inflated to full cell";
+    }
+  }
+}
+
+TEST(MergeTest, DifferentPlanesInOneBlockRowNeverMerge) {
+  // A repeater slab (top at y=2/16) next to a full stone block (top
+  // at y=1), same texture. The old block-index plane key put both
+  // tops into one group and rebuilt a quad at the wrong plane; the
+  // quantized actual-plane key keeps them apart.
+  RepeaterPack fx;
+  ASSERT_TRUE(fx.pack.has_value());
+
+  auto arena = std::make_unique<fschema::memory::Arena>();
+  fschema::ir::Region region{};
+  region.bounds = fschema::ir::BoundingBox{{0, 0, 0}, {2, 1, 1}};
+  region.palette = {
+      fschema::ir::BlockState{.name = "minecraft:air",
+                   .prop_encoding = fschema::ir::PropertyEncoding::kNone},
+      fschema::ir::BlockState{.name = "minecraft:repeater",
+                   .prop_encoding = fschema::ir::PropertyEncoding::kNone},
+      fschema::ir::BlockState{.name = "minecraft:stone",
+                   .prop_encoding = fschema::ir::PropertyEncoding::kNone},
+  };
+  region.is_air_lut.assign(3, 0);
+  region.is_air_lut[0] = 1;
+  region.block_indices = fschema::memory::UnInitBuffer<std::uint16_t>(
+      2, arena.get());
+  {
+    std::uint16_t* data =
+        reinterpret_cast<std::uint16_t*>(region.block_indices.data());
+    data[0] = 1;  // repeater at x=0 (slab top y=2/16)
+    data[1] = 2;  // stone   at x=1 (top     y=1)
+  }
+  region.is_materialized = true;
+  region.lazy_source.encoding = fschema::ir::BlockDataEncoding::kNone;
+
+  auto merged = TessellateRegion(region, *arena, **fx.pack, MergeOpts());
+  ASSERT_TRUE(merged.has_value()) << ToString(merged.error());
+
+  int tops_at_slab_plane = 0;   // y = 2/16, spanning only x [0,1]
+  int tops_at_block_plane = 0;  // y = 1, spanning only x [1,2]
+  for (const auto& b : QuadBoxes(merged->opaque_mesh)) {
+    if (std::abs(b[0][1] - 2.0f / 16.0f) < 1e-4f &&
+        std::abs(b[1][1] - 2.0f / 16.0f) < 1e-4f) {
+      EXPECT_LT(b[0][0], 1.0f - 1e-4f) << "slab top grew over stone";
+      EXPECT_GT(b[1][0], 0.0f + 1e-4f);
+      ++tops_at_slab_plane;
+    }
+    if (std::abs(b[0][1] - 1.0f) < 1e-4f &&
+        std::abs(b[1][1] - 1.0f) < 1e-4f &&
+        std::abs(b[0][0] - 1.0f) < 1e-4f) {
+      ++tops_at_block_plane;
+    }
+  }
+  EXPECT_GE(tops_at_slab_plane, 1);
+  EXPECT_GE(tops_at_block_plane, 1);
+}
+
 }  // namespace

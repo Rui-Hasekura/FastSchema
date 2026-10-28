@@ -214,6 +214,56 @@ void EmitSingleFace(const VisibleFaceInfo& f,
   PushQuadIndices(out_mesh, base);
 }
 
+// Outward normal for a face record. Faces with a direction (cull_face
+// 1..6) use the axis normal; rotated element faces (cull_face 0) have
+// no axis, so their normal comes from the corner winding -- the same
+// (c2-c0)x(c1-c0) that PushQuadIndices' flipped triangles make
+// front-facing.
+[[nodiscard]] std::array<float, 3> FaceRecordNormal(
+    const VisibleFaceInfo& f) {
+  if (f.cull_face >= 1 && f.cull_face <= 6) {
+    return NormalForCullFace(f.cull_face);
+  }
+  const auto& c = f.world_corners;
+  const float ax = c[2][0] - c[0][0], ay = c[2][1] - c[0][1],
+             az = c[2][2] - c[0][2];
+  const float bx = c[1][0] - c[0][0], by = c[1][1] - c[0][1],
+             bz = c[1][2] - c[0][2];
+  float nx = ay * bz - az * by;
+  float ny = az * bx - ax * bz;
+  float nz = ax * by - ay * bx;
+  const float len = std::sqrt(nx * nx + ny * ny + nz * nz);
+  if (len < 1e-9f) return {0.0f, 1.0f, 0.0f};
+  return {nx / len, ny / len, nz / len};
+}
+
+// Whether a face exactly covers its block cell on the merge grid:
+// both in-plane extents span the full 1x1 cell of its block. The
+// occupancy grid and rect reconstruction in MergeGroup assume unit
+// faces, so sub-cell model faces (repeater torch fins, chest
+// latches, slab sides, ...) must not take that path -- they would be
+// rebuilt as full-cell quads and same-cell coplanar siblings would
+// overwrite each other in the single-pointer grid cell. Faces of
+// rotated elements (cull_face 0) have no grid direction either.
+[[nodiscard]] bool IsUnitCellFace(const VisibleFaceInfo& f) {
+  const std::uint8_t cf = f.cull_face;
+  if (cf < 1 || cf > 6) return false;
+  const auto [a1, a2] = InPlaneAxes(cf);
+  const float b1 = static_cast<float>((&f.block_pos.x)[a1]);
+  const float b2 = static_cast<float>((&f.block_pos.x)[a2]);
+  float lo1 = f.world_corners[0][a1], hi1 = lo1;
+  float lo2 = f.world_corners[0][a2], hi2 = lo2;
+  for (const auto& c : f.world_corners) {
+    lo1 = std::min(lo1, c[a1]);
+    hi1 = std::max(hi1, c[a1]);
+    lo2 = std::min(lo2, c[a2]);
+    hi2 = std::max(hi2, c[a2]);
+  }
+  constexpr float kEps = 1e-4f;
+  return lo1 <= b1 + kEps && hi1 >= b1 + 1.0f - kEps &&
+         lo2 <= b2 + kEps && hi2 >= b2 + 1.0f - kEps;
+}
+
 // Greedy merge for one group of coplanar faces.
 void MergeGroup(const std::vector<const VisibleFaceInfo*>& group_faces,
                 const TextureAtlas& atlas,
@@ -252,13 +302,21 @@ void MergeGroup(const std::vector<const VisibleFaceInfo*>& group_faces,
   const int grid_h = max_a1 - min_a1 + 1;
   if (grid_w <= 0 || grid_h <= 0) return;
 
-  // Occupancy grid: cell -> face (nullptr = empty).
+  // Occupancy grid: cell -> face (nullptr = empty). One pointer per
+  // cell: a second coplanar same-direction unit face of the same cell
+  // (duplicate model elements) would silently drop the first, so the
+  // extra is emitted verbatim instead.
   std::vector<const VisibleFaceInfo*> grid(
       static_cast<std::size_t>(grid_w) * grid_h, nullptr);
   for (const auto* f : group_faces) {
     const int a1 = (&f->block_pos.x)[axis1] - min_a1;
     const int a2 = (&f->block_pos.x)[axis2] - min_a2;
-    grid[static_cast<std::size_t>(a1) * grid_w + a2] = f;
+    auto& cell = grid[static_cast<std::size_t>(a1) * grid_w + a2];
+    if (cell != nullptr) {
+      EmitSingleFace(*f, atlas, FaceRecordNormal(*f), out_mesh);
+      continue;
+    }
+    cell = f;
   }
 
   std::vector<std::uint8_t> merged(static_cast<std::size_t>(grid_w) * grid_h,
@@ -459,7 +517,7 @@ void EmitFacesDirectly(const std::vector<VisibleFaceInfo>& faces,
                        const TextureAtlas& atlas,
                        Mesh& out_mesh) {
   for (const auto& f : faces) {
-    EmitSingleFace(f, atlas, NormalForCullFace(f.cull_face), out_mesh);
+    EmitSingleFace(f, atlas, FaceRecordNormal(f), out_mesh);
   }
 }
 
@@ -473,8 +531,20 @@ void MergeAndEmitFaces(const std::vector<VisibleFaceInfo>& faces,
                       GroupKeyHash>
       groups;
   for (const auto& f : faces) {
+    // Sub-cell faces and directionless (rotated-element) faces bypass
+    // the merge grid entirely -- see IsUnitCellFace.
+    if (!IsUnitCellFace(f)) {
+      EmitSingleFace(f, atlas, FaceRecordNormal(f), out_mesh);
+      continue;
+    }
     const int na = NormalAxis(f.cull_face);
-    const std::int32_t plane_pos = (&f.block_pos.x)[na];
+    // Group by the face's ACTUAL plane, quantized to 1/256 blocks:
+    // coplanar faces share a group, and faces at different heights in
+    // one block column stay apart. The previous block-index key put a
+    // half-slab's top (y+0.5) and a neighbouring full block's top
+    // (y+1.0) into the same group, mangling both.
+    const std::int32_t plane_pos = static_cast<std::int32_t>(
+        std::lround(f.world_corners[0][na] * 256.0f));
     GroupKey key{
         f.cull_face, plane_pos, f.slot_index, f.tint_slot, f.is_transparent};
     groups[key].push_back(&f);
