@@ -168,21 +168,36 @@ struct ModelPlacement {
 
 // One 90-degree step of the blockstate convention on an in-plane
 // coordinate pair (offsets from the rotation center):
-//   axis 0 (x): (y,z) -> (-z, y)   north -> up
+//   axis 0 (x): (y,z) -> (z,-y)    up -> north
 //   axis 1 (y): (x,z) -> (-z, x)   north -> east
 //   axis 2 (z): (x,y) -> (-y, x)   east  -> up
+//
+// The x-axis convention runs OPPOSITE to y/z. Vanilla reference:
+// piston.json maps facing=down with x=90 while the piston model
+// (template_piston.json) carries its platform face on north, so
+// vanilla x=90 rotates north -> down (cycle up -> north -> down ->
+// south -> up). observer.json agrees (front on north, facing=up uses
+// x=270). y follows the dropper/furnace family (front on north,
+// facing=east uses y=90 -> north -> east).
 inline void QuarterStepInPlane(float& a, float& b) {
   const float u = a;
   a = -b;
   b = u;
 }
 
+// The inverse quarter step: (a,b) -> (b,-a).
+inline void QuarterStepInPlaneInv(float& a, float& b) {
+  const float u = a;
+  a = b;
+  b = -u;
+}
+
 inline void RotateOffsetSteps(float v[3], int axis, int steps) {
   for (int i = 0; i < steps; ++i) {
     switch (axis) {
       case 0:
-        QuarterStepInPlane(v[1], v[2]);
-        break;  // (y,z)
+        QuarterStepInPlaneInv(v[1], v[2]);
+        break;  // (y,z), vanilla sign: up -> north
       case 1:
         QuarterStepInPlane(v[0], v[2]);
         break;  // (x,z)
@@ -1114,10 +1129,19 @@ ParseResult<ResolvedModel> ResourcePack::Resolve(
   // SynthesizeFluidFaces). Sides reference the flow texture only when
   // the pack ships it: LoadTexturePixels doubles as the availability
   // probe, and the model cache keeps misses to one stat per state.
-  if (all_faces.empty()) {
+  //
+  // The synthesis is gated on the block actually being a fluid:
+  // modern vanilla (1.21.2+) gives several non-fluid blocks
+  // particle-only models with no elements -- chest, trapped_chest,
+  // ender_chest and the copper chests render through the block
+  // entity renderer, bubble_column likewise -- and they used to fall
+  // into this branch and come back as a full LAVA cuboid. Non-fluid
+  // empty models now resolve to zero faces: they render nothing and
+  // occlude nothing (BuildPaletteGroups).
+  if (all_faces.empty() && !FluidFlowTexturePath(block_name).empty()) {
     std::string flow_tex;
     if (std::string_view p = FluidFlowTexturePath(block_name);
-        !p.empty() && impl_->LoadTexturePixels(p).has_value()) {
+        impl_->LoadTexturePixels(p).has_value()) {
       flow_tex = std::string(p);
     }
     all_faces =
