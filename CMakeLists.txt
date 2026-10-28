@@ -125,7 +125,7 @@ endif()
 if(NOT TARGET TBB::tbb)
     FetchContent_Declare(oneTBB
         GIT_REPOSITORY https://github.com/oneapi-src/oneTBB.git
-        GIT_TAG        v2023.1.0
+        GIT_TAG        v2023.2.0
         SYSTEM)
     block()
         set(TBB_TEST OFF)
