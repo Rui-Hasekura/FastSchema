@@ -133,6 +133,55 @@ namespace {
 // leaves hide neither neighbors' faces nor each other's (vanilla
 // LeavesBlock overrides no skipRendering and is not an occluder), so
 // they must not consume a self-culling id.
+//
+// Opaque entries occlude (and AO-shade) only when their resolved model
+// is a FULL CUBE: vanilla hides a face only behind a shape that
+// occludes that direction (canOcclude + full-shape occluder), and the
+// one-byte group table cannot express partial per-direction coverage.
+// Sub-block shapes -- chests with their particle-only models, redstone
+// dust, repeaters, slabs, carpets, torches, ... -- keep every
+// neighbor face visible. That over-draws the hidden sliver behind
+// them but never eats a face that should be visible; the previous
+// classify-everything-opaque behavior wrongly culled glass faces
+// resting against chests and redstone dust.
+[[nodiscard]] bool ModelOccludesAllDirections(const ResolvedModel& model) {
+  bool covered[6] = {false, false, false, false, false, false};
+  for (const ModelFace& f : model.faces) {
+    const std::uint8_t cf = f.CullFace();
+    if (cf < 1 || cf > 6) continue;
+    const int axis = cf <= 2 ? 0 : (cf <= 4 ? 1 : 2);
+    // Boundary plane: +axis faces sit at 1, -axis faces at 0.
+    const float want = (cf == 1 || cf == 3 || cf == 5) ? 1.0f : 0.0f;
+    bool at_plane = true;
+    for (const auto& c : f.corners) {
+      if (std::abs(c[axis] - want) > 1e-4f) {
+        at_plane = false;
+        break;
+      }
+    }
+    if (!at_plane) continue;
+    // Full coverage: both in-plane coordinates span [0,1].
+    const int a1 = (axis + 1) % 3;
+    const int a2 = (axis + 2) % 3;
+    float lo1 = f.corners[0][a1], hi1 = f.corners[0][a1];
+    float lo2 = f.corners[0][a2], hi2 = f.corners[0][a2];
+    for (const auto& c : f.corners) {
+      lo1 = std::min(lo1, c[a1]);
+      hi1 = std::max(hi1, c[a1]);
+      lo2 = std::min(lo2, c[a2]);
+      hi2 = std::max(hi2, c[a2]);
+    }
+    if (lo1 <= 1e-4f && hi1 >= 1.0f - 1e-4f && lo2 <= 1e-4f &&
+        hi2 >= 1.0f - 1e-4f) {
+      covered[cf - 1] = true;
+    }
+  }
+  for (bool c : covered) {
+    if (!c) return false;
+  }
+  return true;
+}
+
 [[nodiscard]] std::vector<std::uint8_t> BuildPaletteGroups(
     const ir::Region& region,
     const std::vector<ResolvedModel>& palette_models,
@@ -156,6 +205,11 @@ namespace {
           transparent_ids.emplace(region.palette[i].name, next_id);
       if (inserted && next_id < 255) ++next_id;
       groups[i] = it->second;
+    } else if (i >= palette_models.size() ||
+               !ModelOccludesAllDirections(palette_models[i])) {
+      // Non-full-cube opaque entry: occludes nothing (renders its own
+      // faces, keeps every neighbor face, contributes no AO).
+      groups[i] = 0;
     }
   }
   return groups;
