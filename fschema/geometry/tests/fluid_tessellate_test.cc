@@ -496,10 +496,12 @@ TEST(TessellateTest, DifferentFluidsAverageIndependently) {
       TessellateRegion(wr.region, *wr.arena, **pack, TessellationOptions{});
   ASSERT_TRUE(r.has_value()) << ToString(r.error());
 
-  // Water keeps 5 faces (east culls against the opaque lava group)
-  // plus 4 back faces (up + 3 outward sides); lava keeps all 6 plus 5
-  // backs (up + 4 sides) in the opaque mesh.
-  ASSERT_EQ(r->transparent_mesh.VertexCount(), (5u + 4u) * 4u);
+  // Fluids do not occlude (vanilla canOcclude is false for fluid
+  // blocks), so the water|lava interface renders on both sides:
+  // water keeps all 6 faces plus 5 back faces (up + 4 sides) in the
+  // transparent mesh; lava keeps all 6 plus 5 backs (up + 4 sides)
+  // in the opaque mesh.
+  ASSERT_EQ(r->transparent_mesh.VertexCount(), (6u + 5u) * 4u);
   ASSERT_EQ(r->opaque_mesh.VertexCount(), (6u + 5u) * 4u);
 
   constexpr float kEps = 1e-4f;
@@ -523,7 +525,7 @@ TEST(TessellateTest, DifferentFluidsAverageIndependently) {
       }
     }
     EXPECT_EQ(tops, 1);
-    EXPECT_EQ(backs, mesh == &r->transparent_mesh ? 4 : 5);
+    EXPECT_EQ(backs, mesh == &r->transparent_mesh ? 5 : 5);
   }
 }
 
@@ -1165,13 +1167,15 @@ TEST(TessellateTest, FluidOverlayIsWaterOnlyAndSkipsPanes) {
   auto l =
       TessellateRegion(lr.region, *lr.arena, **pack, TessellationOptions{});
   ASSERT_TRUE(l.has_value()) << ToString(l.error());
-  // Lava renders in the OPAQUE group, so the shared faces cull on both
-  // sides: glass loses its east face against lava (5 left, transparent
-  // mesh), and lava/stone each lose the face between them (5 + 5).
-  // Lava doubles its 5 faces except the down face (4 back faces, in
-  // the opaque mesh; lava never has an overlay).
-  ASSERT_EQ(l->opaque_mesh.VertexCount(), (5u + 5u + 4u) * 4u);
-  ASSERT_EQ(l->transparent_mesh.VertexCount(), 5u * 4u);
+  // Lava renders in the OPAQUE group but, being a fluid, occludes
+  // nothing (vanilla canOcclude is false for fluids): glass keeps its
+  // east face against lava (6 faces, transparent mesh), lava loses
+  // only its east face to the opaque stone (5 faces), stone keeps all
+  // 6 (its west face against lava renders), and lava doubles its 5
+  // faces except the down face (4 back faces, in the opaque mesh;
+  // lava never has an overlay).
+  ASSERT_EQ(l->opaque_mesh.VertexCount(), (5u + 6u + 4u) * 4u);
+  ASSERT_EQ(l->transparent_mesh.VertexCount(), 6u * 4u);
   int lava_west = 0;
   int backs = 0;
   for (std::size_t q = 0; q < l->opaque_mesh.VertexCount() / 4; ++q) {
@@ -1181,10 +1185,13 @@ TEST(TessellateTest, FluidOverlayIsWaterOnlyAndSkipsPanes) {
     }
     if (l->opaque_mesh.normals[q * 12 + 0] > -0.5f) continue;
     // The lava block sits at x = 1 (glass lives in the transparent
-    // mesh and stone's west face is culled), so anything below 0.5 is
-    // not this face. Doc version filtered at 1.5, which deselects the
-    // lava face itself (corner 0 x = 1.0) -- fixed here.
-    if (l->opaque_mesh.positions[(q * 4) * 3 + 0] < 0.5f) continue;
+    // mesh), so its west face lies on the x = 1 plane; stone's west
+    // face (now visible, since lava occludes nothing) sits at x = 2
+    // and must not be counted here.
+    if (std::abs(l->opaque_mesh.positions[(q * 4) * 3 + 0] - 1.0f) >
+        kEps) {
+      continue;
+    }
     ++lava_west;
     float u[4], v[4];
     std::size_t slot = 0;
