@@ -496,6 +496,218 @@ void ApplyRenderTypeFlags(std::vector<ModelFace>& faces,
   return false;
 }
 
+// ---------------------------------------------------------------------------
+// Chest-family synthesis.
+//
+// Vanilla renders chests (chest, trapped_chest, ender_chest and the
+// 1.21+ copper family) through the block-entity renderer; the
+// blockstate points at models/block/chest.json, which no vanilla pack
+// ships, so the resolver produces zero faces and chests vanish. Mesh
+// the entity model instead: three boxes (bottom, lid, latch) mapping
+// the 64x64 entity/chest/*.png sheets with the standard entity box-UV
+// layout, matching the values used by vanilla's ChestModel (via the
+// Schematic-Mesher dump of the same model).
+//
+// Layout of a box (w,h,d in texels) at texture offset (u,v), sheet
+// 64x64:
+//
+//                 u    u+d  u+d+w  u+d+w+d  u+d+2w+d
+//   v             | DOWN |  UP  |      |        |
+//   v+d           |      |      |      |        |
+//   v+d    WEST   | NORTH| EAST | SOUTH|
+//   v+d+h         |      |      |      |
+//
+// A double chest is meshed as two half boxes (15 units wide each)
+// that join across the cell seam; `type=left/right` selects the half
+// and the per-half texture (_left/_right sheets).
+// ---------------------------------------------------------------------------
+struct ChestBoxSpec {
+  // Box extents in 1/16 block units, Y up, latch toward +Z (south).
+  float x0, y0, z0, x1, y1, z1;
+  // Texture offset on the 64x64 sheet, texels.
+  int u_off, v_off;
+};
+
+// Emits one chest box as six ModelFaces. Corner order is clockwise
+// seen from outside, matching BuildCubeFace's convention (the merge /
+// emit paths flip per-triangle winding). Faces sitting exactly on the
+// cell boundary keep their cull direction; interior faces get none
+// (the box is 14/16 wide, so a cullface against an occluding
+// neighbour would eat a face that is still visible through the gap).
+void EmitChestBox(const ChestBoxSpec& box,
+                  const std::string& texture_path,
+                  std::vector<ModelFace>& out) {
+  const float w = box.x1 - box.x0, h = box.y1 - box.y0,
+              d = box.z1 - box.z0;  // texels (1/16 units)
+  const float u = static_cast<float>(box.u_off);
+  const float v = static_cast<float>(box.v_off);
+  const float kTex = 64.0f;  // chest sheets are 64x64
+
+  // 8 box corners, indexed bit-wise (x=1<<2, y=1<<1, z=1<<0).
+  const float xs[2] = {box.x0 / 16.0f, box.x1 / 16.0f};
+  const float ys[2] = {box.y0 / 16.0f, box.y1 / 16.0f};
+  const float zs[2] = {box.z0 / 16.0f, box.z1 / 16.0f};
+
+  struct FacePlan {
+    internal::FaceDir dir;
+    int corners[4];              // corner indices, CW from outside
+    bool at_boundary;            // face plane sits on the cell edge
+  };
+
+  // UV rect corners in texture-fraction space. The entity-model
+  // convention pins u to the left/right of each strip and v to
+  // top/bottom; sides attach (right,top)(left,top)(left,bottom)
+  // (right,bottom) to the refmesher corner order, which the reversal
+  // below carries over to the clockwise order.
+  auto side_uv = [](float l, float t, float r, float b) {
+    return std::array<std::array<float, 2>, 4>{{
+        {{r, b}}, {{l, b}}, {{l, t}}, {{r, t}}}};
+  };
+
+  const std::array<FacePlan, 6> plans = {{
+      // down (y0): viewed from below, CW from outside
+      {internal::FaceDir::kNegY, {4, 5, 1, 0}, box.y0 == 0.0f},
+      // up (y1)
+      {internal::FaceDir::kPosY, {3, 2, 6, 7}, box.y1 == 16.0f},
+      // north (z0)
+      {internal::FaceDir::kNegZ, {2, 3, 0, 1}, box.z0 == 0.0f},
+      // south (z1)
+      {internal::FaceDir::kPosZ, {7, 6, 5, 4}, box.z1 == 16.0f},
+      // west (x0)
+      {internal::FaceDir::kNegX, {3, 7, 4, 0}, box.x0 == 0.0f},
+      // east (x1)
+      {internal::FaceDir::kPosX, {6, 2, 1, 5}, box.x1 == 16.0f},
+  }};
+
+  for (const FacePlan& plan : plans) {
+    // Texture strip for this face.
+    float l, t, r, b;
+    switch (plan.dir) {
+      case internal::FaceDir::kNegY:
+        l = u + d; t = v; r = l + w; b = v + d; break;
+      case internal::FaceDir::kPosY:
+        l = u + d + w; t = v; r = l + w; b = v + d; break;
+      case internal::FaceDir::kNegZ:
+        l = u + d; t = v + d; r = l + w; b = t + h; break;
+      case internal::FaceDir::kPosZ:
+        l = u + d + w + d; t = v + d; r = l + w; b = t + h; break;
+      case internal::FaceDir::kNegX:
+        l = u; t = v + d; r = l + d; b = t + h; break;
+      default:  // kPosX
+        l = u + d + w; t = v + d; r = l + d; b = t + h; break;
+    }
+    const float nl = l / kTex, nt = t / kTex, nr = r / kTex, nb = b / kTex;
+
+    const auto uvs = (plan.dir == internal::FaceDir::kPosY)
+                         ? std::array<std::array<float, 2>, 4>{{
+                               {{nl, nb}}, {{nr, nb}}, {{nr, nt}}, {{nl, nt}}}}
+                         : side_uv(nl, nt, nr, nb);
+
+    ModelFace mf{};
+    mf.texture_path = texture_path;
+    for (int i = 0; i < 4; ++i) {
+      const int ci = plan.corners[i];
+      mf.corners[i] = {xs[(ci >> 2) & 1], ys[(ci >> 1) & 1], zs[ci & 1]};
+      mf.uvs[i] = uvs[i];
+    }
+    if (plan.at_boundary) {
+      mf.SetCullFace(static_cast<std::uint8_t>(plan.dir));
+    }
+    out.push_back(std::move(mf));
+  }
+}
+
+// Rotates block-local corners about the cell center so the latch
+// (model +Z, default south) faces the blockstate `facing` direction.
+// Pure yaw quarter turns, mirrors of the entity render transform.
+void RotateChestFaces(std::vector<ModelFace>& faces, std::string_view facing) {
+  int qx = 0;  // 0 south, 1 west, 2 north, 3 east
+  if (facing == "west") qx = 1;
+  else if (facing == "north") qx = 2;
+  else if (facing == "east") qx = 3;
+  if (qx == 0) return;
+  for (ModelFace& f : faces) {
+    for (auto& c : f.corners) {
+      const float x = c[0], z = c[2];
+      switch (qx) {
+        case 1:  // west:  (x,z) -> (1-z, x)
+          c[0] = 1.0f - z;
+          c[2] = x;
+          break;
+        case 2:  // north: (x,z) -> (1-x, 1-z)
+          c[0] = 1.0f - x;
+          c[2] = 1.0f - z;
+          break;
+        default:  // east: (x,z) -> (z, 1-x)
+          c[0] = z;
+          c[2] = 1.0f - x;
+          break;
+      }
+    }
+  }
+}
+
+// Chest-family block names -> synthesized faces; empty for non-chests.
+// Returns faces only when the pack ships the matching entity texture
+// (probe left to the caller to keep this function pure).
+[[nodiscard]] std::vector<ModelFace> SynthesizeChestFaces(
+    std::string_view block_name,
+    const BlockProps& props) {
+  std::string_view n = internal::StripNamespace(block_name);
+  if (n.starts_with("waxed_")) n.remove_prefix(6);
+
+  std::string_view variant;
+  if (n == "chest") variant = "normal";
+  else if (n == "trapped_chest") variant = "trapped";
+  else if (n == "ender_chest") variant = "ender";
+  else if (n == "copper_chest") variant = "copper";
+  else if (n == "exposed_copper_chest") variant = "copper_exposed";
+  else if (n == "weathered_copper_chest") variant = "copper_weathered";
+  else if (n == "oxidized_copper_chest") variant = "copper_oxidized";
+  else return {};
+
+  bool left = false, right = false;
+  if (n != "ender_chest") {
+    const auto t = props.Get("type");
+    if (t.has_value()) {
+      if (*t == "left") left = true;
+      else if (*t == "right") right = true;
+    }
+  }
+
+  std::string texture = "minecraft:entity/chest/";
+  texture += variant;
+  if (left) texture += "_left";
+  else if (right) texture += "_right";
+
+  // Single: 14x14 footprint; double: 15-wide halves joining at the
+  // seam (1-texel gap each side, vanilla's intentional seam).
+  std::vector<ChestBoxSpec> boxes;
+  if (left) {
+    boxes.push_back({0, 0, 1, 15, 10, 15, 0, 19});   // bottom
+    boxes.push_back({0, 9, 1, 15, 14, 15, 0, 0});    // lid
+    boxes.push_back({0, 7, 15, 1, 11, 16, 0, 0});    // latch
+  } else if (right) {
+    boxes.push_back({1, 0, 1, 16, 10, 15, 0, 19});
+    boxes.push_back({1, 9, 1, 16, 14, 15, 0, 0});
+    boxes.push_back({15, 7, 15, 16, 11, 16, 0, 0});
+  } else {
+    boxes.push_back({1, 0, 1, 15, 10, 15, 0, 19});
+    boxes.push_back({1, 9, 1, 15, 14, 15, 0, 0});
+    boxes.push_back({7, 7, 15, 9, 11, 16, 0, 0});
+  }
+
+  std::vector<ModelFace> faces;
+  faces.reserve(boxes.size() * 6);
+  for (const ChestBoxSpec& box : boxes) {
+    EmitChestBox(box, texture, faces);
+  }
+  const auto f = props.Get("facing");
+  RotateChestFaces(faces, f.has_value() ? std::string_view(*f)
+                                        : std::string_view("south"));
+  return faces;
+}
+
 }  // namespace
 
 struct ResourcePack::Impl {
@@ -1146,6 +1358,19 @@ ParseResult<ResolvedModel> ResourcePack::Resolve(
     }
     all_faces =
         SynthesizeFluidFaces(block_name, props, block_tint_slot, flow_tex);
+  }
+
+  // Chest family: vanilla's block-entity renderer never ships a block
+  // model, so the palette entry resolves to zero faces above. Mesh
+  // the entity chest model instead -- but only when the pack actually
+  // provides the entity texture sheet; without it the zero-face
+  // behavior (renders nothing, occludes nothing) stays.
+  if (all_faces.empty()) {
+    std::vector<ModelFace> chest = SynthesizeChestFaces(block_name, props);
+    if (!chest.empty() &&
+        impl_->LoadTexturePixels(chest.front().texture_path).has_value()) {
+      all_faces = std::move(chest);
+    }
   }
 
   // Name-classified render layer (vanilla packs declare no render
