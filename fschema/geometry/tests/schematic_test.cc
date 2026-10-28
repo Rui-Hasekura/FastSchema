@@ -388,6 +388,20 @@ TEST(SchematicTest, SheepEntityMeshesAtAnchor) {
     cx /= 4;
     if (cx > 5.0f) {  // away from the stone block at the origin
       ++entity_quads;
+      // Every entity quad must be a rectangle: adjacent edges
+      // perpendicular. A sheared diagonal "fin" quad (the corner-index
+      // regression) fails this.
+      {
+        const std::size_t i0 = q * 4, i1 = q * 4 + 1, i3 = q * 4 + 3;
+        const float e1[3] = {m.positions[i1 * 3] - m.positions[i0 * 3],
+                             m.positions[i1 * 3 + 1] - m.positions[i0 * 3 + 1],
+                             m.positions[i1 * 3 + 2] - m.positions[i0 * 3 + 2]};
+        const float e3[3] = {m.positions[i3 * 3] - m.positions[i0 * 3],
+                             m.positions[i3 * 3 + 1] - m.positions[i0 * 3 + 1],
+                             m.positions[i3 * 3 + 2] - m.positions[i0 * 3 + 2]};
+        EXPECT_NEAR(e1[0] * e3[0] + e1[1] * e3[1] + e1[2] * e3[2], 0.0f, 1e-4f)
+            << "entity quad " << q << " is not a rectangle";
+      }
       for (std::size_t i = 0; i < 4; ++i) {
         const float x = m.positions[(q * 4 + i) * 3 + 0];
         const float y = m.positions[(q * 4 + i) * 3 + 1];

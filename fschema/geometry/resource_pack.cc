@@ -528,15 +528,23 @@ struct ChestBoxSpec {
   int u_off, v_off;
 };
 
-// Emits one chest box as six ModelFaces. Corner order is clockwise
-// seen from outside, matching BuildCubeFace's convention (the merge /
-// emit paths flip per-triangle winding). Faces sitting exactly on the
-// cell boundary keep their cull direction; interior faces get none
-// (the box is 14/16 wide, so a cullface against an occluding
-// neighbour would eat a face that is still visible through the gap).
+// Emits one chest box as six ModelFaces. Corner orders mirror
+// BuildCubeFace exactly (clockwise seen from outside; PushQuadIndices
+// flips per-triangle winding), so the faces cull and shade exactly
+// like regular block faces. UVs project the model-space corners onto
+// the face's image axes (CubeFaceUvRect/ModelFaceAxes) so upright
+// orientation and per-face mirroring match vanilla's FaceBakery
+// convention by construction. `skip_dir` drops one direction's face:
+// double-chest halves skip their seam side, whose strips the double
+// sheets deliberately leave unpainted (vanilla never renders those
+// interior faces). Faces sitting exactly on the cell boundary keep
+// their cull direction; interior faces get none (the box is 14/16
+// wide, so a cullface against an occluding neighbour would eat a
+// face that is still visible through the gap).
 void EmitChestBox(const ChestBoxSpec& box,
                   const std::string& texture_path,
-                  std::vector<ModelFace>& out) {
+                  std::vector<ModelFace>& out,
+                  int skip_dir = -1) {
   const float w = box.x1 - box.x0, h = box.y1 - box.y0,
               d = box.z1 - box.z0;  // texels (1/16 units)
   const float u = static_cast<float>(box.u_off);
@@ -550,36 +558,27 @@ void EmitChestBox(const ChestBoxSpec& box,
 
   struct FacePlan {
     internal::FaceDir dir;
-    int corners[4];              // corner indices, CW from outside
-    bool at_boundary;            // face plane sits on the cell edge
-  };
-
-  // UV rect corners in texture-fraction space. The entity-model
-  // convention pins u to the left/right of each strip and v to
-  // top/bottom; sides attach (right,top)(left,top)(left,bottom)
-  // (right,bottom) to the refmesher corner order, which the reversal
-  // below carries over to the clockwise order.
-  auto side_uv = [](float l, float t, float r, float b) {
-    return std::array<std::array<float, 2>, 4>{{
-        {{r, b}}, {{l, b}}, {{l, t}}, {{r, t}}}};
+    int corners[4];  // BuildCubeFace's order, CW from outside
+    bool at_boundary;  // face plane sits on the cell edge
   };
 
   const std::array<FacePlan, 6> plans = {{
-      // down (y0): viewed from below, CW from outside
-      {internal::FaceDir::kNegY, {4, 5, 1, 0}, box.y0 == 0.0f},
+      // down (y0)
+      {internal::FaceDir::kNegY, {0, 1, 5, 4}, box.y0 == 0.0f},
       // up (y1)
-      {internal::FaceDir::kPosY, {3, 2, 6, 7}, box.y1 == 16.0f},
+      {internal::FaceDir::kPosY, {2, 6, 7, 3}, box.y1 == 16.0f},
       // north (z0)
-      {internal::FaceDir::kNegZ, {2, 3, 0, 1}, box.z0 == 0.0f},
+      {internal::FaceDir::kNegZ, {0, 4, 6, 2}, box.z0 == 0.0f},
       // south (z1)
-      {internal::FaceDir::kPosZ, {7, 6, 5, 4}, box.z1 == 16.0f},
+      {internal::FaceDir::kPosZ, {1, 3, 7, 5}, box.z1 == 16.0f},
       // west (x0)
-      {internal::FaceDir::kNegX, {3, 7, 4, 0}, box.x0 == 0.0f},
+      {internal::FaceDir::kNegX, {0, 2, 3, 1}, box.x0 == 0.0f},
       // east (x1)
-      {internal::FaceDir::kPosX, {6, 2, 1, 5}, box.x1 == 16.0f},
+      {internal::FaceDir::kPosX, {4, 5, 7, 6}, box.x1 == 16.0f},
   }};
 
   for (const FacePlan& plan : plans) {
+    if (static_cast<int>(plan.dir) == skip_dir) continue;
     // Texture strip for this face.
     float l, t, r, b;
     switch (plan.dir) {
@@ -598,18 +597,19 @@ void EmitChestBox(const ChestBoxSpec& box,
     }
     const float nl = l / kTex, nt = t / kTex, nr = r / kTex, nb = b / kTex;
 
-    const auto uvs = (plan.dir == internal::FaceDir::kPosY)
-                         ? std::array<std::array<float, 2>, 4>{{
-                               {{nl, nb}}, {{nr, nb}}, {{nr, nt}}, {{nl, nt}}}}
-                         : side_uv(nl, nt, nr, nb);
-
     ModelFace mf{};
     mf.texture_path = texture_path;
     for (int i = 0; i < 4; ++i) {
       const int ci = plan.corners[i];
       mf.corners[i] = {xs[(ci >> 2) & 1], ys[(ci >> 1) & 1], zs[ci & 1]};
-      mf.uvs[i] = uvs[i];
     }
+    // UVs: project the model-space corners onto the face's image axes
+    // and map into the strip rect -- the same mechanism regular block
+    // faces use (CubeFaceUvRect/ModelFaceAxes), so upright orientation
+    // and per-face mirroring match vanilla's FaceBakery convention by
+    // construction.
+    mf.uvs = internal::CubeFaceUvRect(
+        plan.dir, mf.corners, std::array<float, 4>{nl, nt, nr, nb});
     if (plan.at_boundary) {
       mf.SetCullFace(static_cast<std::uint8_t>(plan.dir));
     }
@@ -620,13 +620,31 @@ void EmitChestBox(const ChestBoxSpec& box,
 // Rotates block-local corners about the cell center so the latch
 // (model +Z, default south) faces the blockstate `facing` direction.
 // Pure yaw quarter turns, mirrors of the entity render transform.
+// Boundary faces carry a cull direction naming the neighbour whose
+// occlusion may hide them; the yaw rotates that direction with the
+// geometry, so the culled neighbour stays the one the rotated face
+// actually abuts.
 void RotateChestFaces(std::vector<ModelFace>& faces, std::string_view facing) {
   int qx = 0;  // 0 south, 1 west, 2 north, 3 east
   if (facing == "west") qx = 1;
   else if (facing == "north") qx = 2;
   else if (facing == "east") qx = 3;
   if (qx == 0) return;
+
+  // FaceDir values: kPosX=1 kNegX=2 kPosY=3 kNegY=4 kPosZ=5 kNegZ=6.
+  // Table[qx][dir] = dir after the quarter turn.
+  static constexpr std::array<std::array<std::uint8_t, 7>, 4> kCullRot = {{
+      {0, 1, 2, 3, 4, 5, 6},                       // south: identity
+      {0, 5, 6, 3, 4, 2, 1},                       // west
+      {0, 2, 1, 3, 4, 6, 5},                       // north
+      {0, 6, 5, 3, 4, 1, 2},                       // east
+  }};
+
   for (ModelFace& f : faces) {
+    const std::uint8_t cull = f.CullFace();
+    if (cull != 0) {
+      f.SetCullFace(kCullRot[qx][cull & 0x07]);
+    }
     for (auto& c : f.corners) {
       const float x = c[0], z = c[2];
       switch (qx) {
@@ -680,14 +698,19 @@ void RotateChestFaces(std::vector<ModelFace>& faces, std::string_view facing) {
   if (left) texture += "_left";
   else if (right) texture += "_right";
 
-  // Single: 14x14 footprint; double: 15-wide halves joining at the
-  // seam (1-texel gap each side, vanilla's intentional seam).
+  // Single: 14x14 footprint; double: 15-wide halves joining flush
+  // at the seam (1-texel inset at each outer end, like vanilla).
+  // The seam side is never emitted: the _left/_right sheets leave
+  // those strips unpainted.
+  int skip_dir = -1;
   std::vector<ChestBoxSpec> boxes;
   if (left) {
+    skip_dir = static_cast<int>(internal::FaceDir::kNegX);
     boxes.push_back({0, 0, 1, 15, 10, 15, 0, 19});   // bottom
     boxes.push_back({0, 9, 1, 15, 14, 15, 0, 0});    // lid
     boxes.push_back({0, 7, 15, 1, 11, 16, 0, 0});    // latch
   } else if (right) {
+    skip_dir = static_cast<int>(internal::FaceDir::kPosX);
     boxes.push_back({1, 0, 1, 16, 10, 15, 0, 19});
     boxes.push_back({1, 9, 1, 16, 14, 15, 0, 0});
     boxes.push_back({15, 7, 15, 16, 11, 16, 0, 0});
@@ -700,7 +723,7 @@ void RotateChestFaces(std::vector<ModelFace>& faces, std::string_view facing) {
   std::vector<ModelFace> faces;
   faces.reserve(boxes.size() * 6);
   for (const ChestBoxSpec& box : boxes) {
-    EmitChestBox(box, texture, faces);
+    EmitChestBox(box, texture, faces, skip_dir);
   }
   const auto f = props.Get("facing");
   RotateChestFaces(faces, f.has_value() ? std::string_view(*f)
@@ -1228,7 +1251,10 @@ struct ResourcePack::Impl {
       std::string texture_var;
       auto tex_res = face_el["texture"];
       if (tex_res.error() == simdjson::SUCCESS) {
-        tex_res.value().get_string().get(texture_var);
+        if (tex_res.value().get_string().get(texture_var) !=
+            simdjson::SUCCESS) {
+          texture_var.clear();
+        }
       }
       std::string resolved_path;
       if (!texture_var.empty()) {

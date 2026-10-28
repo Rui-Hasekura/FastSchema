@@ -1457,15 +1457,17 @@ void EmitSheepBox(const SheepBoxSpec& box,
 
   struct FacePlan {
     internal::FaceDir dir;
-    int corners[4];  // CW from outside (PushQuadIndices flips)
+    int corners[4];  // BuildCubeFace's order, CW from outside
   };
+  // Corner orders mirror BuildCubeFace (bit-wise index x=1<<2, y=1<<1,
+  // z=1<<0), so culling and winding match the block pipeline exactly.
   static constexpr std::array<FacePlan, 6> kPlans = {{
-      {internal::FaceDir::kNegY, {4, 5, 1, 0}},
-      {internal::FaceDir::kPosY, {3, 2, 6, 7}},
-      {internal::FaceDir::kNegZ, {2, 3, 0, 1}},
-      {internal::FaceDir::kPosZ, {7, 6, 5, 4}},
-      {internal::FaceDir::kNegX, {3, 7, 4, 0}},
-      {internal::FaceDir::kPosX, {6, 2, 1, 5}},
+      {internal::FaceDir::kNegY, {0, 1, 5, 4}},
+      {internal::FaceDir::kPosY, {2, 6, 7, 3}},
+      {internal::FaceDir::kNegZ, {0, 4, 6, 2}},
+      {internal::FaceDir::kPosZ, {1, 3, 7, 5}},
+      {internal::FaceDir::kNegX, {0, 2, 3, 1}},
+      {internal::FaceDir::kPosX, {4, 5, 7, 6}},
   }};
 
   for (const FacePlan& plan : kPlans) {
@@ -1486,21 +1488,23 @@ void EmitSheepBox(const SheepBoxSpec& box,
     }
     const float nl = l / kSheetW, nt = t / kSheetH, nr = r / kSheetW,
                 nb = b / kSheetH;
-    // Side faces attach (right,bottom)(left,bottom)(left,top)(right,
-    // top) to the CW corner order; the up face keeps (l,b)(r,b)(r,t)
-    // (l,t).
-    const std::array<std::array<float, 2>, 4> uvs =
-        (plan.dir == internal::FaceDir::kPosY)
-            ? std::array<std::array<float, 2>, 4>{{
-                  {{nl, nb}}, {{nr, nb}}, {{nr, nt}}, {{nl, nt}}}}
-            : std::array<std::array<float, 2>, 4>{{
-                  {{nr, nb}}, {{nl, nb}}, {{nl, nt}}, {{nr, nt}}}};
 
-    std::array<std::array<float, 3>, 4> pos{};
+    // Model-space corners first (pre-transform): UVs project onto the
+    // face's image axes exactly like block faces (CubeFaceUvRect /
+    // ModelFaceAxes), so upright orientation and per-face mirroring
+    // match vanilla's FaceBakery convention by construction; the
+    // world positions then carry them through the part/yaw transform.
+    std::array<std::array<float, 3>, 4> model{};
     for (int i = 0; i < 4; ++i) {
       const int ci = plan.corners[i];
-      pos[i] = to_world((ci & 4) ? bx1 : bx0, (ci & 2) ? by1 : by0,
-                        (ci & 1) ? bz1 : bz0);
+      model[i] = {(ci & 4) ? bx1 : bx0, (ci & 2) ? by1 : by0,
+                  (ci & 1) ? bz1 : bz0};
+    }
+    const std::array<std::array<float, 2>, 4> uvs = internal::CubeFaceUvRect(
+        plan.dir, model, std::array<float, 4>{nl, nt, nr, nb});
+    std::array<std::array<float, 3>, 4> pos{};
+    for (int i = 0; i < 4; ++i) {
+      pos[i] = to_world(model[i][0], model[i][1], model[i][2]);
     }
     // Geometric normal: matches PushQuadIndices' flipped winding.
     const float ax1 = pos[2][0] - pos[0][0], ay1 = pos[2][1] - pos[0][1],
@@ -1523,6 +1527,14 @@ void EmitSheepBox(const SheepBoxSpec& box,
 
     const std::uint32_t base =
         static_cast<std::uint32_t>(out_mesh.positions.size() / 3);
+    // Per-tile atlas mapping, exactly like EmitSingleFace: the face
+    // uvs are fractions of the entity SHEET, and the slot carries
+    // repeats_x/y tiled copies -- mapping over the full slot would
+    // sample across tile boundaries.
+    const float tile_u =
+        (slot.u1 - slot.u0) / static_cast<float>(slot.repeats_x);
+    const float tile_v =
+        (slot.v1 - slot.v0) / static_cast<float>(slot.repeats_y);
     for (int i = 0; i < 4; ++i) {
       out_mesh.positions.push_back(pos[i][0]);
       out_mesh.positions.push_back(pos[i][1]);
@@ -1530,8 +1542,8 @@ void EmitSheepBox(const SheepBoxSpec& box,
       out_mesh.normals.push_back(nx);
       out_mesh.normals.push_back(ny);
       out_mesh.normals.push_back(nz);
-      out_mesh.uvs.push_back(slot.u0 + (slot.u1 - slot.u0) * uvs[i][0]);
-      out_mesh.uvs.push_back(slot.v0 + (slot.v1 - slot.v0) * uvs[i][1]);
+      out_mesh.uvs.push_back(slot.u0 + tile_u * uvs[i][0]);
+      out_mesh.uvs.push_back(slot.v0 + tile_v * uvs[i][1]);
       out_mesh.ao.push_back(255);
       out_mesh.tints.push_back(0);
     }

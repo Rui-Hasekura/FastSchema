@@ -199,9 +199,18 @@ TEST(ResourcePackTest, ChestSynthesizesEntityModelFaces) {
   auto left =
       (*pack)->Resolve("minecraft:chest", Props("facing=south,type=left"));
   ASSERT_TRUE(left.has_value());
-  ASSERT_EQ(left->faces.size(), 18u);
+  // 3 boxes x 6 faces minus each box's seam-side (west) face, whose
+  // strips the double sheets never paint.
+  ASSERT_EQ(left->faces.size(), 15u);
   for (const ModelFace& f : left->faces) {
     EXPECT_EQ(f.texture_path, "minecraft:entity/chest/normal_left");
+    // The seam-side face must never be emitted (its strip is fully
+    // transparent in the sheet).
+    bool all_x0 = true;
+    for (const auto& c : f.corners) {
+      all_x0 = all_x0 && std::abs(c[0]) < 1e-4f;
+    }
+    EXPECT_FALSE(all_x0) << "left half emitted its west (seam) face";
   }
   float min_x = 1e30f, max_x = -1e30f;
   for (const ModelFace& f : left->faces) {
@@ -213,6 +222,19 @@ TEST(ResourcePackTest, ChestSynthesizesEntityModelFaces) {
   EXPECT_NEAR(min_x, 0.0f, 1e-4f);
   EXPECT_NEAR(max_x, 15.0f / 16.0f, 1e-4f);
 
+  auto right =
+      (*pack)->Resolve("minecraft:chest", Props("facing=south,type=right"));
+  ASSERT_TRUE(right.has_value());
+  ASSERT_EQ(right->faces.size(), 15u);
+  for (const ModelFace& f : right->faces) {
+    EXPECT_EQ(f.texture_path, "minecraft:entity/chest/normal_right");
+    bool all_x1 = true;
+    for (const auto& c : f.corners) {
+      all_x1 = all_x1 && std::abs(c[0] - 1.0f) < 1e-4f;
+    }
+    EXPECT_FALSE(all_x1) << "right half emitted its east (seam) face";
+  }
+
   // The waxed copper family maps to the oxidation-level sheet.
   auto copper = (*pack)->Resolve("minecraft:waxed_weathered_copper_chest",
                                  Props("facing=south,type=single"));
@@ -220,6 +242,134 @@ TEST(ResourcePackTest, ChestSynthesizesEntityModelFaces) {
   ASSERT_EQ(copper->faces.size(), 18u);
   for (const ModelFace& f : copper->faces) {
     EXPECT_EQ(f.texture_path, "minecraft:entity/chest/copper_weathered");
+  }
+}
+
+TEST(ResourcePackTest, ChestFacesAreRectsOnBoxPlanes) {
+  // Regression for the corner-index convention: every face must sit
+  // exactly on one of the box planes (no diagonal "fin" quads slicing
+  // through the box, no missing north/south planes), be a rectangle,
+  // wind outward per the flipped-triangle convention, and sample
+  // exactly its box-UV strip with the texture upright.
+  ChestPack fx;
+  auto pack = ResourcePack::Load(fx.root.Get().generic_string());
+  ASSERT_TRUE(pack.has_value());
+  auto single = (*pack)->Resolve("minecraft:chest",
+                                 Props("facing=south,type=single"));
+  ASSERT_TRUE(single.has_value()) << ToString(single.error());
+  ASSERT_EQ(single->faces.size(), 18u);
+
+  struct Box {
+    const char* name;
+    float lo[3], hi[3];  // extents, /16 block units
+  };
+  const Box kBoxes[] = {
+      {"bottom", {1, 0, 1}, {15, 10, 15}},
+      {"lid", {1, 9, 1}, {15, 14, 15}},
+      {"latch", {7, 7, 15}, {9, 11, 16}},
+  };
+  const float kEps = 1e-4f;
+  const ModelFace* face_of[3][6] = {};  // [box][axis*2 + hi]
+
+  for (const ModelFace& f : single->faces) {
+    // Match the face to exactly one (box, plane): all corners on the
+    // plane and inside the box.
+    int matches = 0, box = -1, plane = -1;
+    for (int bi = 0; bi < 3; ++bi) {
+      for (int pl = 0; pl < 6; ++pl) {
+        const int axis = pl / 2;
+        const float pv = (pl % 2 ? kBoxes[bi].hi[axis] : kBoxes[bi].lo[axis]) /
+                         16.0f;
+        bool on_plane = true, inside = true;
+        for (const auto& c : f.corners) {
+          if (std::abs(c[axis] - pv) > kEps) on_plane = false;
+          for (int k = 0; k < 3; ++k) {
+            if (c[k] < kBoxes[bi].lo[k] / 16.0f - kEps ||
+                c[k] > kBoxes[bi].hi[k] / 16.0f + kEps) {
+              inside = false;
+            }
+          }
+        }
+        if (on_plane && inside) {
+          ++matches;
+          box = bi;
+          plane = pl;
+        }
+      }
+    }
+    ASSERT_EQ(matches, 1) << "face belongs to " << matches << " box planes";
+    ASSERT_EQ(face_of[box][plane], nullptr)
+        << "duplicate face for " << kBoxes[box].name << " plane " << plane;
+    face_of[box][plane] = &f;
+
+    // Rectangle: adjacent edges perpendicular (a 45-degree sheared
+    // "fin" fails this).
+    const auto& c = f.corners;
+    const float e1[3] = {c[1][0] - c[0][0], c[1][1] - c[0][1],
+                         c[1][2] - c[0][2]};
+    const float e3[3] = {c[3][0] - c[0][0], c[3][1] - c[0][1],
+                         c[3][2] - c[0][2]};
+    EXPECT_NEAR(e1[0] * e3[0] + e1[1] * e3[1] + e1[2] * e3[2], 0.0f, kEps)
+        << "quad is not a rectangle";
+
+    // Outward winding: n = (c2-c0) x (c1-c0) is the geometric normal
+    // of PushQuadIndices' first flipped triangle; it must point away
+    // from the box centre.
+    const float a[3] = {c[2][0] - c[0][0], c[2][1] - c[0][1],
+                        c[2][2] - c[0][2]};
+    const float n[3] = {a[1] * e1[2] - a[2] * e1[1],
+                        a[2] * e1[0] - a[0] * e1[2],
+                        a[0] * e1[1] - a[1] * e1[0]};
+    float fc[3] = {0, 0, 0}, bc[3] = {0, 0, 0};
+    for (int i = 0; i < 4; ++i) {
+      for (int k = 0; k < 3; ++k) fc[k] += c[i][k] / 4.0f;
+    }
+    for (int k = 0; k < 3; ++k) {
+      bc[k] = (kBoxes[box].lo[k] + kBoxes[box].hi[k]) / 32.0f;
+    }
+    const float away[3] = {fc[0] - bc[0], fc[1] - bc[1], fc[2] - bc[2]};
+    EXPECT_GT(n[0] * away[0] + n[1] * away[1] + n[2] * away[2], 0.0f)
+        << "winding points into the box";
+  }
+
+  // All 18 (box, plane) combos covered exactly once.
+  for (int bi = 0; bi < 3; ++bi) {
+    for (int pl = 0; pl < 6; ++pl) {
+      EXPECT_NE(face_of[bi][pl], nullptr)
+          << kBoxes[bi].name << " missing plane " << pl;
+    }
+  }
+
+  // Strip rects (texels on the 64x64 sheet, /64): bottom north/up,
+  // lid south, latch north. v is measured from the sheet's top row.
+  auto expect_strip = [&](const ModelFace* f, float l, float r, float t,
+                          float b) {
+    ASSERT_NE(f, nullptr);
+    float umn = 1e30f, umx = -1e30f, vmn = 1e30f, vmx = -1e30f;
+    for (const auto& uv : f->uvs) {
+      umn = std::min(umn, uv[0]);
+      umx = std::max(umx, uv[0]);
+      vmn = std::min(vmn, uv[1]);
+      vmx = std::max(vmx, uv[1]);
+    }
+    EXPECT_NEAR(umn, l / 64.0f, kEps);
+    EXPECT_NEAR(umx, r / 64.0f, kEps);
+    EXPECT_NEAR(vmn, t / 64.0f, kEps);
+    EXPECT_NEAR(vmx, b / 64.0f, kEps);
+  };
+  expect_strip(face_of[0][4], 14, 28, 33, 43);   // bottom north
+  expect_strip(face_of[0][3], 28, 42, 19, 33);   // bottom up
+  expect_strip(face_of[1][5], 42, 56, 14, 19);   // lid south
+  expect_strip(face_of[2][4], 1, 3, 1, 5);       // latch north
+
+  // Upright: on the bottom box's north face the strip's top row (v =
+  // 33/64) lands on the face's top edge (y = 10/16).
+  const ModelFace* bn = face_of[0][4];
+  ASSERT_NE(bn, nullptr);
+  for (int i = 0; i < 4; ++i) {
+    const float want = bn->corners[i][1] > 0.5f ? 33.0f / 64.0f
+                                                : 43.0f / 64.0f;
+    EXPECT_NEAR(bn->uvs[i][1], want, kEps) << "corner " << i;
   }
 }
 
