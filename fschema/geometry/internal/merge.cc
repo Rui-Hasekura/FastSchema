@@ -112,6 +112,29 @@ struct GroupKeyHash {
   }
 };
 
+// Emits the six indices of one quad (vertices base+0..base+3).
+//
+// The triangle winding follows the glTF front-face convention: a
+// triangle is front-facing (counter-clockwise) when viewed from the
+// direction its face normal points. BuildCubeFace and the merge
+// reconstructor lay out corners clockwise from outside -- with the
+// natural (0,1,2)(0,2,3) split the cross-product normal would point
+// AGAINST the exported per-vertex normal, so backface-culling consumers
+// (glTF viewers, RaXhine's CCW/Back pipeline) would cull every exterior
+// face and show the mesh inside-out. Flipping the vertex order per
+// triangle aligns the geometric winding with the exported normal;
+// vertex order (positions/uvs/ao per corner) is untouched, and fluid
+// back-face quads -- whose corners are already reversed relative to
+// their front -- flip consistently with them.
+void PushQuadIndices(Mesh& out_mesh, std::uint32_t base) {
+  out_mesh.indices.push_back(base + 0);
+  out_mesh.indices.push_back(base + 2);
+  out_mesh.indices.push_back(base + 1);
+  out_mesh.indices.push_back(base + 0);
+  out_mesh.indices.push_back(base + 3);
+  out_mesh.indices.push_back(base + 2);
+}
+
 // Greedy merge for one group of coplanar faces.
 void MergeGroup(const std::vector<const VisibleFaceInfo*>& group_faces,
                 const TextureAtlas& atlas,
@@ -289,12 +312,7 @@ void MergeGroup(const std::vector<const VisibleFaceInfo*>& group_faces,
         out_mesh.ao.push_back(ao[i]);
         out_mesh.tints.push_back(bl->tint_slot);
       }
-      out_mesh.indices.push_back(base + 0);
-      out_mesh.indices.push_back(base + 1);
-      out_mesh.indices.push_back(base + 2);
-      out_mesh.indices.push_back(base + 0);
-      out_mesh.indices.push_back(base + 2);
-      out_mesh.indices.push_back(base + 3);
+      PushQuadIndices(out_mesh, base);
     }
   }
 }
@@ -323,12 +341,7 @@ void EmitFacesDirectly(const std::vector<VisibleFaceInfo>& faces,
       out_mesh.ao.push_back(f.ao[i]);
       out_mesh.tints.push_back(f.tint_slot);
     }
-    out_mesh.indices.push_back(base + 0);
-    out_mesh.indices.push_back(base + 1);
-    out_mesh.indices.push_back(base + 2);
-    out_mesh.indices.push_back(base + 0);
-    out_mesh.indices.push_back(base + 2);
-    out_mesh.indices.push_back(base + 3);
+    PushQuadIndices(out_mesh, base);
   }
 }
 

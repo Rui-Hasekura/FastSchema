@@ -351,6 +351,56 @@ TEST(TessellateTest, IndicesFormTwoTrianglesPerFace) {
   }
 }
 
+// glTF front-face convention: every emitted triangle must wind
+// counter-clockwise when viewed from the direction its exported
+// per-vertex normal points, i.e. cross(v1-v0, v2-v0) . normal > 0.
+// Backface-culling consumers (glTF viewers, RaXhine's CCW/Back
+// pipeline) render the mesh inside-out otherwise. Covers both the
+// direct and the greedy-merge emission paths.
+TEST(TessellateTest, TriangleWindingMatchesVertexNormals) {
+  ResourcePackFixture fx;
+  auto pack = ResourcePack::Load(fx.root.Get().generic_string());
+  ASSERT_TRUE(pack.has_value());
+
+  for (bool merge : {false, true}) {
+    StoneRegion sr(3, 2, 3);
+    TessellationOptions opts;
+    opts.merge_coplanar_faces = merge;
+    auto r = TessellateRegion(sr.region, *sr.arena, **pack, opts);
+    ASSERT_TRUE(r.has_value()) << ToString(r.error());
+
+    for (const Mesh* mesh : {&r->opaque_mesh, &r->transparent_mesh}) {
+      ASSERT_EQ(mesh->indices.size() % 3, 0u);
+      for (std::size_t t = 0; t < mesh->indices.size() / 3; ++t) {
+        const std::uint32_t i0 = mesh->indices[t * 3 + 0];
+        const std::uint32_t i1 = mesh->indices[t * 3 + 1];
+        const std::uint32_t i2 = mesh->indices[t * 3 + 2];
+        const float ax = mesh->positions[i1 * 3 + 0] -
+                         mesh->positions[i0 * 3 + 0];
+        const float ay = mesh->positions[i1 * 3 + 1] -
+                         mesh->positions[i0 * 3 + 1];
+        const float az = mesh->positions[i1 * 3 + 2] -
+                         mesh->positions[i0 * 3 + 2];
+        const float bx = mesh->positions[i2 * 3 + 0] -
+                         mesh->positions[i0 * 3 + 0];
+        const float by = mesh->positions[i2 * 3 + 1] -
+                         mesh->positions[i0 * 3 + 1];
+        const float bz = mesh->positions[i2 * 3 + 2] -
+                         mesh->positions[i0 * 3 + 2];
+        const float gx = ay * bz - az * by;
+        const float gy = az * bx - ax * bz;
+        const float gz = ax * by - ay * bx;
+        const float dot = gx * mesh->normals[i0 * 3 + 0] +
+                          gy * mesh->normals[i0 * 3 + 1] +
+                          gz * mesh->normals[i0 * 3 + 2];
+        EXPECT_GT(dot, 0.0f)
+            << (merge ? "[merge] " : "[direct] ") << "triangle " << t
+            << " winds against its normal (dot=" << dot << ")";
+      }
+    }
+  }
+}
+
 TEST(TessellateTest, SameRegionSamePackProducesIdenticalResult) {
   ResourcePackFixture fx;
   auto pack = ResourcePack::Load(fx.root.Get().generic_string());

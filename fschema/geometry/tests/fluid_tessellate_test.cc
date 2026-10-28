@@ -1618,4 +1618,50 @@ TEST(TessellateTest, FluidSidesUseOverlayTextureAgainstLeaves) {
   EXPECT_EQ(backs, 3);
 }
 
+// glTF front-face convention on the fluid paths: front quads, their
+// back-face copies (corners reversed, cull face flipped), and the
+// flow-texture repaints must all wind so that
+// cross(v1-v0, v2-v0) . normal > 0 for every emitted triangle;
+// backface-culling consumers show fluids inside-out otherwise.
+TEST(TessellateTest, FluidQuadWindingMatchesNormals) {
+  GlassWaterPackFixture fx(/*with_flow_textures=*/true);
+  auto pack = ResourcePack::Load(fx.root.Get().generic_string());
+  ASSERT_TRUE(pack.has_value());
+
+  MixedRegion wr({State("minecraft:air"),
+                  State("minecraft:water"),
+                  State("minecraft:stone")},
+                 {1, 0, 0},
+                 {1, 0, 0},
+                 1,
+                 1,
+                 1);
+  auto r =
+      TessellateRegion(wr.region, *wr.arena, **pack, TessellationOptions{});
+  ASSERT_TRUE(r.has_value()) << ToString(r.error());
+
+  // 6 front faces + 5 back faces (up + 4 sides), all in the
+  // transparent mesh.
+  ASSERT_EQ(r->transparent_mesh.VertexCount(), (6u + 5u) * 4u);
+  const Mesh& m = r->transparent_mesh;
+  for (std::size_t t = 0; t < m.indices.size() / 3; ++t) {
+    const std::uint32_t i0 = m.indices[t * 3 + 0];
+    const std::uint32_t i1 = m.indices[t * 3 + 1];
+    const std::uint32_t i2 = m.indices[t * 3 + 2];
+    const float ax = m.positions[i1 * 3 + 0] - m.positions[i0 * 3 + 0];
+    const float ay = m.positions[i1 * 3 + 1] - m.positions[i0 * 3 + 1];
+    const float az = m.positions[i1 * 3 + 2] - m.positions[i0 * 3 + 2];
+    const float bx = m.positions[i2 * 3 + 0] - m.positions[i0 * 3 + 0];
+    const float by = m.positions[i2 * 3 + 1] - m.positions[i0 * 3 + 1];
+    const float bz = m.positions[i2 * 3 + 2] - m.positions[i0 * 3 + 2];
+    const float gx = ay * bz - az * by;
+    const float gy = az * bx - ax * bz;
+    const float gz = ax * by - ay * bx;
+    const float dot = gx * m.normals[i0 * 3 + 0] + gy * m.normals[i0 * 3 + 1] +
+                      gz * m.normals[i0 * 3 + 2];
+    EXPECT_GT(dot, 0.0f) << "fluid triangle " << t
+                          << " winds against its normal (dot=" << dot << ")";
+  }
+}
+
 }  // namespace
