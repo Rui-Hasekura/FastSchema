@@ -35,13 +35,21 @@ class TextureAtlasBuilder {
 
   // Inserts an RGBA8 texture and returns its slot index in
   // TextureAtlas::slots. Deduplicates by texture_path; a repeated path
-  // returns the existing slot. On failure returns kAtlasOverflow and the
-  // builder state is unchanged (insertion can continue or Finalize).
+  // returns the existing slot (a later Insert of the same path ignores
+  // the new repeat counts). `repeats_x`/`repeats_y` pack that many
+  // tiled copies of the texture into the slot rect: the slot then
+  // spans repeats_x * repeats_y texture tiles, which lets merged
+  // quads address the slot in tile units (uv up to repeats) and
+  // still sample the texture. On failure returns kAtlasOverflow and
+  // the builder state is unchanged (insertion can continue or
+  // Finalize).
   [[nodiscard]] ParseResult<std::uint32_t> Insert(
       std::string_view texture_path,
       std::span<const std::uint8_t> rgba,
       std::uint32_t w,
-      std::uint32_t h);
+      std::uint32_t h,
+      std::uint32_t repeats_x = 1,
+      std::uint32_t repeats_y = 1);
 
   // Stitches all inserted textures into one RGBA8 canvas. Consumes the
   // builder (rvalue-only). Slot UVs are normalized against the final
@@ -53,8 +61,14 @@ class TextureAtlasBuilder {
   struct PendingEntry {
     std::uint32_t placement_x = 0;
     std::uint32_t placement_y = 0;
+    // Source texture size (one tile).
+    std::uint32_t src_w = 0;
+    std::uint32_t src_h = 0;
+    // Slot rect size: src_w * repeats_x by src_h * repeats_y.
     std::uint32_t width = 0;
     std::uint32_t height = 0;
+    std::uint32_t repeats_x = 1;
+    std::uint32_t repeats_y = 1;
     std::vector<std::uint8_t> pixels;
   };
 

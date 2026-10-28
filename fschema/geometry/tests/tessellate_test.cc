@@ -240,6 +240,11 @@ TEST(TessellateTest, MergedQuadUvsFollowFaceOrientation) {
 
   const Mesh& m = r->opaque_mesh;
   const auto& slot = r->atlas.slots[0];
+  // Tile units (slot rect / repeats): merged quads address the slot
+  // in tile units, so normalize by one texture tile, not by the whole
+  // tiled slot rect.
+  const float tile_u = (slot.u1 - slot.u0) / slot.repeats_x;
+  const float tile_v = (slot.v1 - slot.v0) / slot.repeats_y;
   constexpr float kEps = 1e-4f;
   int norths = 0, ups = 0;
   for (std::size_t q = 0; q < m.VertexCount() / 4; ++q) {
@@ -247,8 +252,8 @@ TEST(TessellateTest, MergedQuadUvsFollowFaceOrientation) {
     const float nz = m.normals[q * 12 + 2];
     float u[4], v[4];
     for (int k = 0; k < 4; ++k) {
-      u[k] = (m.uvs[(q * 4 + k) * 2 + 0] - slot.u0) / (slot.u1 - slot.u0);
-      v[k] = (m.uvs[(q * 4 + k) * 2 + 1] - slot.v0) / (slot.v1 - slot.v0);
+      u[k] = (m.uvs[(q * 4 + k) * 2 + 0] - slot.u0) / tile_u;
+      v[k] = (m.uvs[(q * 4 + k) * 2 + 1] - slot.v0) / tile_v;
     }
     if (nz < -0.5f) {
       // Merged north wall, merge corner order bW, bE, tE, tW:

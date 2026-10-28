@@ -119,6 +119,14 @@ struct TextureAtlas {
   std::uint32_t height = 0;
   struct Slot {
     float u0 = 0.0f, v0 = 0.0f, u1 = 1.0f, v1 = 1.0f;
+    // Number of texture copies packed into the slot rect, per axis:
+    // the slot spans repeats_x * repeats_y tiles of the texture. A
+    // single tile covers (u1 - u0) / repeats_x in u. Merged quads
+    // address their slot in tile units, so any uv > 1 (a merged wall
+    // spans many tiles) samples the tiled copies instead of running
+    // off the slot into neighbouring atlas regions.
+    std::uint32_t repeats_x = 1;
+    std::uint32_t repeats_y = 1;
   };
   std::vector<Slot> slots;
 };

@@ -1036,6 +1036,119 @@ void AppendMesh(Mesh& dst, const Mesh& src) {
   }
 }
 
+// Builds the shared texture atlas and its path->slot map. When
+// greedy merging is on, merged quads address their slot in tile
+// units (a merged wall quad spans many texture tiles), so each slot
+// carries tiled copies of its texture: try the preferred repeat
+// count first and halve on atlas overflow, down to the compact
+// one-tile slot. At repeats 1 the merge caps its rectangles at 1x1
+// tile, so every quad stays inside its slot either way -- rendering
+// stays correct, only the merge benefit shrinks.
+[[nodiscard]] ParseResult<std::pair<
+    TextureAtlas,
+    absl::flat_hash_map<std::string, std::uint32_t>>>
+BuildAtlasWithSlots(const ResourcePack& pack,
+                    const absl::flat_hash_set<std::string>& paths,
+                    const TessellationOptions& opts) {
+  constexpr std::uint32_t kPreferredRepeat = 8;
+  const std::uint32_t preferred =
+      opts.merge_coplanar_faces ? kPreferredRepeat : 1;
+  static_assert(kPreferredRepeat > 0 && (kPreferredRepeat & (kPreferredRepeat - 1)) == 0,
+                "repeat halving must terminate at 1");
+  for (std::uint32_t repeats = preferred;; repeats >>= 1) {
+    TextureAtlasBuilder builder(opts.atlas_max_extent, opts.atlas_padding);
+    absl::flat_hash_map<std::string, std::uint32_t> to_slot;
+    to_slot.reserve(paths.size());
+    bool overflow = false;
+    for (const std::string& path : paths) {
+      auto tex = pack.LoadTexturePixels(path);
+      if (!tex) return std::unexpected(tex.error());
+      auto slot = builder.Insert(path, tex->rgba, tex->width, tex->height,
+                                 repeats, repeats);
+      if (!slot) {
+        if (slot.error().code == ParseError::Code::kAtlasOverflow &&
+            repeats > 1) {
+          overflow = true;
+          break;
+        }
+        return std::unexpected(slot.error());
+      }
+      to_slot.emplace(path, *slot);
+    }
+    if (!overflow) {
+      return std::make_pair(std::move(builder).Finalize(),
+                            std::move(to_slot));
+    }
+    if (repeats <= 1) {
+      // repeats 1 is the pre-tiled layout; its overflow is final.
+      return std::unexpected(ParseError::At(
+          ParseError::Code::kAtlasOverflow,
+          "atlas overflow at repeat count 1", 0));
+    }
+  }
+}
+
+// Builds the shared texture atlas and its path->slot map. When
+// greedy merging is on, merged quads address their slot in tile
+// units (a merged wall quad spans many texture tiles), so each slot
+// carries tiled copies of its texture: try the preferred repeat
+// count first and halve on atlas overflow, down to the compact
+// one-tile slot. At repeats 1 the merge caps its rectangles at 1x1
+// tile, so every quad stays inside its slot either way -- rendering
+// stays correct, only the merge benefit shrinks.
+[[nodiscard]] ParseResult<std::pair<
+    TextureAtlas,
+    absl::flat_hash_map<std::string, std::uint32_t>>>
+BuildAtlasWithSlots(const ResourcePack& pack,
+                    const absl::flat_hash_set<std::string>& paths,
+                    const TessellationOptions& opts,
+                    bool skip_unresolved,
+                    const TessellationOptions& warn_opts) {
+  constexpr std::uint32_t kPreferredRepeat = 8;
+  const std::uint32_t preferred =
+      opts.merge_coplanar_faces ? kPreferredRepeat : 1;
+  static_assert(kPreferredRepeat > 0 &&
+                    (kPreferredRepeat & (kPreferredRepeat - 1)) == 0,
+                "repeat halving must terminate at 1");
+  for (std::uint32_t repeats = preferred;; repeats >>= 1) {
+    TextureAtlasBuilder builder(opts.atlas_max_extent, opts.atlas_padding);
+    absl::flat_hash_map<std::string, std::uint32_t> to_slot;
+    to_slot.reserve(paths.size());
+    bool overflow = false;
+    for (const std::string& path : paths) {
+      auto tex = pack.LoadTexturePixels(path);
+      if (!tex) {
+        if (skip_unresolved) {
+          RecordWarning(warn_opts, path, tex.error());
+          continue;
+        }
+        return std::unexpected(tex.error());
+      }
+      auto slot = builder.Insert(path, tex->rgba, tex->width, tex->height,
+                                 repeats, repeats);
+      if (!slot) {
+        if (slot.error().code == ParseError::Code::kAtlasOverflow &&
+            repeats > 1) {
+          overflow = true;
+          break;
+        }
+        return std::unexpected(slot.error());
+      }
+      to_slot.emplace(path, *slot);
+    }
+    if (!overflow) {
+      return std::make_pair(std::move(builder).Finalize(),
+                            std::move(to_slot));
+    }
+    if (repeats <= 1) {
+      // repeats 1 is the pre-tiled layout; its overflow is final.
+      return std::unexpected(ParseError::At(
+          ParseError::Code::kAtlasOverflow,
+          "atlas overflow at repeat count 1", 0));
+    }
+  }
+}
+
 // Emit collected faces into the target mesh. Dispatches to direct emit
 // or greedy merge based on opts.merge_coplanar_faces.
 void EmitCollectedFaces(
@@ -1141,23 +1254,13 @@ ParseResult<TessellationResult> TessellateRegion(const ir::Region& region,
     all_texture_paths.emplace("minecraft:block/water_overlay");
   }
   const FluidOverlayInfo overlay{overlay_texture, palette_overlay};
-  TextureAtlasBuilder atlas_builder(opts.atlas_max_extent, opts.atlas_padding);
-  absl::flat_hash_map<std::string, std::uint32_t> texture_to_slot;
-  texture_to_slot.reserve(all_texture_paths.size());
-  for (const std::string& path : all_texture_paths) {
-    auto tex = pack.LoadTexturePixels(path);
-    if (!tex) {
-      if (skip_unresolved) {
-        RecordWarning(opts, path, tex.error());
-        continue;
-      }
-      return std::unexpected(tex.error());
-    }
-    auto slot = atlas_builder.Insert(path, tex->rgba, tex->width, tex->height);
-    if (!slot) return std::unexpected(slot.error());
-    texture_to_slot.emplace(path, *slot);
-  }
-  TextureAtlas atlas = std::move(atlas_builder).Finalize();
+  auto atlas_and_slots =
+      BuildAtlasWithSlots(pack, all_texture_paths, opts, skip_unresolved, opts);
+  if (!atlas_and_slots) return std::unexpected(atlas_and_slots.error());
+  absl::flat_hash_map<std::string, std::uint32_t>& texture_to_slot =
+      atlas_and_slots->second;
+  TessellationResult result;
+  result.atlas = std::move(atlas_and_slots->first);
 
   const std::vector<std::uint8_t> palette_groups =
       BuildPaletteGroups(region, palette_models, skipped);
@@ -1178,9 +1281,6 @@ ParseResult<TessellationResult> TessellateRegion(const ir::Region& region,
   const std::vector<std::uint8_t> fluid_table =
       any_fluid ? BuildFluidTable(region, palette_fluid)
                 : std::vector<std::uint8_t>{};
-
-  TessellationResult result;
-  result.atlas = atlas;
 
   const ir::BoundingBox& b = region.bounds;
   const std::vector<filters::LocalPos> chunk_origins =
@@ -1353,17 +1453,13 @@ ParseResult<TessellationResult> TessellateSchematic(
     all_texture_paths.emplace("minecraft:block/water_overlay");
   }
   // One shared atlas across all regions.
-  TextureAtlasBuilder atlas_builder(opts.atlas_max_extent, opts.atlas_padding);
-  absl::flat_hash_map<std::string, std::uint32_t> texture_to_slot;
-  texture_to_slot.reserve(all_texture_paths.size());
-  for (const std::string& path : all_texture_paths) {
-    auto tex = pack.LoadTexturePixels(path);
-    if (!tex) return std::unexpected(tex.error());
-    auto slot = atlas_builder.Insert(path, tex->rgba, tex->width, tex->height);
-    if (!slot) return std::unexpected(slot.error());
-    texture_to_slot.emplace(path, *slot);
-  }
-  TextureAtlas atlas = std::move(atlas_builder).Finalize();
+  auto atlas_and_slots = BuildAtlasWithSlots(
+      pack, all_texture_paths, opts,
+      /*skip_unresolved=*/false, opts);
+  if (!atlas_and_slots) return std::unexpected(atlas_and_slots.error());
+  absl::flat_hash_map<std::string, std::uint32_t>& texture_to_slot =
+      atlas_and_slots->second;
+  TextureAtlas atlas = std::move(atlas_and_slots->first);
 
   // Per-region walk. Each region uses its own BlockGroupTable for AO
   // and cull; cross-region neighbor checks are not performed, so faces
