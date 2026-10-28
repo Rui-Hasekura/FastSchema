@@ -48,6 +48,7 @@ using fschema::geometry::TessellationOptions;
 using fschema::geometry::TessellationResult;
 using fschema::ir::BlockState;
 using fschema::ir::BoundingBox;
+using fschema::ir::Entity;
 using fschema::ir::PropertyEncoding;
 using fschema::ir::Region;
 using fschema::ir::Schematic;
@@ -299,6 +300,173 @@ TEST(SchematicTest, SingleRegionSchematicMatchesTessellateRegion) {
 
   EXPECT_EQ(sch_result->opaque_mesh.TriangleCount(),
             reg_result->opaque_mesh.TriangleCount());
+}
+
+
+
+// ---- sheep entity rendering ----
+
+// One stone block plus one sheep entity. The sheep must mesh as the
+// vanilla SheepModel + SheepFurModel (12 boxes, 72 quads) anchored at
+// the entity position (feet, bottom-center of the hitbox) and facing
+// the entity yaw direction.
+struct SheepSchematic {
+  std::unique_ptr<Arena> arena = std::make_unique<Arena>();
+  Schematic schematic{};
+
+  explicit SheepSchematic(float yaw_deg) {
+    schematic.source_format = SourceFormat::kLitematica;
+    schematic.source_version = 6;
+    schematic.data_version = 3105;
+    schematic.arena = std::move(arena);
+    schematic.regions.resize(1);
+    Region& r = schematic.regions[0];
+    r.name = "main";
+    r.bounds = BoundingBox{/*.origin=*/{0, 0, 0}, /*.size=*/{1, 1, 1}};
+    r.palette = {
+        BlockState{.name = "minecraft:air",
+                   .prop_encoding = PropertyEncoding::kNone},
+        BlockState{.name = "minecraft:stone",
+                   .prop_encoding = PropertyEncoding::kNone},
+    };
+    r.is_air_lut.assign(2, 0);
+    r.is_air_lut[0] = 1;
+    r.block_indices = UnInitBuffer<std::uint16_t>(1, schematic.arena.get());
+    *reinterpret_cast<std::uint16_t*>(r.block_indices.data()) = 1;
+    r.is_materialized = true;
+    r.lazy_source.encoding = fschema::ir::BlockDataEncoding::kNone;
+
+    static const char kSheepId[] = "minecraft:sheep";
+    r.entities.push_back(Entity{
+        .id = kSheepId,
+        .position = {10.5, 20.0, 30.5},
+        .rotation = {yaw_deg, 0.0f},
+    });
+  }
+};
+
+void WriteSheepTextures(const std::filesystem::path& base) {
+  std::vector<std::uint8_t> skin(64 * 32 * 4, 0x9A);
+  std::vector<std::uint8_t> wool(64 * 32 * 4, 0xF0);
+  fschema::tests::WritePngFile(
+      base / "assets" / "minecraft" / "textures" / "entity" / "sheep" /
+          "sheep.png",
+      64, 32, skin.data());
+  fschema::tests::WritePngFile(
+      base / "assets" / "minecraft" / "textures" / "entity" / "sheep" /
+          "sheep_wool.png",
+      64, 32, wool.data());
+}
+
+TEST(SchematicTest, SheepEntityMeshesAtAnchor) {
+  ResourcePackFixture fx;
+  WriteSheepTextures(fx.root.Get());
+  auto pack = ResourcePack::Load(fx.root.Get().generic_string());
+  ASSERT_TRUE(pack.has_value());
+
+  SheepSchematic ts(0.0f);
+  auto r = TessellateSchematic(ts.schematic, **pack, TessellationOptions{});
+  ASSERT_TRUE(r.has_value()) << ToString(r.error());
+
+  // Stone block: 6 faces = 12 triangles. Sheep: 12 boxes x 6 faces
+  // = 72 quads = 144 triangles.
+  EXPECT_EQ(r->opaque_mesh.TriangleCount(), 12u + 144u);
+  EXPECT_EQ(r->opaque_mesh.VertexCount(), (6u + 72u) * 4);
+
+  // Entity quads: anchored at (10.5, 20, 30.5), feet at y=20, model
+  // within a block-wide column, head (with yaw 0 the model faces +z)
+  // poking past the anchor's +z side.
+  const auto& m = r->opaque_mesh;
+  float min_y = 1e30f, max_y = -1e30f, min_z = 1e30f, max_z = -1e30f;
+  float min_x = 1e30f, max_x = -1e30f;
+  std::size_t entity_quads = 0;
+  for (std::size_t q = 0; q < m.VertexCount() / 4; ++q) {
+    float cx = 0;
+    for (std::size_t i = 0; i < 4; ++i) {
+      cx += m.positions[(q * 4 + i) * 3 + 0];
+    }
+    cx /= 4;
+    if (cx > 5.0f) {  // away from the stone block at the origin
+      ++entity_quads;
+      for (std::size_t i = 0; i < 4; ++i) {
+        const float x = m.positions[(q * 4 + i) * 3 + 0];
+        const float y = m.positions[(q * 4 + i) * 3 + 1];
+        const float z = m.positions[(q * 4 + i) * 3 + 2];
+        min_y = std::min(min_y, y);
+        max_y = std::max(max_y, y);
+        min_z = std::min(min_z, z);
+        max_z = std::max(max_z, z);
+        min_x = std::min(min_x, x);
+        max_x = std::max(max_x, x);
+      }
+    }
+  }
+  ASSERT_EQ(entity_quads, 72u);
+  // Feet at the anchor y, model up to the head top (+wool inflate).
+  EXPECT_NEAR(min_y, 20.0f, 0.01f);
+  EXPECT_GT(max_y, 21.3f);
+  EXPECT_LT(max_y, 21.6f);
+  // X/Z centred on the anchor (the wool-inflated body spans the
+  // anchor +-0.61 on z).
+  EXPECT_GT(min_x, 9.9f);
+  EXPECT_LT(max_x, 11.1f);
+  EXPECT_GT(min_z, 29.8f);
+  EXPECT_LT(min_z, 30.0f);
+  // Head toward +z (yaw 0 faces south): the head tip reaches
+  // anchor+0.875, past the wool body's +0.61 end.
+  EXPECT_GT(max_z, 31.3f);
+  EXPECT_LT(max_z, 31.5f);
+}
+
+TEST(SchematicTest, SheepEntityRespectsYaw) {
+  ResourcePackFixture fx;
+  WriteSheepTextures(fx.root.Get());
+  auto pack = ResourcePack::Load(fx.root.Get().generic_string());
+  ASSERT_TRUE(pack.has_value());
+
+  SheepSchematic ts(180.0f);
+  auto r = TessellateSchematic(ts.schematic, **pack, TessellationOptions{});
+  ASSERT_TRUE(r.has_value()) << ToString(r.error());
+
+  const auto& m = r->opaque_mesh;
+  float max_z = -1e30f, min_z = 1e30f;
+  std::size_t entity_quads = 0;
+  for (std::size_t q = 0; q < m.VertexCount() / 4; ++q) {
+    float cx = 0;
+    for (std::size_t i = 0; i < 4; ++i) {
+      cx += m.positions[(q * 4 + i) * 3 + 0];
+    }
+    cx /= 4;
+    if (cx > 5.0f) {
+      ++entity_quads;
+      for (std::size_t i = 0; i < 4; ++i) {
+        const float z = m.positions[(q * 4 + i) * 3 + 2];
+        max_z = std::max(max_z, z);
+        min_z = std::min(min_z, z);
+      }
+    }
+  }
+  ASSERT_EQ(entity_quads, 72u);
+  // Yaw 180 faces north: the head tip pokes past -z
+  // (anchor-0.875), and +z stops at the wool body's end
+  // (anchor+0.61) instead of the yaw-0 head tip (anchor+0.875).
+  EXPECT_LT(min_z, 29.7f);
+  EXPECT_GT(min_z, 29.5f);
+  EXPECT_GT(max_z, 31.0f);
+  EXPECT_LT(max_z, 31.2f);
+}
+
+TEST(SchematicTest, SheepEntitySkippedWithoutTextures) {
+  // No entity textures in the pack: the sheep contributes no
+  // geometry (only the stone block remains).
+  ResourcePackFixture fx;
+  auto pack = ResourcePack::Load(fx.root.Get().generic_string());
+  ASSERT_TRUE(pack.has_value());
+
+  SheepSchematic ts(0.0f);
+  auto r = TessellateSchematic(ts.schematic, **pack, TessellationOptions{});
+  ASSERT_TRUE(r.has_value()) << ToString(r.error());
+  EXPECT_EQ(r->opaque_mesh.TriangleCount(), 12u);
 }
 
 }  // namespace

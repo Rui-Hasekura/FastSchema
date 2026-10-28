@@ -1379,6 +1379,224 @@ ParseResult<TessellationResult> TessellateRegion(const ir::Region& region,
   return result;
 }
 
+// ---------------------------------------------------------------------------
+// Entity models: sheep.
+//
+// Schematics carry mobs in region.entities; the mesher ignores them
+// entirely, so a sheep placed inside the build vanishes. Mesh the
+// vanilla SheepModel (plus the SheepFurModel wool overlay) like any
+// other geometry: boxes in Java's Y-down model space posed per part,
+// wrapped by the root transform (RotX(pi), then translate (0.5,1.5,
+// 0.5)) that flips to Y-up block space with the feet at y=0 and the
+// model facing +Z, then rotated by the entity yaw about the anchor
+// (bottom-center of the hitbox) so it faces (-sin(yaw), 0, cos(yaw))
+// like vanilla's entity renderer. Box UVs follow the standard entity
+// sheet layout (64x32 for sheep). Values mirror the SheepModel dump
+// used by Schematic-Mesher (MC 1.21).
+//
+// Baby/sheared variants live in raw NBT and stay unsupported; the
+// adult unsheared model covers the common schematic case.
+// ---------------------------------------------------------------------------
+struct SheepBoxSpec {
+  // Box extents in 1/16 model units (Y-down), relative to the part
+  // pivot; inflate expands about the box center like vanilla.
+  float x0, y0, z0, x1, y1, z1;
+  float inflate;               // 1/16 units
+  int u_off, v_off;            // texture offset, texels
+  float px, py, pz;            // pivot, 1/16 model units
+  float rot_x;                 // pose rotation about X, radians
+};
+
+// Emits one entity box (six quads) into `out_mesh`. `anchor` is the
+// entity position (feet, bottom-center of the hitbox) in mesh space;
+// `yaw_deg` the entity yaw.
+void EmitSheepBox(const SheepBoxSpec& box,
+                  const TextureAtlas::Slot& slot,
+                  double ax, double ay, double az,
+                  float yaw_deg,
+                  Mesh& out_mesh) {
+  const float rad = yaw_deg * 3.14159265f / 180.0f;
+  const float sy = std::sin(rad), cy = std::cos(rad);
+  const float inf = box.inflate;
+  const float bx0 = (box.x0 - inf) / 16.0f, bx1 = (box.x1 + inf) / 16.0f;
+  const float by0 = (box.y0 - inf) / 16.0f, by1 = (box.y1 + inf) / 16.0f;
+  const float bz0 = (box.z0 - inf) / 16.0f, bz1 = (box.z1 + inf) / 16.0f;
+
+  // Model point -> world. Part rotation about the pivot, root wrapper
+  // (Rx(pi) then translate), yaw about the cell-center axis, anchor at
+  // the entity feet position.
+  const float crx = std::cos(box.rot_x), srx = std::sin(box.rot_x);
+  auto to_world = [&](float x, float y, float z) {
+    if (box.rot_x != 0.0f) {
+      const float ny = y * crx - z * srx;
+      const float nz = y * srx + z * crx;
+      y = ny;
+      z = nz;
+    }
+    x += box.px / 16.0f;
+    y += box.py / 16.0f;
+    z += box.pz / 16.0f;
+    // Root: Rx(pi) flips Y and Z, then translate to cell center.
+    const float lx = x + 0.5f, ly = -y + 1.5f, lz = -z + 0.5f;
+    // Yaw about (0.5, ., 0.5), then place the cell's bottom-center at
+    // the anchor. Ry(-yaw) makes the +Z-facing model look toward
+    // (-sin, 0, cos) of the entity yaw.
+    const float dx = lx - 0.5f, dz = lz - 0.5f;
+    const float rx = dx * cy - dz * sy;
+    const float rz = dx * sy + dz * cy;
+    return std::array<float, 3>{static_cast<float>(ax) + rx,
+                                static_cast<float>(ay) + ly,
+                                static_cast<float>(az) + rz};
+  };
+
+  const float w = box.x1 - box.x0, h = box.y1 - box.y0,
+              d = box.z1 - box.z0;  // texels
+  const float u = static_cast<float>(box.u_off);
+  const float v = static_cast<float>(box.v_off);
+  constexpr float kSheetW = 64.0f, kSheetH = 32.0f;
+
+  struct FacePlan {
+    internal::FaceDir dir;
+    int corners[4];  // CW from outside (PushQuadIndices flips)
+  };
+  static constexpr std::array<FacePlan, 6> kPlans = {{
+      {internal::FaceDir::kNegY, {4, 5, 1, 0}},
+      {internal::FaceDir::kPosY, {3, 2, 6, 7}},
+      {internal::FaceDir::kNegZ, {2, 3, 0, 1}},
+      {internal::FaceDir::kPosZ, {7, 6, 5, 4}},
+      {internal::FaceDir::kNegX, {3, 7, 4, 0}},
+      {internal::FaceDir::kPosX, {6, 2, 1, 5}},
+  }};
+
+  for (const FacePlan& plan : kPlans) {
+    float l, t, r, b;
+    switch (plan.dir) {
+      case internal::FaceDir::kNegY:
+        l = u + d; t = v; r = l + w; b = v + d; break;
+      case internal::FaceDir::kPosY:
+        l = u + d + w; t = v; r = l + w; b = v + d; break;
+      case internal::FaceDir::kNegZ:
+        l = u + d; t = v + d; r = l + w; b = t + h; break;
+      case internal::FaceDir::kPosZ:
+        l = u + d + w + d; t = v + d; r = l + w; b = t + h; break;
+      case internal::FaceDir::kNegX:
+        l = u; t = v + d; r = l + d; b = t + h; break;
+      default:
+        l = u + d + w; t = v + d; r = l + d; b = t + h; break;
+    }
+    const float nl = l / kSheetW, nt = t / kSheetH, nr = r / kSheetW,
+                nb = b / kSheetH;
+    // Side faces attach (right,bottom)(left,bottom)(left,top)(right,
+    // top) to the CW corner order; the up face keeps (l,b)(r,b)(r,t)
+    // (l,t).
+    const std::array<std::array<float, 2>, 4> uvs =
+        (plan.dir == internal::FaceDir::kPosY)
+            ? std::array<std::array<float, 2>, 4>{{
+                  {{nl, nb}}, {{nr, nb}}, {{nr, nt}}, {{nl, nt}}}}
+            : std::array<std::array<float, 2>, 4>{{
+                  {{nr, nb}}, {{nl, nb}}, {{nl, nt}}, {{nr, nt}}}};
+
+    std::array<std::array<float, 3>, 4> pos{};
+    for (int i = 0; i < 4; ++i) {
+      const int ci = plan.corners[i];
+      pos[i] = to_world((ci & 4) ? bx1 : bx0, (ci & 2) ? by1 : by0,
+                        (ci & 1) ? bz1 : bz0);
+    }
+    // Geometric normal: matches PushQuadIndices' flipped winding.
+    const float ax1 = pos[2][0] - pos[0][0], ay1 = pos[2][1] - pos[0][1],
+                az1 = pos[2][2] - pos[0][2];
+    const float bx1v = pos[1][0] - pos[0][0], by1v = pos[1][1] - pos[0][1],
+                bz1v = pos[1][2] - pos[0][2];
+    float nx = ay1 * bz1v - az1 * by1v;
+    float ny = az1 * bx1v - ax1 * bz1v;
+    float nz = ax1 * by1v - ay1 * bx1v;
+    const float len = std::sqrt(nx * nx + ny * ny + nz * nz);
+    if (len > 1e-9f) {
+      nx /= len;
+      ny /= len;
+      nz /= len;
+    } else {
+      nx = 0;
+      ny = 1;
+      nz = 0;
+    }
+
+    const std::uint32_t base =
+        static_cast<std::uint32_t>(out_mesh.positions.size() / 3);
+    for (int i = 0; i < 4; ++i) {
+      out_mesh.positions.push_back(pos[i][0]);
+      out_mesh.positions.push_back(pos[i][1]);
+      out_mesh.positions.push_back(pos[i][2]);
+      out_mesh.normals.push_back(nx);
+      out_mesh.normals.push_back(ny);
+      out_mesh.normals.push_back(nz);
+      out_mesh.uvs.push_back(slot.u0 + (slot.u1 - slot.u0) * uvs[i][0]);
+      out_mesh.uvs.push_back(slot.v0 + (slot.v1 - slot.v0) * uvs[i][1]);
+      out_mesh.ao.push_back(255);
+      out_mesh.tints.push_back(0);
+    }
+    out_mesh.indices.push_back(base + 0);
+    out_mesh.indices.push_back(base + 2);
+    out_mesh.indices.push_back(base + 1);
+    out_mesh.indices.push_back(base + 0);
+    out_mesh.indices.push_back(base + 3);
+    out_mesh.indices.push_back(base + 2);
+  }
+}
+
+// Appends every sheep found in the schematic's regions.
+void AppendSheep(const ir::Schematic& schematic,
+                 const absl::flat_hash_map<std::string, std::uint32_t>&
+                     texture_to_slot,
+                 const TextureAtlas& atlas,
+                 Mesh& out_mesh) {
+  // SheepModel (base skin) + SheepFurModel (wool overlay).
+  static const std::vector<SheepBoxSpec> kSkin = {
+      // head 6x6x8 at pose (0,6,-8)
+      {-3, -4, -6, 3, 2, 2, 0.0f, 0, 0, 0, 6, -8, 0.0f},
+      // body 8x16x6 at pose (0,5,2), RotX(90)
+      {-4, -10, -7, 4, 6, -1, 0.0f, 28, 8, 0, 5, 2, 1.5707964f},
+      // legs 4x12x4, poses (+-3,12,+-7 / +-5)
+      {-2, 0, -2, 2, 12, 2, 0.0f, 0, 16, -3, 12, 7, 0.0f},
+      {-2, 0, -2, 2, 12, 2, 0.0f, 0, 16, 3, 12, 7, 0.0f},
+      {-2, 0, -2, 2, 12, 2, 0.0f, 0, 16, -3, 12, -5, 0.0f},
+      {-2, 0, -2, 2, 12, 2, 0.0f, 0, 16, 3, 12, -5, 0.0f},
+  };
+  static const std::vector<SheepBoxSpec> kWool = {
+      // wool head 6x6x6 (not 6x6x8), inflate 0.6
+      {-3, -4, -4, 3, 2, 2, 0.6f, 0, 0, 0, 6, -8, 0.0f},
+      // wool body, inflate 1.75
+      {-4, -10, -7, 4, 6, -1, 1.75f, 28, 8, 0, 5, 2, 1.5707964f},
+      // wool legs 4x6x4, inflate 0.5
+      {-2, 0, -2, 2, 6, 2, 0.5f, 0, 16, -3, 12, 7, 0.0f},
+      {-2, 0, -2, 2, 6, 2, 0.5f, 0, 16, 3, 12, 7, 0.0f},
+      {-2, 0, -2, 2, 6, 2, 0.5f, 0, 16, -3, 12, -5, 0.0f},
+      {-2, 0, -2, 2, 6, 2, 0.5f, 0, 16, 3, 12, -5, 0.0f},
+  };
+
+  for (const ir::Region& region : schematic.regions) {
+    for (const ir::Entity& ent : region.entities) {
+      if (ent.id != "minecraft:sheep") continue;
+      const float yaw = ent.rotation[0];
+      for (const SheepBoxSpec& box : kSkin) {
+        auto it = texture_to_slot.find("minecraft:entity/sheep/sheep");
+        if (it != texture_to_slot.end()) {
+          EmitSheepBox(box, atlas.slots[it->second], ent.position[0],
+                       ent.position[1], ent.position[2], yaw, out_mesh);
+        }
+      }
+      for (const SheepBoxSpec& box : kWool) {
+        auto it = texture_to_slot.find("minecraft:entity/sheep/sheep_wool");
+        if (it != texture_to_slot.end()) {
+          EmitSheepBox(box, atlas.slots[it->second], ent.position[0],
+                       ent.position[1], ent.position[2], yaw, out_mesh);
+        }
+      }
+    }
+  }
+}
+
+
 ParseResult<TessellationResult> TessellateSchematic(
     const ir::Schematic& schematic,
     const ResourcePack& pack,
@@ -1451,6 +1669,27 @@ ParseResult<TessellationResult> TessellateSchematic(
       pack.LoadTexturePixels("minecraft:block/water_overlay").has_value()) {
     overlay_texture = "minecraft:block/water_overlay";
     all_texture_paths.emplace("minecraft:block/water_overlay");
+  }
+  // Entities (sheep): reserve atlas slots for their entity textures
+  // when any region carries one, probing availability like the fluid
+  // overlay above.
+  bool any_sheep = false;
+  for (const ir::Region& region : schematic.regions) {
+    for (const ir::Entity& ent : region.entities) {
+      if (ent.id == "minecraft:sheep") {
+        any_sheep = true;
+        break;
+      }
+    }
+  }
+  if (any_sheep) {
+    if (pack.LoadTexturePixels("minecraft:entity/sheep/sheep").has_value()) {
+      all_texture_paths.emplace("minecraft:entity/sheep/sheep");
+    }
+    if (pack.LoadTexturePixels("minecraft:entity/sheep/sheep_wool")
+            .has_value()) {
+      all_texture_paths.emplace("minecraft:entity/sheep/sheep_wool");
+    }
   }
   // One shared atlas across all regions.
   auto atlas_and_slots = BuildAtlasWithSlots(
@@ -1610,6 +1849,11 @@ ParseResult<TessellationResult> TessellateSchematic(
                      opts,
                      result.opaque_mesh,
                      result.transparent_mesh);
+
+  // Entities mesh after the blocks: sheep quads carry their own atlas
+  // slots and no AO/cull context.
+  AppendSheep(schematic, texture_to_slot, result.atlas,
+              result.opaque_mesh);
 
   return result;
 }
