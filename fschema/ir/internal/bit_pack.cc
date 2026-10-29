@@ -22,7 +22,7 @@
 #include <span>
 
 #include "fschema/base/port.h"
-#include "tbb/parallel_for.h"
+#include "oneapi/tbb/parallel_for.h"
 
 namespace fschema::ir::internal {
 

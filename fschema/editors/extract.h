@@ -16,10 +16,10 @@
 #ifndef FSCHEMA_EDITORS_EXTRACT_H_
 #define FSCHEMA_EDITORS_EXTRACT_H_
 
-#include <tbb/blocked_range.h>
-#include <tbb/enumerable_thread_specific.h>
-#include <tbb/parallel_for.h>
-#include <tbb/parallel_reduce.h>
+#include <oneapi/tbb/blocked_range.h>
+#include <oneapi/tbb/enumerable_thread_specific.h>
+#include <oneapi/tbb/parallel_for.h>
+#include <oneapi/tbb/parallel_reduce.h>
 
 #include <algorithm>
 #include <cstdint>

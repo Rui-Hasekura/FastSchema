@@ -32,8 +32,8 @@
 #  include <immintrin.h>
 #endif
 
-#include <tbb/blocked_range.h>
-#include <tbb/parallel_for.h>
+#include <oneapi/tbb/blocked_range.h>
+#include <oneapi/tbb/parallel_for.h>
 
 #include "fschema/base/error.h"
 #include "fschema/base/port.h"

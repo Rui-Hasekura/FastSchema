@@ -16,9 +16,9 @@
 #ifndef FSCHEMA_INSPECTORS_DIFF_H_
 #define FSCHEMA_INSPECTORS_DIFF_H_
 
-#include <tbb/blocked_range.h>
-#include <tbb/concurrent_vector.h>
-#include <tbb/parallel_for.h>
+#include <oneapi/tbb/blocked_range.h>
+#include <oneapi/tbb/concurrent_vector.h>
+#include <oneapi/tbb/parallel_for.h>
 
 #include <algorithm>
 #include <cstddef>

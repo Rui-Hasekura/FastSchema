@@ -16,8 +16,8 @@
 #ifndef FSCHEMA_INSPECTORS_FLOATING_CHECK_H_
 #define FSCHEMA_INSPECTORS_FLOATING_CHECK_H_
 
-#include <tbb/blocked_range.h>
-#include <tbb/parallel_for.h>
+#include <oneapi/tbb/blocked_range.h>
+#include <oneapi/tbb/parallel_for.h>
 
 #include <array>
 #include <cmath>

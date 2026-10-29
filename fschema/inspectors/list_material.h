@@ -16,8 +16,8 @@
 #ifndef FSCHEMA_INSPECTORS_LIST_MATERIAL_H_
 #define FSCHEMA_INSPECTORS_LIST_MATERIAL_H_
 
-#include <tbb/blocked_range.h>
-#include <tbb/parallel_reduce.h>
+#include <oneapi/tbb/blocked_range.h>
+#include <oneapi/tbb/parallel_reduce.h>
 
 #include <cstddef>
 #include <cstdint>

@@ -20,19 +20,29 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "fschema/base/block_utils.h"
 #include "fschema/base/compressor.h"
 #include "fschema/base/error.h"
+#include "fschema/filters/view.h"
+#include "fschema/ir/format_handler.h"
+#include "fschema/ir/litematica_handler.h"
+#include "fschema/ir/materialize.h"
+#include "fschema/ir/types.h"
 #include "fschema/litematica/internal/block_states.h"
 #include "fschema/litematica/parse.h"
 #include "fschema/litematica/types.h"
 #include "fschema/memory/arena.h"
+#include "fschema/memory/uninit_buffer.h"
 #include "fschema/tests/testdata_util.h"
 
 namespace fs = std::filesystem;
 namespace fb = fschema::base;
+namespace fir = fschema::ir;
+namespace firc = fschema::ir::format;
+namespace filt = fschema::filters;
 namespace fl = fschema::litematica;
 
 [[nodiscard]] std::uint64_t ExpectedVolume(
@@ -167,4 +177,171 @@ TEST(LitematicaUnpackNegativeTest, FileNotFound) {
 
   EXPECT_FALSE(result.has_value());
   EXPECT_EQ(result.error(), fb::CompressorError::kFileNotFound);
+}
+
+// ---------------------------------------------------------------------------
+// IR decode: negative-size regions and entity anchoring.
+//
+// Litematica anchors two coordinate frames per region: the block array
+// starts at the region's minimum corner, which on a negative-size axis is
+// Position+Size+1 (selection corners are inclusive -- the last block sits
+// ON Position itself), while each entity's Pos is relative to Position.
+// default_4653.litematic has all three sizes negative (Position (3,4,3),
+// Size (-4,-5,-4)) and carries one sheep standing in a glass cell, so it
+// pins both conventions at once: decoded right, the sheep's feet rest
+// exactly on the glass base block under it, the way the game places it.
+// Decoded with a Position+Size origin, every block shifts one cell past
+// the entities on each negative axis and the sheep appears sunk one
+// block into the cell.
+// ---------------------------------------------------------------------------
+
+TEST(LitematicaIrDecodeTest, NegativeSizeOriginAndSheepAnchor) {
+  static bool handlers_registered = false;
+  if (!handlers_registered) {
+    firc::FormatRegistry::Instance().Register(
+        std::make_unique<firc::LitematicaHandler>());
+    handlers_registered = true;
+  }
+
+  const fs::path path =
+      fschema::test::GetTestDataDir() / "default_4653.litematic";
+  auto unpacked = fb::DecompressGzipFile(path);
+  ASSERT_TRUE(unpacked.has_value())
+      << "Decompress failed: " << fb::ToString(unpacked.error());
+
+  auto owner =
+      std::make_unique<std::vector<std::byte>>(std::move(*unpacked));
+  auto decoded =
+      firc::DecodeFromFormat(fir::SourceFormat::kLitematica, std::move(owner));
+  ASSERT_TRUE(decoded.has_value());
+  ASSERT_EQ(decoded->regions.size(), 1u);
+  const fir::Region& r = decoded->regions[0];
+
+  // Raw on-disk values survive verbatim.
+  EXPECT_EQ(r.raw_position, (std::array<std::int32_t, 3>{3, 4, 3}));
+  EXPECT_EQ(r.raw_size, (std::array<std::int32_t, 3>{-4, -5, -4}));
+
+  // Inclusive corners: the block array starts at Position+Size+1 = (0,0,0)
+  // on all three negative axes, not at Position+Size = (-1,-1,-1).
+  EXPECT_EQ(r.bounds.origin[0], 0);
+  EXPECT_EQ(r.bounds.origin[1], 0);
+  EXPECT_EQ(r.bounds.origin[2], 0);
+  EXPECT_EQ(r.bounds.size[0], 4);
+  EXPECT_EQ(r.bounds.size[1], 5);
+  EXPECT_EQ(r.bounds.size[2], 4);
+
+  // Entities are Position-relative: Pos (-0.992, -3.0, -1.55) plus
+  // Position (3,4,3) is where the game pastes the sheep.
+  ASSERT_EQ(r.entities.size(), 1u);
+  EXPECT_EQ(r.entities[0].id, "minecraft:sheep");
+  EXPECT_NEAR(r.entities[0].position[0], 2.007747497834316, 1e-9);
+  EXPECT_NEAR(r.entities[0].position[1], 1.0, 1e-9);
+  EXPECT_NEAR(r.entities[0].position[2], 1.449999988079071, 1e-9);
+
+  // The sheep stands in a glass cell: the block under its feet is the
+  // white stained glass base at local (2,0,1), with air in the cells
+  // above it.
+  ASSERT_TRUE(fir::EnsureMaterialized(r, *decoded->arena).has_value());
+  const std::uint16_t floor_pal =
+      r.block_indices[filt::LinearIndex({2, 0, 1}, r.bounds)];
+  EXPECT_EQ(r.palette[floor_pal].name, "minecraft:white_stained_glass");
+  EXPECT_TRUE(
+      r.IsAir(r.block_indices[filt::LinearIndex({2, 1, 1}, r.bounds)]));
+  EXPECT_TRUE(
+      r.IsAir(r.block_indices[filt::LinearIndex({2, 2, 1}, r.bounds)]));
+
+  // Geometric invariant the renderer depends on: the feet rest exactly
+  // on the top face of the floor block below them. With the wrong
+  // (Position+Size) origin the floor drops to y = -1 and the sheep
+  // floats one block above it, i.e. the structure swallows it.
+  EXPECT_DOUBLE_EQ(r.entities[0].position[1],
+                   static_cast<double>(r.bounds.origin[1] + 0 + 1));
+}
+
+TEST(LitematicaIrDecodeTest, NegativeSizeRoundTripKeepsEntityOnItsBlock) {
+  static bool handlers_registered = false;
+  if (!handlers_registered) {
+    firc::FormatRegistry::Instance().Register(
+        std::make_unique<firc::LitematicaHandler>());
+    handlers_registered = true;
+  }
+
+  // A 2x2x2 region stored the way Litematica saves a flipped selection:
+  // Position (5,6,7), Size (-2,-2,-2), so the block array starts at
+  // (4,5,6) and Position itself is the last block column. One stone sits
+  // at the minimum corner with a sheep standing on top of it.
+  fir::Schematic s;
+  s.source_format = fir::SourceFormat::kLitematica;
+  s.source_version = 6;
+  s.data_version = 3105;
+  s.arena = std::make_unique<fschema::memory::Arena>();
+
+  fir::Region reg;
+  static constexpr char kName[] = "neg";
+  reg.name = kName;
+  reg.raw_position = {5, 6, 7};
+  reg.raw_size = {-2, -2, -2};
+  reg.bounds = {{4, 5, 6}, {2, 2, 2}};
+  reg.palette = {
+      fir::BlockState{.name = "minecraft:air",
+                      .prop_encoding = fir::PropertyEncoding::kNone},
+      fir::BlockState{.name = "minecraft:stone",
+                      .prop_encoding = fir::PropertyEncoding::kNone},
+  };
+  reg.is_air_lut.assign(2, 0);
+  reg.is_air_lut[0] = 1;
+  reg.block_indices = fschema::memory::UnInitBuffer<std::uint16_t>(
+      8, s.arena.get());
+  std::uint16_t* data =
+      reinterpret_cast<std::uint16_t*>(reg.block_indices.data());
+  for (int i = 0; i < 8; ++i) data[i] = 0;  // air
+  data[filt::LinearIndex({0, 0, 0}, reg.bounds)] = 1;  // stone at min corner
+  reg.is_materialized = true;
+  reg.lazy_source.encoding = fir::BlockDataEncoding::kNone;
+
+  static constexpr char kSheepId[] = "minecraft:sheep";
+  reg.entities.push_back(fir::Entity{
+      .id = kSheepId,
+      .position = {4.5, 6.0, 6.5},  // feet on top of the stone at (4,5,6)
+      .rotation = {0.0f, 0.0f},
+  });
+  s.regions.push_back(std::move(reg));
+
+  auto bytes = firc::EncodeToFormat(fir::SourceFormat::kLitematica, s);
+  ASSERT_TRUE(bytes.has_value());
+
+  auto owner =
+      std::make_unique<std::vector<std::byte>>(std::move(*bytes));
+  auto decoded =
+      firc::DecodeFromFormat(fir::SourceFormat::kLitematica, std::move(owner));
+  ASSERT_TRUE(decoded.has_value());
+  ASSERT_EQ(decoded->regions.size(), 1u);
+  const fir::Region& out = decoded->regions[0];
+
+  // On-disk shape and the inclusive-corner origin both survive.
+  EXPECT_EQ(out.raw_position, (std::array<std::int32_t, 3>{5, 6, 7}));
+  EXPECT_EQ(out.raw_size, (std::array<std::int32_t, 3>{-2, -2, -2}));
+  EXPECT_EQ(out.bounds.origin[0], 4);
+  EXPECT_EQ(out.bounds.origin[1], 5);
+  EXPECT_EQ(out.bounds.origin[2], 6);
+  EXPECT_EQ(out.bounds.size[0], 2);
+  EXPECT_EQ(out.bounds.size[1], 2);
+  EXPECT_EQ(out.bounds.size[2], 2);
+
+  // The entity survives at the same world position: the encoder wrote
+  // Pos relative to Position, the decoder adds Position back.
+  ASSERT_EQ(out.entities.size(), 1u);
+  EXPECT_EQ(out.entities[0].id, "minecraft:sheep");
+  EXPECT_NEAR(out.entities[0].position[0], 4.5, 1e-12);
+  EXPECT_NEAR(out.entities[0].position[1], 6.0, 1e-12);
+  EXPECT_NEAR(out.entities[0].position[2], 6.5, 1e-12);
+
+  // The stone lands back at the minimum corner, so the entity's feet
+  // rest exactly on its top face, one block above the origin plane.
+  ASSERT_TRUE(fir::EnsureMaterialized(out, *decoded->arena).has_value());
+  const std::uint16_t stone_pal =
+      out.block_indices[filt::LinearIndex({0, 0, 0}, out.bounds)];
+  EXPECT_EQ(out.palette[stone_pal].name, "minecraft:stone");
+  EXPECT_DOUBLE_EQ(out.entities[0].position[1],
+                   static_cast<double>(out.bounds.origin[1] + 1));
 }

@@ -23,8 +23,8 @@
 #  include <immintrin.h>
 #endif
 
-#include <tbb/blocked_range.h>
-#include <tbb/parallel_for.h>
+#include <oneapi/tbb/blocked_range.h>
+#include <oneapi/tbb/parallel_for.h>
 
 #include <algorithm>
 #include <bit>

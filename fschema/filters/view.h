@@ -21,8 +21,8 @@
 #include <utility>
 
 #include "absl/functional/any_invocable.h"
-#include "tbb/blocked_range.h"
-#include "tbb/parallel_reduce.h"
+#include "oneapi/tbb/blocked_range.h"
+#include "oneapi/tbb/parallel_reduce.h"
 
 #include "fschema/base/error.h"
 #include "fschema/base/port.h"

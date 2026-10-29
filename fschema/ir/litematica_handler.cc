@@ -438,9 +438,20 @@ ParseResult<Schematic> LitematicaHandler::DecodeFromParsed(
     r.name = reg.name;
     r.raw_position = reg.position;
     r.raw_size = reg.size;
+    // Litematica's selection corners are inclusive: on a negative-size
+    // axis the region spans Position+Size+1 .. Position, so the last
+    // block sits ON Position itself (Litematica maps Size to the
+    // inclusive end offset via getRelativeEndPositionFromAreaSize --
+    // Size+1 on negative axes -- and placeBlocksToWorld then anchors
+    // the block array at min(Position, Position+Size+1)). The
+    // block-array origin is therefore Position+Size+1, not
+    // Position+Size; entities keep their own convention below (their
+    // Pos is Position-relative, like takeEntitiesFromWorld writes
+    // it), so mixing the two conventions would leave every block one
+    // cell past the entities on each negative axis.
     for (int i = 0; i < 3; ++i) {
       if (reg.size[i] < 0) {
-        r.bounds.origin[i] = reg.position[i] + reg.size[i];
+        r.bounds.origin[i] = reg.position[i] + reg.size[i] + 1;
         r.bounds.size[i] = -reg.size[i];
       } else {
         r.bounds.origin[i] = reg.position[i];

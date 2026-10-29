@@ -42,9 +42,9 @@
 #include "fschema/ir/materialize.h"
 #include "fschema/ir/types.h"
 #include "fschema/memory/arena.h"
-#include "tbb/blocked_range.h"
-#include "tbb/enumerable_thread_specific.h"
-#include "tbb/parallel_for.h"
+#include "oneapi/tbb/blocked_range.h"
+#include "oneapi/tbb/enumerable_thread_specific.h"
+#include "oneapi/tbb/parallel_for.h"
 
 namespace fschema::geometry {
 

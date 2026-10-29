@@ -16,10 +16,10 @@
 #ifndef FSCHEMA_INSPECTORS_VERSION_CHECK_H_
 #define FSCHEMA_INSPECTORS_VERSION_CHECK_H_
 
-#include <tbb/blocked_range.h>
-#include <tbb/concurrent_vector.h>
-#include <tbb/parallel_for.h>
-#include <tbb/parallel_reduce.h>
+#include <oneapi/tbb/blocked_range.h>
+#include <oneapi/tbb/concurrent_vector.h>
+#include <oneapi/tbb/parallel_for.h>
+#include <oneapi/tbb/parallel_reduce.h>
 
 #include <algorithm>
 #include <cstdint>
