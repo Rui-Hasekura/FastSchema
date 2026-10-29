@@ -131,6 +131,7 @@ if(NOT TARGET TBB::tbb)
         set(TBB_TEST OFF)
         set(TBB_EXAMPLES OFF)
         set(BUILD_SHARED_LIBS ON)
+        set(TCM_BUILD OFF)
         FetchContent_MakeAvailable(oneTBB)
     endblock()
 endif()
@@ -680,7 +681,7 @@ if(FASTSCHEMA_BUILD_TESTS)
     # Parsing
     fschema_add_test(fschema_litematica_parse_test
         SOURCES fschema/tests/litematica_parse_test.cc
-        LINKS fschema::litematica)
+        LINKS fschema::litematica fschema::conversion fschema::tools)
     fschema_add_test(fschema_nbt_parse_test
         SOURCES fschema/tests/nbt_parse_test.cc
         LINKS fschema::nbt)
