@@ -39,6 +39,20 @@ namespace fschema::geometry::internal {
     const std::array<float, 3>& vertex_local,
     float ao_strength) noexcept;
 
+// All four vertex AO bytes of one face in a single pass: shares the
+// face-direction setup (normal axis, in-plane axes, face-adjacent cell
+// linear index) across the corners instead of paying the per-vertex
+// switch/bounds dance four times. Same semantics as calling
+// ComputeVertexAO per corner; `corners` are the face's four
+// block-local vertex positions.
+void ComputeFaceAO(const BlockGroupTable& table,
+                   const ir::BoundingBox& bounds,
+                   filters::LocalPos block_pos,
+                   std::uint8_t cull_face,
+                   const std::array<std::array<float, 3>, 4>& corners,
+                   float ao_strength,
+                   std::array<std::uint8_t, 4>& out_ao) noexcept;
+
 }  // namespace fschema::geometry::internal
 
 #endif  // FSCHEMA_GEOMETRY_INTERNAL_AO_H_

@@ -20,6 +20,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <numbers>
 #include <string>
 #include <string_view>
@@ -71,19 +72,105 @@ namespace {
   }
 }
 
-// The cull/AO group of the neighbor in the cull direction: 0 for air
-// and out-of-bounds, 1 for opaque, 2+ for a transparent group.
-[[nodiscard]] std::uint8_t NeighborGroup(const internal::BlockGroupTable& table,
-                                         const ir::BoundingBox& bounds,
-                                         filters::LocalPos p,
-                                         std::uint8_t cull_face) noexcept {
-  if (cull_face == 0) return 0;
-  const filters::LocalPos nb = NeighborInCullDir(p, cull_face);
-  if (nb.x < 0 || nb.x >= bounds.size[0] || nb.y < 0 ||
-      nb.y >= bounds.size[1] || nb.z < 0 || nb.z >= bounds.size[2]) {
-    return 0;
+// Sentinel atlas slot: "no texture / texture not in the atlas".
+// Faces resolve to this once, at palette-resolution time, instead of
+// hashing their texture path per face in the walk.
+constexpr std::uint32_t kNoSlot = 0xFFFFFFFFu;
+
+// Per-palette-entry atlas slot tables, built once per tessellation
+// after the atlas is finalized: one slot per model face (kNoSlot for
+// empty/missing textures), the flow-texture slot per morphable fluid
+// entry, and the shared water-overlay slot.
+struct PaletteSlotTable {
+  std::vector<std::vector<std::uint32_t>> face_slots;
+  std::vector<std::uint32_t> flow_slots;
+  std::uint32_t overlay_slot = kNoSlot;
+};
+
+// Read-only per-region walk state shared by every worker. (FluidPaletteInfo
+// is defined with the fluid helpers below.)
+struct FluidPaletteInfo;
+
+struct WalkCtx {
+  const ir::Region* region;
+  const std::vector<ResolvedModel>* models;
+  const std::uint8_t* palette_groups;  // per palette entry
+  const FluidPaletteInfo* palette_fluid;  // per palette entry
+  const PaletteSlotTable* slots;
+  const std::uint8_t* overlay_eligible;  // per palette entry
+  const std::vector<std::uint8_t>* fluid_table;  // empty when no fluid
+  const internal::BlockGroupTable* group_table;
+  float ao_strength;   // 0 when ambient occlusion is off
+  bool cull;           // opts.cull_interior_faces
+  bool include_air;
+  std::array<std::int32_t, 3> world_offset{};  // table pos -> world pos
+};
+
+// Face destination: streaming emits straight into the target meshes
+// (no intermediate face buffer); collecting buffers VisibleFaceInfo
+// for the greedy merge.
+template <bool kStream>
+struct FaceSink;
+
+template <>
+struct FaceSink<false> {
+  std::vector<internal::VisibleFaceInfo>* opaque;
+  std::vector<internal::VisibleFaceInfo>* transparent;
+  // Copy, not move: fluid back faces re-emit the front record right
+  // after Put, so the record must stay intact (same front-then-back
+  // order as the old direct-collect path).
+  void Put(const internal::VisibleFaceInfo& f) {
+    (f.is_transparent ? transparent : opaque)->push_back(f);
   }
-  return table.bytes[filters::LinearIndex(nb, bounds)];
+};
+
+template <>
+struct FaceSink<true> {
+  const TextureAtlas* atlas;
+  Mesh* opaque;
+  Mesh* transparent;
+  void Put(const internal::VisibleFaceInfo& f) const {
+    internal::EmitFaceDirectly(
+        f, *atlas, f.is_transparent ? *transparent : *opaque);
+  }
+};
+
+// Thread-reusable neighbor-group caches for one X row: groups[d][i]
+// is the cull/AO group of the block at row offset i in FaceDir d
+// (1..6); 0 for air/out-of-bounds. The ±X fill is the existing SIMD
+// batch; ±Y/±Z rows are contiguous in the YZX layout and fall out of
+// one memcpy each. Sizes persist across rows/chunks, so a worker pays
+// the allocation once per thread.
+struct RowNeighborBuffers {
+  std::array<std::vector<std::uint8_t>, 7> groups;
+
+  void Ensure(std::size_t row) {
+    for (std::size_t d = 1; d < groups.size(); ++d) {
+      std::vector<std::uint8_t>& g = groups[d];
+      if (g.size() < row) {
+        // Grow geometrically so scalar full-width rows stay cheap too.
+        g.resize(std::max(row, g.size() + g.size() / 2 + 1));
+      }
+    }
+  }
+};
+
+// Copies the neighbor group row at `base + offset` (contiguous in the
+// YZX layout) into `out`, or zeroes it when the neighbor row is out of
+// bounds (edges act like air).
+void FillNeighborRow(const internal::BlockGroupTable& table,
+                      std::vector<std::uint8_t>& out,
+                      std::size_t base,
+                      std::int32_t row,
+                      std::int64_t offset,
+                      bool in_bounds) {
+  if (row <= 0) return;
+  if (!in_bounds) {
+    std::fill_n(out.data(), static_cast<std::size_t>(row), 0);
+    return;
+  }
+  std::memcpy(out.data(), table.bytes.data() + base + offset,
+              static_cast<std::size_t>(row));
 }
 
 // The opposite FaceDir byte (kPosX <-> kNegX etc.); cull_face 0 and any
@@ -312,21 +399,6 @@ struct FluidOverlayInfo {
   return fluid;
 }
 
-// Whether the block in the cull direction is overlay-eligible:
-// vanilla swaps a fluid side's sprite when the touched block is a
-// HalfTransparentBlock or leaves, so the check reads the neighbor's
-// palette entry (region-local, like block_indices).
-[[nodiscard]] bool NeighborGetsFluidOverlay(
-    const ir::Region& region,
-    const FluidOverlayInfo& overlay,
-    filters::LocalPos p,
-    std::uint8_t cull_face) noexcept {
-  const filters::LocalPos nb = NeighborInCullDir(p, cull_face);
-  if (!InBounds(region.bounds, nb)) return false;
-  return overlay.palette_eligible
-      [region.block_indices[filters::LinearIndex(nb, region.bounds)]];
-}
-
 // Per-cell fluid byte: 0xFF = none, else (kind << 4) | amount. Same
 // shape as the group table (one byte per block, LinearIndex order);
 // read-only after build, shared with the TBB workers.
@@ -340,115 +412,6 @@ struct FluidOverlayInfo {
     const FluidPaletteInfo& f = palette_fluid[pal];
     if (!f.morphable) continue;
     table[i] = static_cast<std::uint8_t>((f.kind << 4) | f.amount);
-  }
-  return table;
-}
-
-[[nodiscard]] std::int64_t CellCount(const ir::BoundingBox& b) noexcept {
-  return static_cast<std::int64_t>(b.size[0]) *
-         static_cast<std::int64_t>(b.size[1]) *
-         static_cast<std::int64_t>(b.size[2]);
-}
-
-// Union of every region's bounds, anchored at the minimum region
-// origin so table coordinates stay small.
-[[nodiscard]] ir::BoundingBox UnionBounds(const ir::Schematic& schematic) {
-  ir::BoundingBox b{};
-  bool first = true;
-  for (const ir::Region& r : schematic.regions) {
-    if (first) {
-      b = r.bounds;
-      first = false;
-      continue;
-    }
-    for (int i = 0; i < 3; ++i) {
-      const std::int32_t max_a = b.origin[i] + b.size[i];
-      const std::int32_t max_b = r.bounds.origin[i] + r.bounds.size[i];
-      b.origin[i] = std::min(b.origin[i], r.bounds.origin[i]);
-      b.size[i] = std::max(max_a, max_b) - b.origin[i];
-    }
-  }
-  return b;
-}
-
-// The union of far-apart regions is mostly empty cells; past this
-// multiple of the regions' combined cell count the walk keeps
-// per-region tables (seam faces stay visible) instead of paying for
-// the sparse allocation.
-constexpr std::int64_t kMaxUnionWaste = 4;
-
-[[nodiscard]] bool UnionWithinBudget(const ir::Schematic& schematic,
-                                     const ir::BoundingBox& union_bounds) {
-  std::int64_t cells = 0;
-  for (const ir::Region& r : schematic.regions) cells += CellCount(r.bounds);
-  return CellCount(union_bounds) <= cells * kMaxUnionWaste;
-}
-
-// One group table spanning the union bounds: each region writes its
-// cells at its origin, cells no region covers stay 0 (air), and
-// overlaps resolve last-write-wins, matching the walk order below.
-// Queries index with positions relative to union_bounds.origin
-// (filters::LinearIndex reads only the size).
-[[nodiscard]] internal::BlockGroupTable BuildUnionGroupTable(
-    const ir::Schematic& schematic,
-    const std::vector<std::vector<std::uint8_t>>& per_region_groups,
-    const ir::BoundingBox& union_bounds) {
-  internal::BlockGroupTable table;
-  table.bytes.assign(static_cast<std::size_t>(CellCount(union_bounds)), 0);
-  for (std::size_t ri = 0; ri < schematic.regions.size(); ++ri) {
-    const ir::Region& region = schematic.regions[ri];
-    const std::vector<std::uint8_t>& groups = per_region_groups[ri];
-    const ir::BoundingBox& rb = region.bounds;
-    for (std::int32_t y = 0; y < rb.size[1]; ++y) {
-      for (std::int32_t z = 0; z < rb.size[2]; ++z) {
-        for (std::int32_t x = 0; x < rb.size[0]; ++x) {
-          const filters::LocalPos local{x, y, z};
-          const filters::LocalPos table_pos{
-              rb.origin[0] + x - union_bounds.origin[0],
-              rb.origin[1] + y - union_bounds.origin[1],
-              rb.origin[2] + z - union_bounds.origin[2]};
-          const std::uint16_t pal =
-              region.block_indices[filters::LinearIndex(local, rb)];
-          table.bytes[filters::LinearIndex(table_pos, union_bounds)] =
-              pal < groups.size() ? groups[pal] : 0;
-        }
-      }
-    }
-  }
-  return table;
-}
-
-// Fluid table over the union bounds (same one-byte-per-cell layout,
-// 0xFF = no fluid), so heights, flow and back-face probes see across
-// region seams like the group table does. Call only when some region
-// holds a morphable fluid, mirroring the per-region short-circuit.
-[[nodiscard]] std::vector<std::uint8_t> BuildUnionFluidTable(
-    const ir::Schematic& schematic,
-    const std::vector<std::vector<FluidPaletteInfo>>& per_region_fluid,
-    const ir::BoundingBox& union_bounds) {
-  std::vector<std::uint8_t> table(
-      static_cast<std::size_t>(CellCount(union_bounds)), 0xFF);
-  for (std::size_t ri = 0; ri < schematic.regions.size(); ++ri) {
-    const ir::Region& region = schematic.regions[ri];
-    const std::vector<FluidPaletteInfo>& fluid = per_region_fluid[ri];
-    const ir::BoundingBox& rb = region.bounds;
-    for (std::int32_t y = 0; y < rb.size[1]; ++y) {
-      for (std::int32_t z = 0; z < rb.size[2]; ++z) {
-        for (std::int32_t x = 0; x < rb.size[0]; ++x) {
-          const filters::LocalPos local{x, y, z};
-          const filters::LocalPos table_pos{
-              rb.origin[0] + x - union_bounds.origin[0],
-              rb.origin[1] + y - union_bounds.origin[1],
-              rb.origin[2] + z - union_bounds.origin[2]};
-          const std::uint16_t pal =
-              region.block_indices[filters::LinearIndex(local, rb)];
-          if (pal >= fluid.size() || !fluid[pal].morphable) continue;
-          table[filters::LinearIndex(table_pos, union_bounds)] =
-              static_cast<std::uint8_t>((fluid[pal].kind << 4) |
-                                        fluid[pal].amount);
-        }
-      }
-    }
   }
   return table;
 }
@@ -635,13 +598,14 @@ struct FluidCornerHeights {
 }
 
 // Everything the per-block fluid morph needs: corner heights, the
-// flow texture (empty when the pack ships none) and the still-vs-
-// flowing decision for the top face. `flowing` is only ever true
-// when `flow_texture` is non-empty (rotation targets that texture).
+// flow/overlay atlas slots (kNoSlot when the pack ships neither) and
+// the still-vs-flowing decision for the top face. `flowing` is only
+// ever true when `flow_slot != kNoSlot` (rotation targets that
+// texture). Slot-driven: the hot loop never copies a texture path.
 struct FluidMorph {
   FluidCornerHeights corners;
-  std::string_view flow_texture;
-  std::string_view overlay_texture;       // water only; "" = pack has none
+  std::uint32_t overlay_slot = kNoSlot;  // water only; kNoSlot = none
+  std::uint32_t flow_slot = kNoSlot;     // kNoSlot = no flow texture
   std::array<float, 2> flow{0.0f, 0.0f};  // (x, z) direction
   bool flowing = false;
 };
@@ -667,21 +631,61 @@ struct FluidMorph {
   return side == down ? std::string_view{} : side;
 }
 
+// Builds the per-palette-entry atlas slot tables once the atlas is
+// finalized: one slot per model face, the flow-texture slot per
+// morphable fluid entry and the shared water-overlay slot. Faces then
+// emit by table lookup instead of hashing their texture path per
+// block.
+[[nodiscard]] PaletteSlotTable BuildPaletteSlots(
+    const std::vector<ResolvedModel>& palette_models,
+    const std::vector<FluidPaletteInfo>& palette_fluid,
+    const absl::flat_hash_map<std::string, std::uint32_t>& texture_to_slot,
+    bool overlay_available,
+    std::string_view overlay_texture) {
+  PaletteSlotTable t;
+  t.face_slots.resize(palette_models.size());
+  t.flow_slots.assign(palette_models.size(), kNoSlot);
+  if (overlay_available) {
+    auto it = texture_to_slot.find(std::string(overlay_texture));
+    if (it != texture_to_slot.end()) t.overlay_slot = it->second;
+  }
+  for (std::size_t i = 0; i < palette_models.size(); ++i) {
+    auto& slots = t.face_slots[i];
+    slots.reserve(palette_models[i].faces.size());
+    for (const ModelFace& face : palette_models[i].faces) {
+      if (face.texture_path.empty()) {
+        slots.push_back(kNoSlot);
+        continue;
+      }
+      auto it = texture_to_slot.find(face.texture_path);
+      slots.push_back(it == texture_to_slot.end() ? kNoSlot : it->second);
+    }
+    if (i < palette_fluid.size() && palette_fluid[i].morphable) {
+      const std::string flow(FluidFlowTextureOf(palette_models[i]));
+      if (!flow.empty()) {
+        auto it = texture_to_slot.find(flow);
+        if (it != texture_to_slot.end()) t.flow_slots[i] = it->second;
+      }
+    }
+  }
+  return t;
+}
+
 [[nodiscard]] FluidMorph BuildFluidMorph(
-    const ResolvedModel& model,
     const FluidPaletteInfo& fluid,
     const std::vector<std::uint8_t>& fluid_table,
     const internal::BlockGroupTable& group_table,
     const ir::BoundingBox& bounds,
     filters::LocalPos p,
-    std::string_view overlay_texture) noexcept {
+    std::uint32_t overlay_slot,
+    std::uint32_t flow_slot) noexcept {
   FluidMorph m;
   if (!fluid.morphable) return m;
   m.corners = FluidCornersAt(fluid_table, group_table, bounds, p, fluid.kind);
   // Only water's fluid model carries an overlay material in vanilla.
-  m.overlay_texture = fluid.kind == 1 ? overlay_texture : std::string_view{};
-  m.flow_texture = FluidFlowTextureOf(model);
-  if (m.flow_texture.empty()) return m;
+  m.overlay_slot = fluid.kind == 1 ? overlay_slot : kNoSlot;
+  m.flow_slot = flow_slot;
+  if (m.flow_slot == kNoSlot) return m;
   const auto [fx, fz] =
       FluidFlowAt(fluid_table, group_table, bounds, p, fluid.kind);
   m.flow = {fx, fz};
@@ -692,11 +696,13 @@ struct FluidMorph {
 // Morphs a synthesized fluid cuboid face in place (vanilla
 // FluidRenderer#tesselate): the up face takes the four corner
 // heights, side faces slope their top edge along them, the down face
-// stays at y = 0. With a flow texture, sides sample vanilla's flow
-// window (u 0..1/2, v (1-h)/2 at the surface and 1/2 at the block
-// bottom) and a flowing top swaps to the flow texture with the
-// sampling window rotated toward the flow direction. Corner-index
-// maps follow BuildCubeFace's winding per direction.
+// stays at y = 0. With a flow texture (fm.flow_slot), sides sample
+// vanilla's flow window (u 0..1/2, v (1-h)/2 at the surface and 1/2 at
+// the block bottom) and a flowing top swaps to the flow texture with
+// the sampling window rotated toward the flow direction. The face's
+// OWN texture never changes here -- the caller picks the atlas slot
+// (still / flow / overlay) so this stays allocation-free.
+// Corner-index maps follow BuildCubeFace's winding per direction.
 void MorphFluidFace(ModelFace& face, const FluidMorph& fm, bool overlay_side) {
   const FluidCornerHeights& h = fm.corners;
   switch (static_cast<internal::FaceDir>(face.CullFace())) {
@@ -718,13 +724,12 @@ void MorphFluidFace(ModelFace& face, const FluidMorph& fm, bool overlay_side) {
             {{0.5f + c + s, 0.5f + c - s}},  // SE
             {{0.5f - c + s, 0.5f + c + s}},  // SW
         }};
-        face.texture_path.assign(fm.flow_texture);
       }
       break;
     case internal::FaceDir::kNegZ:  // north: top edge = NW, NE
       face.corners[3][1] = h.nw;
       face.corners[2][1] = h.ne;
-      if (overlay_side || !fm.flow_texture.empty()) {
+      if (overlay_side || fm.flow_slot != kNoSlot) {
         face.uvs = {{
             {{0.0f, 0.5f}},                  // bottom, x0 (NW)
             {{0.5f, 0.5f}},                  // bottom, x1 (NE)
@@ -732,14 +737,11 @@ void MorphFluidFace(ModelFace& face, const FluidMorph& fm, bool overlay_side) {
             {{0.0f, (1.0f - h.nw) * 0.5f}},  // top, NW
         }};
       }
-      if (overlay_side) {
-        face.texture_path.assign(fm.overlay_texture);
-      }
       break;
     case internal::FaceDir::kPosZ:  // south: top edge = SW, SE
       face.corners[1][1] = h.sw;
       face.corners[2][1] = h.se;
-      if (overlay_side || !fm.flow_texture.empty()) {
+      if (overlay_side || fm.flow_slot != kNoSlot) {
         face.uvs = {{
             {{0.5f, 0.5f}},                  // bottom, x0 (SW)
             {{0.5f, (1.0f - h.sw) * 0.5f}},  // top, SW
@@ -747,14 +749,11 @@ void MorphFluidFace(ModelFace& face, const FluidMorph& fm, bool overlay_side) {
             {{0.0f, 0.5f}},                  // bottom, x1 (SE)
         }};
       }
-      if (overlay_side) {
-        face.texture_path.assign(fm.overlay_texture);
-      }
       break;
     case internal::FaceDir::kNegX:  // west: top edge = NW, SW
       face.corners[1][1] = h.nw;
       face.corners[2][1] = h.sw;
-      if (overlay_side || !fm.flow_texture.empty()) {
+      if (overlay_side || fm.flow_slot != kNoSlot) {
         face.uvs = {{
             {{0.5f, 0.5f}},                  // bottom, z0 (NW)
             {{0.5f, (1.0f - h.nw) * 0.5f}},  // top, NW
@@ -762,23 +761,17 @@ void MorphFluidFace(ModelFace& face, const FluidMorph& fm, bool overlay_side) {
             {{0.0f, 0.5f}},                  // bottom, z1 (SW)
         }};
       }
-      if (overlay_side) {
-        face.texture_path.assign(fm.overlay_texture);
-      }
       break;
     case internal::FaceDir::kPosX:  // east: top edge = NE, SE
       face.corners[2][1] = h.se;
       face.corners[3][1] = h.ne;
-      if (overlay_side || !fm.flow_texture.empty()) {
+      if (overlay_side || fm.flow_slot != kNoSlot) {
         face.uvs = {{
             {{0.0f, 0.5f}},                  // bottom, z0 (NE)
             {{0.5f, 0.5f}},                  // bottom, z1 (SE)
             {{0.5f, (1.0f - h.se) * 0.5f}},  // top, SE
             {{0.0f, (1.0f - h.ne) * 0.5f}},  // top, NE
         }};
-      }
-      if (overlay_side) {
-        face.texture_path.assign(fm.overlay_texture);
       }
       break;
     case internal::FaceDir::kNegY:
@@ -788,9 +781,10 @@ void MorphFluidFace(ModelFace& face, const FluidMorph& fm, bool overlay_side) {
 }
 
 // Builds one visible-face record (world-space corners, UVs, per-vertex
-// AO). `table_pos` indexes the neighbor tables (region-relative on
-// the per-region path, union-relative when the shared table is in
-// use); `world_pos` is the corner base. Returned so callers can push
+// AO). `table_pos` indexes the neighbor tables (region-relative);
+// `world_pos` is the corner base (world-space for the schematic walk,
+// equal to table_pos for single regions). All four vertex AO bytes are
+// computed in one shared-setup pass. Returned so callers can push
 // derived copies (fluid back faces re-emit the same record reversed).
 [[nodiscard]] internal::VisibleFaceInfo BuildFaceRecord(
     const ModelFace& face,
@@ -814,13 +808,14 @@ void MorphFluidFace(ModelFace& face, const FluidMorph& fm, bool overlay_side) {
         static_cast<float>(world_pos.y) + face.corners[i][1],
         static_cast<float>(world_pos.z) + face.corners[i][2]};
     info.uvs[i] = face.uvs[i];
-    info.ao[i] = internal::ComputeVertexAO(group_table,
-                                           bounds,
-                                           table_pos,
-                                           face.CullFace(),
-                                           face.corners[i],
-                                           ao_strength);
   }
+  internal::ComputeFaceAO(group_table,
+                           bounds,
+                           table_pos,
+                           face.CullFace(),
+                           face.corners,
+                           ao_strength,
+                           info.ao);
   return info;
 }
 
@@ -831,10 +826,9 @@ void MorphFluidFace(ModelFace& face, const FluidMorph& fm, bool overlay_side) {
 // vertex; its cull face flips so the exported normal matches the
 // visible orientation (FastSchema normals are per-face, unlike
 // vanilla's hardcoded up for every fluid vertex).
-void CollectFluidBackFace(
-    const internal::VisibleFaceInfo& front,
-    std::vector<internal::VisibleFaceInfo>& out_opaque,
-    std::vector<internal::VisibleFaceInfo>& out_transparent) {
+template <bool kStream>
+void EmitFluidBackFace(const internal::VisibleFaceInfo& front,
+                       FaceSink<kStream>& sink) {
   internal::VisibleFaceInfo back = front;
   for (int i = 0; i < 4; ++i) {
     back.world_corners[i] = front.world_corners[3 - i];
@@ -842,49 +836,43 @@ void CollectFluidBackFace(
     back.ao[i] = front.ao[3 - i];
   }
   back.cull_face = OppositeCullFace(front.cull_face);
-  if (back.is_transparent)
-    out_transparent.push_back(std::move(back));
-  else
-    out_opaque.push_back(std::move(back));
+  sink.Put(std::move(back));
 }
 
-void ProcessBlock(
-    filters::LocalPos p,
-    const std::vector<ResolvedModel>& palette_models,
-    const ir::Region& region,
-    const std::vector<std::uint8_t>& palette_groups,
-    const std::vector<FluidPaletteInfo>& palette_fluid,
-    const FluidOverlayInfo& overlay,
-    const std::vector<std::uint8_t>& fluid_table,
-    const internal::BlockGroupTable& group_table,
-    const absl::flat_hash_map<std::string, std::uint32_t>& texture_to_slot,
-    const TessellationOptions& opts,
-    std::uint8_t pos_x_group,
-    std::uint8_t neg_x_group,
-    std::vector<internal::VisibleFaceInfo>& out_opaque,
-    std::vector<internal::VisibleFaceInfo>& out_transparent) {
-  const auto pal_idx =
-      region.block_indices[filters::LinearIndex(p, region.bounds)];
-  if (region.IsAir(pal_idx)) return;
+// Walks one block: culls faces against the row caches, resolves atlas
+// slots through the per-palette table (no per-face hashing), morphs
+// fluid faces, computes AO and hands the record to the sink. `row_i`
+// is the block's offset within the current X row segment, indexing
+// the neighbor rows in `rows` (only read when ctx.cull).
+template <bool kStream>
+void ProcessBlock(const WalkCtx& ctx,
+                  filters::LocalPos p,
+                  std::size_t row_i,
+                  RowNeighborBuffers& rows,
+                  FaceSink<kStream>& sink) {
+  const ir::Region& region = *ctx.region;
+  const std::uint16_t pal_idx = static_cast<std::uint16_t>(
+      region.block_indices[filters::LinearIndex(p, region.bounds)]);
+  if (!ctx.include_air && region.IsAir(pal_idx)) return;
 
-  const ResolvedModel& model = palette_models[pal_idx];
-  const std::uint8_t cur_group = palette_groups[pal_idx];
-  const float ao_strength = opts.ambient_occlusion ? opts.ao_strength : 0.0f;
+  const ResolvedModel& model = (*ctx.models)[pal_idx];
+  const std::uint8_t cur_group = ctx.palette_groups[pal_idx];
+  const std::uint32_t* face_slots = ctx.slots->face_slots[pal_idx].data();
 
   // Synthesized fluid faces are morphed per block: their corner
   // heights and flow direction depend on fluid neighbors, which the
   // per-state model cache cannot express (vanilla
   // FluidRenderer#tesselate).
-  const FluidPaletteInfo& fluid = palette_fluid[pal_idx];
-  const FluidMorph fluid_m = BuildFluidMorph(model,
-                                             fluid,
-                                             fluid_table,
-                                             group_table,
-                                             region.bounds,
-                                             p,
-                                             overlay.texture);
+  const FluidPaletteInfo& fluid = ctx.palette_fluid[pal_idx];
+  const FluidMorph fluid_m =
+      BuildFluidMorph(fluid, *ctx.fluid_table, *ctx.group_table,
+                      region.bounds, p, ctx.slots->overlay_slot,
+                      ctx.slots->flow_slots[pal_idx]);
   ModelFace morphed;
+  std::size_t fi = 0;
   for (const ModelFace& face : model.faces) {
+    const std::uint32_t own_slot = face_slots[fi];
+    ++fi;
     const ModelFace* fp = &face;
     // Overlay flag is consulted per horizontal side (vanilla swaps the
     // sprite per face direction); up/down faces never overlay. Hoisted
@@ -893,48 +881,47 @@ void ProcessBlock(
     bool overlay_side = false;
     if (fluid.morphable && face.IsFluidFace()) {
       morphed = face;
-      if (!fluid_m.overlay_texture.empty()) {
+      if (fluid_m.overlay_slot != kNoSlot) {
         const std::uint8_t dir = face.CullFace();
-        if (dir != static_cast<std::uint8_t>(internal::FaceDir::kPosY) &&
-            dir != static_cast<std::uint8_t>(internal::FaceDir::kNegY)) {
+        if (IsHorizontalFace(dir)) {
           const filters::LocalPos nb = NeighborInCullDir(p, dir);
           if (InBounds(region.bounds, nb)) {
-            overlay_side =
-                overlay
-                    .palette_eligible[region.block_indices[filters::LinearIndex(
-                        nb, region.bounds)]];
+            overlay_side = ctx.overlay_eligible[region.block_indices[
+                filters::LinearIndex(nb, region.bounds)]];
           }
         }
       }
       MorphFluidFace(morphed, fluid_m, overlay_side);
       fp = &morphed;
     }
-    if (opts.cull_interior_faces && fp->CullFace() != 0) {
-      std::uint8_t nb_group;
-      switch (static_cast<internal::FaceDir>(fp->CullFace())) {
-        case internal::FaceDir::kPosX:
-          nb_group = pos_x_group;
-          break;
-        case internal::FaceDir::kNegX:
-          nb_group = neg_x_group;
-          break;
-        default:
-          nb_group =
-              NeighborGroup(group_table, region.bounds, p, fp->CullFace());
-      }
-      if (internal::NeighborCulls(nb_group, cur_group)) continue;
+    if (ctx.cull && fp->CullFace() != 0 &&
+        internal::NeighborCulls(rows.groups[fp->CullFace()][row_i],
+                                cur_group)) {
+      continue;
     }
-    if (fp->texture_path.empty()) continue;
-    auto slot_it = texture_to_slot.find(fp->texture_path);
-    if (slot_it == texture_to_slot.end()) continue;
+    // Slot pick: overlay sides swap to the water-overlay sprite, a
+    // flowing top swaps to the flow texture; every other face keeps
+    // its own per-face slot (kNoSlot covers both the empty-path and
+    // the not-in-atlas skip the hash lookup used to pay for).
+    std::uint32_t slot = own_slot;
+    if (overlay_side) {
+      slot = fluid_m.overlay_slot;
+    } else if (fluid.morphable && face.IsFluidFace() &&
+               fp->CullFace() ==
+                   static_cast<std::uint8_t>(internal::FaceDir::kPosY) &&
+               fluid_m.flowing) {
+      slot = fluid_m.flow_slot;
+    }
+    if (slot == kNoSlot) continue;
 
-    internal::VisibleFaceInfo info = BuildFaceRecord(
-        *fp, p, p, slot_it->second, group_table, region.bounds, ao_strength);
-    if (info.is_transparent) {
-      out_transparent.push_back(info);
-    } else {
-      out_opaque.push_back(info);
-    }
+    const filters::LocalPos world_p{p.x + ctx.world_offset[0],
+                                    p.y + ctx.world_offset[1],
+                                    p.z + ctx.world_offset[2]};
+    internal::VisibleFaceInfo info = BuildFaceRecord(*fp, p, world_p, slot,
+                                                     *ctx.group_table,
+                                                     region.bounds,
+                                                     ctx.ao_strength);
+    sink.Put(info);
     // Vanilla FluidRenderer#addFace doubles every emitted fluid face
     // with a reversed-winding copy except the down face and overlay
     // sides: sides pass addBackFace = !isOverlay, the up face only
@@ -943,82 +930,73 @@ void ProcessBlock(
       const auto dir = static_cast<internal::FaceDir>(fp->CullFace());
       bool back = false;
       if (dir == internal::FaceDir::kPosY) {
-        back = ShouldRenderBackwardUpFace(
-            fluid_table, group_table, region.bounds, p, fluid.kind);
+        back = ShouldRenderBackwardUpFace(*ctx.fluid_table, *ctx.group_table,
+                                          region.bounds, p, fluid.kind);
       } else if (dir != internal::FaceDir::kNegY) {
         back = !overlay_side;
       }
-      if (back) CollectFluidBackFace(info, out_opaque, out_transparent);
+      if (back) EmitFluidBackFace(info, sink);
     }
   }
 }
 
-void ProcessRow(
-    filters::LocalPos x_start_pos,
-    std::int32_t y,
-    std::int32_t z,
-    std::int32_t x_count,
-    const std::vector<ResolvedModel>& palette_models,
-    const ir::Region& region,
-    const std::vector<std::uint8_t>& palette_groups,
-    const std::vector<FluidPaletteInfo>& palette_fluid,
-    const FluidOverlayInfo& overlay,
-    const std::vector<std::uint8_t>& fluid_table,
-    const internal::BlockGroupTable& group_table,
-    const absl::flat_hash_map<std::string, std::uint32_t>& texture_to_slot,
-    const TessellationOptions& opts,
-    std::vector<internal::VisibleFaceInfo>& out_opaque,
-    std::vector<internal::VisibleFaceInfo>& out_transparent) {
+// Walks one X row segment. Fills the six neighbor-group rows first
+// (two Highway-SIMD batches for +-X, one memcpy each for +-Y/+-Z,
+// which are contiguous in the YZX table layout; out-of-bounds rows
+// read as air), then visits the blocks. The buffers persist across
+// rows and chunks, so a worker pays the allocation once per thread.
+template <bool kStream>
+void ProcessRow(const WalkCtx& ctx,
+                filters::LocalPos x_start,
+                std::int32_t y,
+                std::int32_t z,
+                std::int32_t x_count,
+                RowNeighborBuffers& rows,
+                FaceSink<kStream>& sink) {
   if (x_count <= 0) return;
+  const ir::Region& region = *ctx.region;
+  const ir::BoundingBox& b = region.bounds;
+  const std::size_t row = static_cast<std::size_t>(x_count);
 
-  if (!opts.cull_interior_faces) {
-    for (std::int32_t i = 0; i < x_count; ++i) {
-      ProcessBlock({x_start_pos.x + i, y, z},
-                   palette_models,
-                   region,
-                   palette_groups,
-                   palette_fluid,
-                   overlay,
-                   fluid_table,
-                   group_table,
-                   texture_to_slot,
-                   opts,
-                   0,
-                   0,
-                   out_opaque,
-                   out_transparent);
-    }
-    return;
+  if (ctx.cull) {
+    rows.Ensure(row);
+    const std::size_t base = filters::LinearIndex({x_start.x, y, z}, b);
+    const std::uint32_t region_width = static_cast<std::uint32_t>(b.size[0]);
+    internal::ComputePosXNeighborGroupBatch(
+        *ctx.group_table, base, row, region_width,
+        rows.groups[static_cast<std::size_t>(internal::FaceDir::kPosX)]
+            .data());
+    internal::ComputeNegXNeighborGroupBatch(
+        *ctx.group_table, base, row, region_width,
+        rows.groups[static_cast<std::size_t>(internal::FaceDir::kNegX)]
+            .data());
+    const std::int64_t sx = b.size[0];
+    const std::int64_t sy = b.size[1];
+    const std::int64_t sz = b.size[2];
+    FillNeighborRow(*ctx.group_table,
+                    rows.groups[static_cast<std::size_t>(
+                        internal::FaceDir::kPosY)],
+                    base, x_count, sx * sz, y + 1 < sy);
+    FillNeighborRow(*ctx.group_table,
+                    rows.groups[static_cast<std::size_t>(
+                        internal::FaceDir::kNegY)],
+                    base, x_count, -sx * sz, y - 1 >= 0);
+    FillNeighborRow(*ctx.group_table,
+                    rows.groups[static_cast<std::size_t>(
+                        internal::FaceDir::kPosZ)],
+                    base, x_count, sx, z + 1 < sz);
+    FillNeighborRow(*ctx.group_table,
+                    rows.groups[static_cast<std::size_t>(
+                        internal::FaceDir::kNegZ)],
+                    base, x_count, -sx, z - 1 >= 0);
   }
 
-  const std::size_t base_linear =
-      filters::LinearIndex({x_start_pos.x, y, z}, region.bounds);
-  const std::size_t row = static_cast<std::size_t>(x_count);
-  const std::uint32_t region_row =
-      static_cast<std::uint32_t>(region.bounds.size[0]);
-
-  std::vector<std::uint8_t> pos_x_group(row);
-  std::vector<std::uint8_t> neg_x_group(row);
-  internal::ComputePosXNeighborGroupBatch(
-      group_table, base_linear, row, region_row, pos_x_group.data());
-  internal::ComputeNegXNeighborGroupBatch(
-      group_table, base_linear, row, region_row, neg_x_group.data());
-
   for (std::int32_t i = 0; i < x_count; ++i) {
-    ProcessBlock({x_start_pos.x + i, y, z},
-                 palette_models,
-                 region,
-                 palette_groups,
-                 palette_fluid,
-                 overlay,
-                 fluid_table,
-                 group_table,
-                 texture_to_slot,
-                 opts,
-                 pos_x_group[static_cast<std::size_t>(i)],
-                 neg_x_group[static_cast<std::size_t>(i)],
-                 out_opaque,
-                 out_transparent);
+    ProcessBlock(ctx,
+                 {x_start.x + i, y, z},
+                 static_cast<std::size_t>(i),
+                 rows,
+                 sink);
   }
 }
 
@@ -1036,55 +1014,24 @@ void AppendMesh(Mesh& dst, const Mesh& src) {
   }
 }
 
-// Builds the shared texture atlas and its path->slot map. When
-// greedy merging is on, merged quads address their slot in tile
-// units (a merged wall quad spans many texture tiles), so each slot
-// carries tiled copies of its texture: try the preferred repeat
-// count first and halve on atlas overflow, down to the compact
-// one-tile slot. At repeats 1 the merge caps its rectangles at 1x1
-// tile, so every quad stays inside its slot either way -- rendering
-// stays correct, only the merge benefit shrinks.
-[[nodiscard]] ParseResult<std::pair<
-    TextureAtlas,
-    absl::flat_hash_map<std::string, std::uint32_t>>>
-BuildAtlasWithSlots(const ResourcePack& pack,
-                    const absl::flat_hash_set<std::string>& paths,
-                    const TessellationOptions& opts) {
-  constexpr std::uint32_t kPreferredRepeat = 8;
-  const std::uint32_t preferred =
-      opts.merge_coplanar_faces ? kPreferredRepeat : 1;
-  static_assert(kPreferredRepeat > 0 && (kPreferredRepeat & (kPreferredRepeat - 1)) == 0,
-                "repeat halving must terminate at 1");
-  for (std::uint32_t repeats = preferred;; repeats >>= 1) {
-    TextureAtlasBuilder builder(opts.atlas_max_extent, opts.atlas_padding);
-    absl::flat_hash_map<std::string, std::uint32_t> to_slot;
-    to_slot.reserve(paths.size());
-    bool overflow = false;
-    for (const std::string& path : paths) {
-      auto tex = pack.LoadTexturePixels(path);
-      if (!tex) return std::unexpected(tex.error());
-      auto slot = builder.Insert(path, tex->rgba, tex->width, tex->height,
-                                 repeats, repeats);
-      if (!slot) {
-        if (slot.error().code == ParseError::Code::kAtlasOverflow &&
-            repeats > 1) {
-          overflow = true;
-          break;
-        }
-        return std::unexpected(slot.error());
-      }
-      to_slot.emplace(path, *slot);
-    }
-    if (!overflow) {
-      return std::make_pair(std::move(builder).Finalize(),
-                            std::move(to_slot));
-    }
-    if (repeats <= 1) {
-      // repeats 1 is the pre-tiled layout; its overflow is final.
-      return std::unexpected(ParseError::At(
-          ParseError::Code::kAtlasOverflow,
-          "atlas overflow at repeat count 1", 0));
-    }
+// Folds the thread-local meshes into `out`: the exact final capacity is
+// reserved up front (the fold never pays a growth reallocation of its
+// own) and each source mesh is freed right after its bytes land, so
+// the transient peak is the final mesh plus one worker's leftovers
+// instead of everything twice over.
+template <typename TlsMeshes>
+void MergeTlsMeshes(TlsMeshes& tls, Mesh& out) {
+  std::size_t verts = 0;
+  std::size_t idxs = 0;
+  for (const Mesh& m : tls) {
+    verts += m.VertexCount();
+    idxs += m.indices.size();
+  }
+  if (verts == 0 && idxs == 0) return;
+  out.Reserve(out.VertexCount() + verts, out.indices.size() + idxs);
+  for (Mesh& m : tls) {
+    AppendMesh(out, m);
+    m = Mesh{};
   }
 }
 
@@ -1161,24 +1108,11 @@ void EmitCollectedFaces(
   if (opts.merge_coplanar_faces) {
     // Fluid faces carry sub-block/sloped corners; MergeGroup rebuilds
     // quads from block-grid bounds and would flatten them. Splice them
-    // out and emit them directly, per output mesh.
+    // out in place and emit them directly, per output mesh.
     std::vector<internal::VisibleFaceInfo> opaque_fluid;
     std::vector<internal::VisibleFaceInfo> transparent_fluid;
-    const auto splice_fluid =
-        [](std::vector<internal::VisibleFaceInfo>& v,
-           std::vector<internal::VisibleFaceInfo>& out_fluid) {
-          std::vector<internal::VisibleFaceInfo> keep;
-          keep.reserve(v.size());
-          for (auto& f : v) {
-            if (f.is_fluid)
-              out_fluid.push_back(std::move(f));
-            else
-              keep.push_back(std::move(f));
-          }
-          v = std::move(keep);
-        };
-    splice_fluid(opaque_faces, opaque_fluid);
-    splice_fluid(transparent_faces, transparent_fluid);
+    internal::SpliceFluidFacesInPlace(opaque_faces, opaque_fluid);
+    internal::SpliceFluidFacesInPlace(transparent_faces, transparent_fluid);
     internal::MergeAndEmitFaces(opaque_faces, atlas, out_opaque);
     internal::MergeAndEmitFaces(transparent_faces, atlas, out_transparent);
     internal::EmitFacesDirectly(opaque_fluid, atlas, out_opaque);
@@ -1187,7 +1121,7 @@ void EmitCollectedFaces(
     internal::EmitFacesDirectly(opaque_faces, atlas, out_opaque);
     internal::EmitFacesDirectly(transparent_faces, atlas, out_transparent);
   }
-  // Clear to free memory before next chunk.
+  // Drop the records (capacity stays for the next chunk's reuse).
   opaque_faces.clear();
   transparent_faces.clear();
 }
@@ -1262,11 +1196,6 @@ ParseResult<TessellationResult> TessellateRegion(const ir::Region& region,
   TessellationResult result;
   result.atlas = std::move(atlas_and_slots->first);
 
-  const std::vector<std::uint8_t> palette_groups =
-      BuildPaletteGroups(region, palette_models, skipped);
-  internal::BlockGroupTable group_table;
-  group_table.BuildFrom(region, palette_groups);
-
   // Fluid slope inputs. Skip the per-cell table entirely when the
   // palette holds no morphable fluid (stone-only regions pay nothing).
   const std::vector<FluidPaletteInfo> palette_fluid =
@@ -1282,50 +1211,80 @@ ParseResult<TessellationResult> TessellateRegion(const ir::Region& region,
       any_fluid ? BuildFluidTable(region, palette_fluid)
                 : std::vector<std::uint8_t>{};
 
+  // Per-palette atlas slots, resolved once: the walk emits by table
+  // lookup instead of hashing each face's texture path per block.
+  const PaletteSlotTable slots =
+      BuildPaletteSlots(palette_models, palette_fluid, texture_to_slot,
+                        !overlay_texture.empty(), overlay_texture);
+
+  const std::vector<std::uint8_t> palette_groups =
+      BuildPaletteGroups(region, palette_models, skipped);
+  internal::BlockGroupTable group_table;
+  group_table.BuildFrom(region, palette_groups);
+
+  const WalkCtx ctx{&region,
+                    &palette_models,
+                    palette_groups.data(),
+                    palette_fluid.data(),
+                    &slots,
+                    overlay.palette_eligible.data(),
+                    &fluid_table,
+                    &group_table,
+                    opts.ambient_occlusion ? opts.ao_strength : 0.0f,
+                    opts.cull_interior_faces,
+                    /*include_air=*/false,  // air never meshes here
+                    /*world_offset=*/{0, 0, 0}};
+
   const ir::BoundingBox& b = region.bounds;
   const std::vector<filters::LocalPos> chunk_origins =
       internal::ComputeChunkOrigins(b, opts.chunk_edge);
   const bool use_parallel = opts.chunk_edge > 0 && chunk_origins.size() > 1;
 
   if (!use_parallel) {
-    // Scalar path: collect all faces, then emit.
-    std::vector<internal::VisibleFaceInfo> all_opaque;
-    std::vector<internal::VisibleFaceInfo> all_transparent;
-    for (std::int32_t y = 0; y < b.size[1]; ++y) {
-      for (std::int32_t z = 0; z < b.size[2]; ++z) {
-        ProcessRow({0, y, z},
-                   y,
-                   z,
-                   b.size[0],
-                   palette_models,
-                   region,
-                   palette_groups,
-                   palette_fluid,
-                   overlay,
-                   fluid_table,
-                   group_table,
-                   texture_to_slot,
-                   opts,
-                   all_opaque,
-                   all_transparent);
+    RowNeighborBuffers rows;
+    if (!opts.merge_coplanar_faces) {
+      // Scalar streaming: faces go straight into the output meshes, no
+      // intermediate record buffer at all.
+      FaceSink<true> sink{&result.atlas, &result.opaque_mesh,
+                          &result.transparent_mesh};
+      for (std::int32_t y = 0; y < b.size[1]; ++y) {
+        for (std::int32_t z = 0; z < b.size[2]; ++z) {
+          ProcessRow(ctx, {0, y, z}, y, z, b.size[0], rows, sink);
+        }
       }
+    } else {
+      // Scalar merge: merging needs the records, so collect the whole
+      // region first (chunking would cap merged rectangles at chunk
+      // boundaries).
+      std::vector<internal::VisibleFaceInfo> all_opaque;
+      std::vector<internal::VisibleFaceInfo> all_transparent;
+      FaceSink<false> sink{&all_opaque, &all_transparent};
+      for (std::int32_t y = 0; y < b.size[1]; ++y) {
+        for (std::int32_t z = 0; z < b.size[2]; ++z) {
+          ProcessRow(ctx, {0, y, z}, y, z, b.size[0], rows, sink);
+        }
+      }
+      EmitCollectedFaces(all_opaque,
+                         all_transparent,
+                         result.atlas,
+                         opts,
+                         result.opaque_mesh,
+                         result.transparent_mesh);
     }
-    EmitCollectedFaces(all_opaque,
-                       all_transparent,
-                       result.atlas,
-                       opts,
-                       result.opaque_mesh,
-                       result.transparent_mesh);
   } else {
-    // Parallel path: per-chunk collect, then emit.
+    // Parallel path. Non-merging workers stream straight into their
+    // thread-local meshes; merging workers collect per chunk (records
+    // bounded by one chunk) and merge into their thread-local meshes.
     tbb::enumerable_thread_specific<Mesh> tls_opaque;
     tbb::enumerable_thread_specific<Mesh> tls_transparent;
+    tbb::enumerable_thread_specific<RowNeighborBuffers> tls_rows;
 
     tbb::parallel_for(
         tbb::blocked_range<std::size_t>(0, chunk_origins.size()),
         [&](const tbb::blocked_range<std::size_t>& r) {
           Mesh& local_opaque = tls_opaque.local();
           Mesh& local_transparent = tls_transparent.local();
+          RowNeighborBuffers& rows = tls_rows.local();
           for (std::size_t ci = r.begin(); ci != r.end(); ++ci) {
             const filters::LocalPos origin = chunk_origins[ci];
             const std::int32_t x_end =
@@ -1338,42 +1297,35 @@ ParseResult<TessellationResult> TessellateRegion(const ir::Region& region,
                 std::min(origin.z + static_cast<std::int32_t>(opts.chunk_edge),
                          b.size[2]);
 
-            std::vector<internal::VisibleFaceInfo> chunk_opaque;
-            std::vector<internal::VisibleFaceInfo> chunk_transparent;
-            for (std::int32_t y = origin.y; y < y_end; ++y) {
-              for (std::int32_t z = origin.z; z < z_end; ++z) {
-                ProcessRow(origin,
-                           y,
-                           z,
-                           x_end - origin.x,
-                           palette_models,
-                           region,
-                           palette_groups,
-                           palette_fluid,
-                           overlay,
-                           fluid_table,
-                           group_table,
-                           texture_to_slot,
-                           opts,
-                           chunk_opaque,
-                           chunk_transparent);
+            if (!opts.merge_coplanar_faces) {
+              FaceSink<true> sink{&result.atlas, &local_opaque,
+                                   &local_transparent};
+              for (std::int32_t y = origin.y; y < y_end; ++y) {
+                for (std::int32_t z = origin.z; z < z_end; ++z) {
+                  ProcessRow(ctx, origin, y, z, x_end - origin.x, rows, sink);
+                }
               }
+            } else {
+              std::vector<internal::VisibleFaceInfo> chunk_opaque;
+              std::vector<internal::VisibleFaceInfo> chunk_transparent;
+              FaceSink<false> sink{&chunk_opaque, &chunk_transparent};
+              for (std::int32_t y = origin.y; y < y_end; ++y) {
+                for (std::int32_t z = origin.z; z < z_end; ++z) {
+                  ProcessRow(ctx, origin, y, z, x_end - origin.x, rows, sink);
+                }
+              }
+              EmitCollectedFaces(chunk_opaque,
+                                 chunk_transparent,
+                                 result.atlas,
+                                 opts,
+                                 local_opaque,
+                                 local_transparent);
             }
-            EmitCollectedFaces(chunk_opaque,
-                               chunk_transparent,
-                               result.atlas,
-                               opts,
-                               local_opaque,
-                               local_transparent);
           }
         });
 
-    for (const Mesh& m : tls_opaque) {
-      AppendMesh(result.opaque_mesh, m);
-    }
-    for (const Mesh& m : tls_transparent) {
-      AppendMesh(result.transparent_mesh, m);
-    }
+    MergeTlsMeshes(tls_opaque, result.opaque_mesh);
+    MergeTlsMeshes(tls_transparent, result.transparent_mesh);
   }
 
   return result;
@@ -1714,11 +1666,15 @@ ParseResult<TessellationResult> TessellateSchematic(
 
   // Per-region walk. Each region uses its own BlockGroupTable for AO
   // and cull; cross-region neighbor checks are not performed, so faces
-  // at region boundaries stay visible.
-  const float ao_strength = opts.ambient_occlusion ? opts.ao_strength : 0.0f;
+  // at region boundaries stay visible. Non-merging walks stream each
+  // region's faces straight into the output meshes (no record buffer);
+  // merging walks collect per region, emit, and reuse the buffers.
+  TessellationResult result;
+  result.atlas = atlas;
 
-  std::vector<internal::VisibleFaceInfo> all_opaque;
-  std::vector<internal::VisibleFaceInfo> all_transparent;
+  std::vector<internal::VisibleFaceInfo> collect_opaque;
+  std::vector<internal::VisibleFaceInfo> collect_transparent;
+  RowNeighborBuffers rows;
 
   for (std::size_t ri = 0; ri < schematic.regions.size(); ++ri) {
     const ir::Region& region = schematic.regions[ri];
@@ -1743,124 +1699,51 @@ ParseResult<TessellationResult> TessellateSchematic(
         any_fluid ? BuildFluidTable(region, palette_fluid)
                   : std::vector<std::uint8_t>{};
 
-    // block_indices was materialized in the first loop above; the
-    // group/fluid tables built here are sized and filled from it.
+    // Per-palette atlas slots for this region's palette, resolved once
+    // (no per-face texture hashing in the walk).
+    const PaletteSlotTable slots =
+        BuildPaletteSlots(models, palette_fluid, texture_to_slot,
+                          !overlay_texture.empty(), overlay_texture);
+
+    const WalkCtx ctx{&region,
+                       &models,
+                       palette_groups.data(),
+                       palette_fluid.data(),
+                       &slots,
+                       per_region_overlay[ri].data(),
+                       &fluid_table,
+                       &group_table,
+                       opts.ambient_occlusion ? opts.ao_strength : 0.0f,
+                       opts.cull_interior_faces,
+                       opts.include_air,
+                       /*world_offset=*/{region.bounds.origin[0],
+                                          region.bounds.origin[1],
+                                          region.bounds.origin[2]}};
 
     const ir::BoundingBox& b = region.bounds;
-    const std::int32_t ox = b.origin[0];
-    const std::int32_t oy = b.origin[1];
-    const std::int32_t oz = b.origin[2];
-
-    for (std::int32_t y = 0; y < b.size[1]; ++y) {
-      for (std::int32_t z = 0; z < b.size[2]; ++z) {
-        for (std::int32_t x = 0; x < b.size[0]; ++x) {
-          const filters::LocalPos table_p{x, y, z};
-          const auto pal_idx =
-              region.block_indices[filters::LinearIndex(table_p, b)];
-          if (!opts.include_air && region.IsAir(pal_idx)) continue;
-
-          const ResolvedModel& model = models[pal_idx];
-          // Fluid slope + flow-texture morph, mirroring ProcessBlock
-          // (vanilla FluidRenderer#tesselate).
-          const FluidPaletteInfo& fluid = palette_fluid[pal_idx];
-          const FluidMorph fluid_m = BuildFluidMorph(model,
-                                                     fluid,
-                                                     fluid_table,
-                                                     group_table,
-                                                     b,
-                                                     table_p,
-                                                     overlay_texture);
-          ModelFace morphed;
-          for (const ModelFace& face : model.faces) {
-            const ModelFace* fp = &face;
-            // Per-side overlay flag, hoisted for the back-face
-            // decision (mirrors ProcessBlock).
-            bool overlay_side = false;
-            if (fluid.morphable && face.IsFluidFace()) {
-              morphed = face;
-              if (!fluid_m.overlay_texture.empty()) {
-                const std::uint8_t dir = face.CullFace();
-                if (dir !=
-                        static_cast<std::uint8_t>(internal::FaceDir::kPosY) &&
-                    dir !=
-                        static_cast<std::uint8_t>(internal::FaceDir::kNegY)) {
-                  const filters::LocalPos nb = NeighborInCullDir(table_p, dir);
-                  if (nb.x >= 0 && nb.x < b.size[0] && nb.y >= 0 &&
-                      nb.y < b.size[1] && nb.z >= 0 && nb.z < b.size[2]) {
-                    overlay_side = per_region_overlay
-                        [ri][region.block_indices[filters::LinearIndex(nb, b)]];
-                  }
-                }
-              }
-              MorphFluidFace(morphed, fluid_m, overlay_side);
-              fp = &morphed;
-            }
-            // Scalar cull (within this region only).
-            if (opts.cull_interior_faces && fp->CullFace() != 0) {
-              const filters::LocalPos nb =
-                  NeighborInCullDir(table_p, fp->CullFace());
-              std::uint8_t nb_group = 0;
-              if (nb.x >= 0 && nb.x < b.size[0] && nb.y >= 0 &&
-                  nb.y < b.size[1] && nb.z >= 0 && nb.z < b.size[2]) {
-                nb_group = group_table.bytes[filters::LinearIndex(nb, b)];
-              }
-              if (internal::NeighborCulls(nb_group, palette_groups[pal_idx])) {
-                continue;
-              }
-              // Out of region bounds: don't cull (might be another region
-              // or air).
-            }
-
-            if (fp->texture_path.empty()) continue;
-            auto slot_it = texture_to_slot.find(fp->texture_path);
-            if (slot_it == texture_to_slot.end()) continue;
-
-            // World-space position (local + bounds.origin); AO uses the
-            // LOCAL position (for group_table lookup).
-            const filters::LocalPos world_p{x + ox, y + oy, z + oz};
-
-            internal::VisibleFaceInfo info = BuildFaceRecord(*fp,
-                                                             table_p,
-                                                             world_p,
-                                                             slot_it->second,
-                                                             group_table,
-                                                             b,
-                                                             ao_strength);
-            if (info.is_transparent) {
-              all_transparent.push_back(info);
-            } else {
-              all_opaque.push_back(info);
-            }
-            // Back faces, mirroring ProcessBlock: sides double unless
-            // overlay, up face per shouldRenderBackwardUpFace, down
-            // never.
-            if (fluid.morphable && face.IsFluidFace()) {
-              const auto dir = static_cast<internal::FaceDir>(fp->CullFace());
-              bool back = false;
-              if (dir == internal::FaceDir::kPosY) {
-                back = ShouldRenderBackwardUpFace(
-                    fluid_table, group_table, b, table_p, fluid.kind);
-              } else if (dir != internal::FaceDir::kNegY) {
-                back = !overlay_side;
-              }
-              if (back) {
-                CollectFluidBackFace(info, all_opaque, all_transparent);
-              }
-            }
-          }
+    if (!opts.merge_coplanar_faces) {
+      FaceSink<true> sink{&result.atlas, &result.opaque_mesh,
+                          &result.transparent_mesh};
+      for (std::int32_t y = 0; y < b.size[1]; ++y) {
+        for (std::int32_t z = 0; z < b.size[2]; ++z) {
+          ProcessRow(ctx, {0, y, z}, y, z, b.size[0], rows, sink);
         }
       }
+    } else {
+      FaceSink<false> sink{&collect_opaque, &collect_transparent};
+      for (std::int32_t y = 0; y < b.size[1]; ++y) {
+        for (std::int32_t z = 0; z < b.size[2]; ++z) {
+          ProcessRow(ctx, {0, y, z}, y, z, b.size[0], rows, sink);
+        }
+      }
+      EmitCollectedFaces(collect_opaque,
+                         collect_transparent,
+                         result.atlas,
+                         opts,
+                         result.opaque_mesh,
+                         result.transparent_mesh);
     }
   }
-
-  TessellationResult result;
-  result.atlas = atlas;
-  EmitCollectedFaces(all_opaque,
-                     all_transparent,
-                     result.atlas,
-                     opts,
-                     result.opaque_mesh,
-                     result.transparent_mesh);
 
   // Entities mesh after the blocks: sheep quads carry their own atlas
   // slots and no AO/cull context.

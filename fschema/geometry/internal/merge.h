@@ -51,6 +51,24 @@ void EmitFacesDirectly(const std::vector<VisibleFaceInfo>& faces,
                        const TextureAtlas& atlas,
                        Mesh& out_mesh);
 
+// Emits ONE face record unmerged (the streaming sink calls this per
+// face instead of buffering into a vector first). Same quad layout and
+// winding as EmitFacesDirectly.
+void EmitFaceDirectly(const VisibleFaceInfo& face,
+                      const TextureAtlas& atlas,
+                      Mesh& out_mesh);
+
+// Outward normal for a face record: axis normal for directed faces,
+// corner-winding normal for rotated-element faces (cull_face 0).
+[[nodiscard]] std::array<float, 3> FaceRecordNormal(
+    const VisibleFaceInfo& face);
+
+// Splits `faces` in place: fluid records move to `out_fluid`, the rest
+// compact to the front of `faces` (order preserved). Avoids the full
+// copy the old keep-vector splice paid.
+void SpliceFluidFacesInPlace(std::vector<VisibleFaceInfo>& faces,
+                             std::vector<VisibleFaceInfo>& out_fluid);
+
 // Greedy merge + emit. Groups faces by (cull_face, plane_pos, slot, tint,
 // transparency), builds a 2D occupancy grid per group, grows rectangles
 // greedily, and emits one quad per merged rectangle -- roughly 5-10x fewer

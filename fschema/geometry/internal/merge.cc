@@ -219,7 +219,7 @@ void EmitSingleFace(const VisibleFaceInfo& f,
 // no axis, so their normal comes from the corner winding -- the same
 // (c2-c0)x(c1-c0) that PushQuadIndices' flipped triangles make
 // front-facing.
-[[nodiscard]] std::array<float, 3> FaceRecordNormal(
+[[nodiscard]] std::array<float, 3> FaceRecordNormalImpl(
     const VisibleFaceInfo& f) {
   if (f.cull_face >= 1 && f.cull_face <= 6) {
     return NormalForCullFace(f.cull_face);
@@ -313,7 +313,7 @@ void MergeGroup(const std::vector<const VisibleFaceInfo*>& group_faces,
     const int a2 = (&f->block_pos.x)[axis2] - min_a2;
     auto& cell = grid[static_cast<std::size_t>(a1) * grid_w + a2];
     if (cell != nullptr) {
-      EmitSingleFace(*f, atlas, FaceRecordNormal(*f), out_mesh);
+      EmitSingleFace(*f, atlas, FaceRecordNormalImpl(*f), out_mesh);
       continue;
     }
     cell = f;
@@ -513,11 +513,35 @@ void MergeGroup(const std::vector<const VisibleFaceInfo*>& group_faces,
 
 }  // namespace
 
+void EmitFaceDirectly(const VisibleFaceInfo& face,
+                      const TextureAtlas& atlas,
+                      Mesh& out_mesh) {
+  EmitSingleFace(face, atlas, FaceRecordNormalImpl(face), out_mesh);
+}
+
+std::array<float, 3> FaceRecordNormal(const VisibleFaceInfo& face) {
+  return FaceRecordNormalImpl(face);
+}
+
+void SpliceFluidFacesInPlace(std::vector<VisibleFaceInfo>& faces,
+                             std::vector<VisibleFaceInfo>& out_fluid) {
+  std::size_t write = 0;
+  for (std::size_t read = 0; read < faces.size(); ++read) {
+    if (faces[read].is_fluid) {
+      out_fluid.push_back(std::move(faces[read]));
+    } else {
+      if (write != read) faces[write] = std::move(faces[read]);
+      ++write;
+    }
+  }
+  faces.resize(write);
+}
+
 void EmitFacesDirectly(const std::vector<VisibleFaceInfo>& faces,
                        const TextureAtlas& atlas,
                        Mesh& out_mesh) {
   for (const auto& f : faces) {
-    EmitSingleFace(f, atlas, FaceRecordNormal(f), out_mesh);
+    EmitSingleFace(f, atlas, FaceRecordNormalImpl(f), out_mesh);
   }
 }
 
@@ -531,10 +555,8 @@ void MergeAndEmitFaces(const std::vector<VisibleFaceInfo>& faces,
                       GroupKeyHash>
       groups;
   for (const auto& f : faces) {
-    // Sub-cell faces and directionless (rotated-element) faces bypass
-    // the merge grid entirely -- see IsUnitCellFace.
     if (!IsUnitCellFace(f)) {
-      EmitSingleFace(f, atlas, FaceRecordNormal(f), out_mesh);
+      EmitSingleFace(f, atlas, FaceRecordNormalImpl(f), out_mesh);
       continue;
     }
     const int na = NormalAxis(f.cull_face);
