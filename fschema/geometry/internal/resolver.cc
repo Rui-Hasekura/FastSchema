@@ -233,6 +233,52 @@ void FluidFaceAxes(FaceDir dir, float u[3], float v[3]) noexcept {
   }
 }
 
+void EntityFaceAxes(FaceDir dir, float u[3], float v[3]) noexcept {
+  // Entity box net: the side strips form a ring, so the north strip's
+  // low-u edge is the box's west side and the south strip's low-u edge
+  // its east side -- the u of every side face runs opposite to
+  // ModelFaceAxes (see the header comment for the full net).
+  switch (dir) {
+    case FaceDir::kPosX:  // east:  u = +Z, v = -Y
+      u[0] = 0;
+      u[1] = 0;
+      u[2] = 1;
+      v[0] = 0;
+      v[1] = -1;
+      v[2] = 0;
+      break;
+    case FaceDir::kNegX:  // west:  u = -Z, v = -Y
+      u[0] = 0;
+      u[1] = 0;
+      u[2] = -1;
+      v[0] = 0;
+      v[1] = -1;
+      v[2] = 0;
+      break;
+    case FaceDir::kPosZ:  // south: u = -X, v = -Y
+      u[0] = -1;
+      u[1] = 0;
+      u[2] = 0;
+      v[0] = 0;
+      v[1] = -1;
+      v[2] = 0;
+      break;
+    case FaceDir::kNegZ:  // north: u = +X, v = -Y
+      u[0] = 1;
+      u[1] = 0;
+      u[2] = 0;
+      v[0] = 0;
+      v[1] = -1;
+      v[2] = 0;
+      break;
+    case FaceDir::kPosY:  // up / down fold back onto the block axes
+    case FaceDir::kNegY:
+    default:
+      ModelFaceAxes(dir, u, v);
+      break;
+  }
+}
+
 void ModelFaceAxes(FaceDir dir, float u[3], float v[3]) noexcept {
   switch (dir) {
     case FaceDir::kPosX:  // east:  u = -Z, v = -Y
@@ -342,6 +388,15 @@ std::array<std::array<float, 2>, 4> FluidCubeFaceUvRect(
     const std::array<float, 4>& rect) noexcept {
   float u[3], v[3];
   FluidFaceAxes(dir, u, v);
+  return UvRectOnAxes(u, v, corners, rect);
+}
+
+std::array<std::array<float, 2>, 4> EntityBoxFaceUvRect(
+    FaceDir dir,
+    const std::array<std::array<float, 3>, 4>& corners,
+    const std::array<float, 4>& rect) noexcept {
+  float u[3], v[3];
+  EntityFaceAxes(dir, u, v);
   return UvRectOnAxes(u, v, corners, rect);
 }
 

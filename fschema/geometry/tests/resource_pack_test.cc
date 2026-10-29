@@ -373,6 +373,118 @@ TEST(ResourcePackTest, ChestFacesAreRectsOnBoxPlanes) {
   }
 }
 
+// Regression for the double-chest seam frame: the double-half sheets
+// drop the dark frame on the seam-side edge of every strip and leave
+// the seam-side wall transparent (vanilla never renders the interior
+// faces where a large chest joins). Those frameless edges line up with
+// the geometry only on the ENTITY box-UV axes, where the sheet's side
+// strips unroll as a ring: the north strip's low-u edge is the box's
+// west side and the south strip's low-u edge its east side. On the
+// block-model axes (FaceBakery) the u of the north and south faces is
+// mirrored, which wrapped the frameless edge around to the OUTER side
+// and painted the dark frame straight across the junction of every
+// large chest.
+TEST(ResourcePackTest, DoubleChestSeamEdgeSamplesFramelessStripEdge) {
+  ChestPack fx;
+  auto pack = ResourcePack::Load(fx.root.Get().generic_string());
+  ASSERT_TRUE(pack.has_value());
+
+  const float kEps = 1e-4f;
+  // Bottom box strips (w=15, d=14, texOffs (0,19)): the north strip
+  // spans u [14,29), the south strip [43,58). Each double sheet drops
+  // the dark frame on exactly the one strip edge that lands on the
+  // seam, and the two sheets mirror each other strip by strip, so
+  // which edge is frameless flips with the half:
+  //   left sheet  (half's seam on the west):  north LOW-u, south HIGH-u
+  //   right sheet (half's seam on the east):  north HIGH-u, south LOW-u
+  const float kNorthLoU = 14.0f / 64.0f;  // frameless on the left sheet
+  const float kNorthHiU = 29.0f / 64.0f;  // frameless on the right sheet
+  const float kSouthLoU = 43.0f / 64.0f;  // frameless on the right sheet
+  const float kSouthHiU = 58.0f / 64.0f;  // frameless on the left sheet
+
+  // Left half, facing south: bottom box x in [0, 15/16], seam west.
+  auto left = (*pack)->Resolve("minecraft:chest",
+                               Props("facing=south,type=left"));
+  ASSERT_TRUE(left.has_value()) << ToString(left.error());
+
+  const ModelFace* bottom_north = nullptr;
+  const ModelFace* bottom_south = nullptr;
+  for (const ModelFace& f : left->faces) {
+    bool z_lo = true, z_hi = true, y_lo = true;
+    for (const auto& c : f.corners) {
+      z_lo = z_lo && std::abs(c[2] - 1.0f / 16.0f) < kEps;
+      z_hi = z_hi && std::abs(c[2] - 15.0f / 16.0f) < kEps;
+      y_lo = y_lo && c[1] <= 10.0f / 16.0f + kEps;
+    }
+    if (z_lo && y_lo) bottom_north = &f;
+    if (z_hi && y_lo) bottom_south = &f;
+  }
+  ASSERT_NE(bottom_north, nullptr) << "bottom box north face not found";
+  ASSERT_NE(bottom_south, nullptr) << "bottom box south face not found";
+
+  // North strip: the seam side (west, x=0) samples the strip's low-u
+  // edge -- where the left sheet drops the frame.
+  for (int i = 0; i < 4; ++i) {
+    const float want =
+        bottom_north->corners[i][0] < 0.5f ? kNorthLoU : kNorthHiU;
+    EXPECT_NEAR(bottom_north->uvs[i][0], want, kEps) << "north corner " << i;
+  }
+  // South strip: the entity ring flips u (u = -X), so the seam side
+  // (west, x=0) samples the strip's HIGH-u edge.
+  for (int i = 0; i < 4; ++i) {
+    const float want =
+        bottom_south->corners[i][0] < 0.5f ? kSouthHiU : kSouthLoU;
+    EXPECT_NEAR(bottom_south->uvs[i][0], want, kEps) << "south corner " << i;
+  }
+
+  // Right half, facing south: bottom box x in [1/16, 1], seam east.
+  // Its sheet mirrors the left one, so the north strip's frameless
+  // seam edge is the HIGH-u edge: the seam corners (x = 1) sample
+  // 29/64 and the outer corners (x = 1/16) the framed 14/64.
+  auto right = (*pack)->Resolve("minecraft:chest",
+                                Props("facing=south,type=right"));
+  ASSERT_TRUE(right.has_value()) << ToString(right.error());
+  bottom_north = nullptr;
+  for (const ModelFace& f : right->faces) {
+    bool z_lo = true, y_lo = true;
+    for (const auto& c : f.corners) {
+      z_lo = z_lo && std::abs(c[2] - 1.0f / 16.0f) < kEps;
+      y_lo = y_lo && c[1] <= 10.0f / 16.0f + kEps;
+    }
+    if (z_lo && y_lo) bottom_north = &f;
+  }
+  ASSERT_NE(bottom_north, nullptr);
+  for (int i = 0; i < 4; ++i) {
+    const float want =
+        bottom_north->corners[i][0] > 0.5f ? kNorthHiU : kNorthLoU;
+    EXPECT_NEAR(bottom_north->uvs[i][0], want, kEps) << "right corner " << i;
+  }
+
+  // Facing north rotates the whole half by 180 degrees: the model's
+  // north face lands on world +z and the seam (model west, u = 14/64)
+  // on world +x. The uv must stay bound to the corner it was computed
+  // from, i.e. rotate with the geometry.
+  auto left_n = (*pack)->Resolve("minecraft:chest",
+                                 Props("facing=north,type=left"));
+  ASSERT_TRUE(left_n.has_value()) << ToString(left_n.error());
+  const ModelFace* rotated_north = nullptr;
+  for (const ModelFace& f : left_n->faces) {
+    bool z_hi = true, y_lo = true;
+    for (const auto& c : f.corners) {
+      z_hi = z_hi && std::abs(c[2] - 15.0f / 16.0f) < kEps;
+      y_lo = y_lo && c[1] <= 10.0f / 16.0f + kEps;
+    }
+    if (z_hi && y_lo) rotated_north = &f;
+  }
+  ASSERT_NE(rotated_north, nullptr) << "rotated bottom north face not found";
+  for (int i = 0; i < 4; ++i) {
+    const float want =
+        rotated_north->corners[i][0] > 0.5f ? kNorthLoU : kNorthHiU;
+    EXPECT_NEAR(rotated_north->uvs[i][0], want, kEps)
+        << "rotated corner " << i;
+  }
+}
+
 TEST(ResourcePackTest, ChestStaysEmptyWithoutEntityTexture) {
   // Blockstate referencing the never-shipped block model, and no
   // entity texture either: the zero-face behaviour must stay (no

@@ -48,6 +48,7 @@ using internal::BlockNameToBlockstateRelPath;
 using internal::BuildCubeFace;
 using internal::CubeFaceGeometry;
 using internal::CubeFaceUvRect;
+using internal::EntityBoxFaceUvRect;
 using internal::FaceDir;
 using internal::FluidCubeFaceUvRect;
 using internal::IsPathSafe;
@@ -532,9 +533,14 @@ struct ChestBoxSpec {
 // BuildCubeFace exactly (clockwise seen from outside; PushQuadIndices
 // flips per-triangle winding), so the faces cull and shade exactly
 // like regular block faces. UVs project the model-space corners onto
-// the face's image axes (CubeFaceUvRect/ModelFaceAxes) so upright
-// orientation and per-face mirroring match vanilla's FaceBakery
-// convention by construction. `skip_dir` drops one direction's face:
+// the face's image axes (EntityBoxFaceUvRect/EntityFaceAxes) so
+// upright orientation and per-face mirroring match the ENTITY box-UV
+// convention the chest sheets are drawn in -- NOT FaceBakery's block
+// convention (ModelFaceAxes): the entity sheet's side strips unroll
+// as a ring, so the u of the north and south faces runs opposite to
+// block models, and the asymmetric double-chest sheets (frameless
+// seam-side edge, transparent seam-side strip) only line up on the
+// entity axes. `skip_dir` drops one direction's face:
 // double-chest halves skip their seam side, whose strips the double
 // sheets deliberately leave unpainted (vanilla never renders those
 // interior faces). Faces sitting exactly on the cell boundary keep
@@ -604,11 +610,15 @@ void EmitChestBox(const ChestBoxSpec& box,
       mf.corners[i] = {xs[(ci >> 2) & 1], ys[(ci >> 1) & 1], zs[ci & 1]};
     }
     // UVs: project the model-space corners onto the face's image axes
-    // and map into the strip rect -- the same mechanism regular block
-    // faces use (CubeFaceUvRect/ModelFaceAxes), so upright orientation
-    // and per-face mirroring match vanilla's FaceBakery convention by
-    // construction.
-    mf.uvs = internal::CubeFaceUvRect(
+    // and map into the strip rect -- the entity box-UV axes
+    // (EntityFaceAxes), which the 64x64 chest sheets are drawn in.
+    // The block axes (ModelFaceAxes/CubeFaceUvRect) mirror the u of
+    // the north and south strips; every strip of the single sheets is
+    // symmetric so that went unnoticed, but the double-half sheets
+    // drop the frame on the seam-side edge, and on the block axes
+    // that edge lands on the OUTER side -- the dark frame then runs
+    // across the junction of a large chest instead of around it.
+    mf.uvs = EntityBoxFaceUvRect(
         plan.dir, mf.corners, std::array<float, 4>{nl, nt, nr, nb});
     if (plan.at_boundary) {
       mf.SetCullFace(static_cast<std::uint8_t>(plan.dir));

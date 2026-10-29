@@ -104,6 +104,22 @@ void ModelFaceAxes(FaceDir dir, float u[3], float v[3]) noexcept;
 // must match FaceBakery.
 void FluidFaceAxes(FaceDir dir, float u[3], float v[3]) noexcept;
 
+// The entity ModelPart box-UV axes (entity/chest/*.png and the other
+// entity sheets): the four side walls unroll onto the sheet as a
+// connected ring (west, north, east, south), so consecutive strips
+// share a box edge and EVERY side face's u axis runs opposite to
+// ModelFaceAxes -- the strip's low-u edge is the box's WEST side on
+// north, its EAST side on south, its SOUTH end on west and its NORTH
+// end on east; v stays upright. Up and down keep the block axes
+// (up: u = +X, v = +Z; down: u = +X, v = -Z -- the down strip sits
+// directly above the north strip in the box net and folds back along
+// the north wall's top edge). The double-chest sheets are where the
+// distinction becomes visible: vanilla leaves the seam-side strip
+// transparent and drops the dark frame on the seam-side edge of every
+// other strip, so side faces mapped on the block axes render the
+// frame across the junction of a large chest's two halves.
+void EntityFaceAxes(FaceDir dir, float u[3], float v[3]) noexcept;
+
 // Assigns a [u0, v0, u1, v1] rect onto a face's four corners (in
 // BuildCubeFace corner order) following ModelFaceAxes: each corner's
 // uv is picked by projecting its position onto the direction's image
@@ -117,6 +133,13 @@ void FluidFaceAxes(FaceDir dir, float u[3], float v[3]) noexcept;
 // Same rect assignment on the fluid axes (FluidFaceAxes), for
 // synthesized fluid faces.
 [[nodiscard]] std::array<std::array<float, 2>, 4> FluidCubeFaceUvRect(
+    FaceDir dir,
+    const std::array<std::array<float, 3>, 4>& corners,
+    const std::array<float, 4>& rect) noexcept;
+
+// Same rect assignment on the entity box-UV axes (EntityFaceAxes),
+// for synthesized entity-model faces (the chest family).
+[[nodiscard]] std::array<std::array<float, 2>, 4> EntityBoxFaceUvRect(
     FaceDir dir,
     const std::array<std::array<float, 3>, 4>& corners,
     const std::array<float, 4>& rect) noexcept;
