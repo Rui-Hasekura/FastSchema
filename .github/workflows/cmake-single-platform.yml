@@ -1,4 +1,3 @@
-# This starter workflow is for a CMake project running on Linux.
 name: CMake on a single platform
 
 on:
@@ -24,6 +23,7 @@ concurrency:
 env:
   BUILD_TYPE: Release
   FETCHCONTENT_BASE_DIR: ${{ github.workspace }}/.deps
+  CMAKE_VERSION: '4.4.2'
 
 jobs:
   build:
@@ -35,15 +35,29 @@ jobs:
         with:
           lfs: true
 
+      - name: Cache apt packages
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-ninja-gcc14
+
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build g++-14 ccache
 
+      - name: Cache CMake toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.tool_cache }}/cmake/*
+            ${{ runner.tool_cache }}/ninja/*
+          key: get-cmake-${{ runner.os }}-${{ runner.arch }}-${{ env.CMAKE_VERSION }}
+
       - name: Setup CMake
         uses: lukka/get-cmake@v4.4.2
         with:
-          cmakeVersion: '4.4.2'
+          cmakeVersion: ${{ env.CMAKE_VERSION }}
 
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
@@ -57,7 +71,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.FETCHCONTENT_BASE_DIR }}
-          key: fetchcontent-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+          key: fetchcontent-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'cmake/**/*.txt') }}
           restore-keys: |
             fetchcontent-${{ runner.os }}-
 
