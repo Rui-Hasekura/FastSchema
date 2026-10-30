@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <cstring>
 #include <numbers>
+#include <numeric>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -37,6 +38,7 @@
 #include "fschema/geometry/internal/chunk_dispatch.h"
 #include "fschema/geometry/internal/cull.h"
 #include "fschema/geometry/internal/merge.h"
+#include "fschema/geometry/internal/mesh_append.h"
 #include "fschema/geometry/internal/resolver.h"
 #include "fschema/geometry/resource_pack.h"
 #include "fschema/geometry/types.h"
@@ -87,10 +89,42 @@ struct PaletteSlotTable {
   std::uint32_t overlay_slot = kNoSlot;
 };
 
-// Read-only per-region walk state shared by every worker. (FluidPaletteInfo
-// is defined with the fluid helpers below.)
-struct FluidPaletteInfo;
+// Palette-level fluid info from the block name and `level` property:
+// kind (1 = water, 2 = lava) and vanilla fluid amount (source = 8,
+// flowing L = 8 - L, falling L = 16 - L; FlowingFluid#getLegacyLevel).
+struct FluidPaletteInfo {
+  std::uint8_t kind = 0;
+  std::uint8_t amount = 0;
+  // Only blocks whose faces came from SynthesizeFluidFaces are
+  // morphable; a pack-provided water model keeps its own geometry.
+  bool morphable = false;
+};
 
+// Palette-LUT fluid lookup. The per-cell fluid byte ((kind << 4) |
+// amount, 0xFF = none) is a pure function of the palette entry, so it
+// is derived on demand from block_indices through the palette instead
+// of being expanded into a one-byte-per-block table: fluid cells are
+// rare (the probes stay cheap), while the expanded table cost one
+// byte per block of resident memory for as long as the walk ran
+// (260MB on a SV3-scale region) -- and its build pass walked every
+// block up front.
+struct FluidLookup {
+  const std::vector<FluidPaletteInfo>* palette = nullptr;
+  const std::uint16_t* blocks = nullptr;  // region.block_indices
+  std::size_t block_count = 0;
+
+  [[nodiscard]] std::uint8_t At(std::size_t linear) const noexcept {
+    if (linear >= block_count) return 0xFF;
+    const std::uint16_t pal = blocks[linear];
+    if (pal >= palette->size()) return 0xFF;
+    const FluidPaletteInfo& f = (*palette)[pal];
+    return f.morphable
+               ? static_cast<std::uint8_t>((f.kind << 4) | f.amount)
+               : std::uint8_t{0xFF};
+  }
+};
+
+// Read-only per-region walk state shared by every worker.
 struct WalkCtx {
   const ir::Region* region;
   const std::vector<ResolvedModel>* models;
@@ -98,7 +132,7 @@ struct WalkCtx {
   const FluidPaletteInfo* palette_fluid;  // per palette entry
   const PaletteSlotTable* slots;
   const std::uint8_t* overlay_eligible;  // per palette entry
-  const std::vector<std::uint8_t>* fluid_table;  // empty when no fluid
+  FluidLookup fluid;  // empty when no morphable fluid
   const internal::BlockGroupTable* group_table;
   float ao_strength;   // 0 when ambient occlusion is off
   bool cull;           // opts.cull_interior_faces
@@ -106,32 +140,96 @@ struct WalkCtx {
   std::array<std::int32_t, 3> world_offset{};  // table pos -> world pos
 };
 
-// Face destination: streaming emits straight into the target meshes
-// (no intermediate face buffer); collecting buffers VisibleFaceInfo
-// for the greedy merge.
-template <bool kStream>
-struct FaceSink;
+// ---- Sinks: where ProcessBlock sends a visible face ----
+//
+// CountSink (phase 1 of the two-phase streaming path) counts the
+// emitted quads per bucket so the output can be sized exactly before
+// phase 2 writes it; kCounting routes the per-face decisions past
+// record building and AO. The emit sinks carry kCounting = false.
+struct CountSink {
+  static constexpr bool kCounting = true;
+  // faces[is_transparent][is_fluid]
+  std::size_t faces[2][2] = {{0, 0}, {0, 0}};
 
-template <>
-struct FaceSink<false> {
-  std::vector<internal::VisibleFaceInfo>* opaque;
-  std::vector<internal::VisibleFaceInfo>* transparent;
-  // Copy, not move: fluid back faces re-emit the front record right
-  // after Put, so the record must stay intact (same front-then-back
-  // order as the old direct-collect path).
-  void Put(const internal::VisibleFaceInfo& f) {
-    (f.is_transparent ? transparent : opaque)->push_back(f);
+  void Put(bool is_transparent, bool is_fluid) {
+    ++faces[is_transparent ? 1 : 0][is_fluid ? 1 : 0];
+  }
+
+  [[nodiscard]] std::size_t Total() const noexcept {
+    return faces[0][0] + faces[0][1] + faces[1][0] + faces[1][1];
   }
 };
 
-template <>
-struct FaceSink<true> {
+// Fixed-window streaming sink: writes quads straight into pre-sized
+// slices of the output meshes (phase 2 of the exact streaming path;
+// every parallel worker owns a disjoint slice).
+struct StreamSlices {
+  static constexpr bool kCounting = false;
   const TextureAtlas* atlas;
-  Mesh* opaque;
-  Mesh* transparent;
-  void Put(const internal::VisibleFaceInfo& f) const {
-    internal::EmitFaceDirectly(
-        f, *atlas, f.is_transparent ? *transparent : *opaque);
+  internal::MeshAppender* opaque;
+  internal::MeshAppender* transparent;
+
+  void Put(const internal::VisibleFaceInfo& f, std::uint16_t /*pal*/,
+           std::uint16_t /*face*/) {
+    internal::EmitFaceDirectly(f, *atlas,
+                               f.is_transparent ? *transparent : *opaque);
+  }
+};
+
+// Growing streaming sink: appends quads at the output mesh ends (the
+// small-output branches, where the count pass is not worth its walk).
+struct StreamTail {
+  static constexpr bool kCounting = false;
+  const TextureAtlas* atlas;
+  internal::MeshAppender opaque;
+  internal::MeshAppender transparent;
+
+  void Put(const internal::VisibleFaceInfo& f, std::uint16_t /*pal*/,
+           std::uint16_t /*face*/) {
+    internal::EmitFaceDirectly(f, *atlas,
+                               f.is_transparent ? transparent : opaque);
+  }
+
+  void Finish() {
+    opaque.Finish();
+    transparent.Finish();
+  }
+};
+
+// Collecting sink for the merge path: non-fluid faces buffer as slim
+// CollectedFace records (24 bytes; corners/uvs re-derived from the
+// palette model at merge time), fluid faces keep full records because
+// their geometry is morphed per block. Fluid faces used to be spliced
+// out of one fat buffer after the fact; collecting them separately
+// from the start makes the splice -- and the fat copy it paid --
+// unnecessary.
+struct CollectBuffers {
+  static constexpr bool kCounting = false;
+  std::vector<internal::CollectedFace>* opaque = nullptr;
+  std::vector<internal::CollectedFace>* transparent = nullptr;
+  std::vector<internal::VisibleFaceInfo>* opaque_fluid = nullptr;
+  std::vector<internal::VisibleFaceInfo>* transparent_fluid = nullptr;
+
+  void Put(const internal::VisibleFaceInfo& f, std::uint16_t pal,
+           std::uint16_t face) {
+    if (f.is_fluid) {
+      (f.is_transparent ? transparent_fluid : opaque_fluid)->push_back(f);
+      return;
+    }
+    internal::CollectedFace c;
+    c.block_pos = f.block_pos;
+    c.slot_index = f.slot_index;
+    c.palette_index = pal;
+    c.face_index = face;
+    c.ao = f.ao;
+    (f.is_transparent ? transparent : opaque)->push_back(c);
+  }
+
+  void ClearAll() {
+    opaque->clear();
+    transparent->clear();
+    opaque_fluid->clear();
+    transparent_fluid->clear();
   }
 };
 
@@ -324,13 +422,6 @@ void RecordWarning(const TessellationOptions& opts,
 // Palette-level fluid info from the block name and `level` property:
 // kind (1 = water, 2 = lava) and vanilla fluid amount (source = 8,
 // flowing L = 8 - L, falling L = 16 - L; FlowingFluid#getLegacyLevel).
-struct FluidPaletteInfo {
-  std::uint8_t kind = 0;
-  std::uint8_t amount = 0;
-  // Only blocks whose faces came from SynthesizeFluidFaces are
-  // morphable; a pack-provided water model keeps its own geometry.
-  bool morphable = false;
-};
 
 [[nodiscard]] std::uint8_t FluidKindForName(std::string_view name) {
   const std::string_view n = internal::StripNamespace(name);
@@ -367,16 +458,6 @@ struct FluidPaletteInfo {
   return n.ends_with("_stained_glass") || n.ends_with("_leaves");
 }
 
-// Overlay context shared by one tessellation pass (read-only after
-// build): the fixed overlay texture path -- empty when the pack ships
-// none; lava never gets one -- plus a per-palette eligibility byte for
-// the neighbor check (vanilla swaps the sprite per SIDE, so the flag
-// is consulted per face direction, not per block).
-struct FluidOverlayInfo {
-  std::string_view texture;  // "" = pack ships no water_overlay
-  std::span<const std::uint8_t> palette_eligible;  // per palette entry
-};
-
 [[nodiscard]] std::vector<FluidPaletteInfo> BuildPaletteFluid(
     const ir::Region& region,
     const std::vector<ResolvedModel>& palette_models) {
@@ -399,23 +480,6 @@ struct FluidOverlayInfo {
   return fluid;
 }
 
-// Per-cell fluid byte: 0xFF = none, else (kind << 4) | amount. Same
-// shape as the group table (one byte per block, LinearIndex order);
-// read-only after build, shared with the TBB workers.
-[[nodiscard]] std::vector<std::uint8_t> BuildFluidTable(
-    const ir::Region& region,
-    const std::vector<FluidPaletteInfo>& palette_fluid) {
-  std::vector<std::uint8_t> table(region.block_indices.size(), 0xFF);
-  for (std::size_t i = 0; i < region.block_indices.size(); ++i) {
-    const std::uint16_t pal = region.block_indices[i];
-    if (pal >= palette_fluid.size()) continue;
-    const FluidPaletteInfo& f = palette_fluid[pal];
-    if (!f.morphable) continue;
-    table[i] = static_cast<std::uint8_t>((f.kind << 4) | f.amount);
-  }
-  return table;
-}
-
 // Vanilla FluidRenderer#getHeight: same-fluid cell -> 1.0 when the
 // same fluid continues above, else amount/9; a different fluid
 // behaves like air (fluid blocks carry no collision -> 0.0F); any
@@ -425,21 +489,21 @@ struct FluidOverlayInfo {
 // bounds cells contribute 0.0 (a source pool stays flat right up
 // against a glass wall, matching vanilla).
 [[nodiscard]] float FluidCellHeight(
-    const std::vector<std::uint8_t>& fluid_table,
+    const FluidLookup& fluid,
     const internal::BlockGroupTable& group_table,
     const ir::BoundingBox& bounds,
     filters::LocalPos p,
     std::uint8_t kind) noexcept {
   if (!InBounds(bounds, p)) return 0.0f;  // out of bounds: like air
   const std::size_t linear = filters::LinearIndex(p, bounds);
-  const std::uint8_t cell = fluid_table[linear];
+  const std::uint8_t cell = fluid.At(linear);
   if (cell != 0xFF) {
     if ((cell >> 4) == kind) {
       const filters::LocalPos above{p.x, p.y + 1, p.z};
       bool above_same = false;
       if (InBounds(bounds, above)) {
-        const std::uint8_t up =
-            fluid_table[filters::LinearIndex(above, bounds)];
+        const std::uint8_t up = fluid.At(
+            static_cast<std::size_t>(filters::LinearIndex(above, bounds)));
         above_same = up != 0xFF && (up >> 4) == kind;
       }
       return above_same ? 1.0f : static_cast<float>(cell & 0x0F) / 9.0f;
@@ -457,7 +521,7 @@ struct FluidOverlayInfo {
 // model lets the center cell alone decide, so the semantics stay
 // exact if culling ever gains vanilla's occluder nuance.
 [[nodiscard]] bool ShouldRenderBackwardUpFace(
-    const std::vector<std::uint8_t>& fluid_table,
+    const FluidLookup& fluid,
     const internal::BlockGroupTable& group_table,
     const ir::BoundingBox& bounds,
     filters::LocalPos p,
@@ -466,8 +530,9 @@ struct FluidOverlayInfo {
     for (int dx = -1; dx <= 1; ++dx) {
       const filters::LocalPos q{p.x + dx, p.y + 1, p.z + dz};
       if (!InBounds(bounds, q)) return true;  // out of bounds: like air
-      const std::size_t linear = filters::LinearIndex(q, bounds);
-      const std::uint8_t cell = fluid_table[linear];
+      const std::size_t linear = static_cast<std::size_t>(
+          filters::LinearIndex(q, bounds));
+      const std::uint8_t cell = fluid.At(linear);
       if (cell != 0xFF) {
         if ((cell >> 4) != kind) return true;  // a different fluid
         continue;                              // same fluid continues
@@ -517,32 +582,32 @@ struct FluidCornerHeights {
 };
 
 [[nodiscard]] FluidCornerHeights FluidCornersAt(
-    const std::vector<std::uint8_t>& fluid_table,
+    const FluidLookup& fluid,
     const internal::BlockGroupTable& group_table,
     const ir::BoundingBox& bounds,
     filters::LocalPos p,
     std::uint8_t kind) noexcept {
   const float h_self =
-      FluidCellHeight(fluid_table, group_table, bounds, p, kind);
+      FluidCellHeight(fluid, group_table, bounds, p, kind);
   if (h_self >= 1.0f) {
     return FluidCornerHeights{1.0f, 1.0f, 1.0f, 1.0f};
   }
   const float h_n = FluidCellHeight(
-      fluid_table, group_table, bounds, {p.x, p.y, p.z - 1}, kind);
+      fluid, group_table, bounds, {p.x, p.y, p.z - 1}, kind);
   const float h_s = FluidCellHeight(
-      fluid_table, group_table, bounds, {p.x, p.y, p.z + 1}, kind);
+      fluid, group_table, bounds, {p.x, p.y, p.z + 1}, kind);
   const float h_w = FluidCellHeight(
-      fluid_table, group_table, bounds, {p.x - 1, p.y, p.z}, kind);
+      fluid, group_table, bounds, {p.x - 1, p.y, p.z}, kind);
   const float h_e = FluidCellHeight(
-      fluid_table, group_table, bounds, {p.x + 1, p.y, p.z}, kind);
+      fluid, group_table, bounds, {p.x + 1, p.y, p.z}, kind);
   const float h_nw = FluidCellHeight(
-      fluid_table, group_table, bounds, {p.x - 1, p.y, p.z - 1}, kind);
+      fluid, group_table, bounds, {p.x - 1, p.y, p.z - 1}, kind);
   const float h_ne = FluidCellHeight(
-      fluid_table, group_table, bounds, {p.x + 1, p.y, p.z - 1}, kind);
+      fluid, group_table, bounds, {p.x + 1, p.y, p.z - 1}, kind);
   const float h_se = FluidCellHeight(
-      fluid_table, group_table, bounds, {p.x + 1, p.y, p.z + 1}, kind);
+      fluid, group_table, bounds, {p.x + 1, p.y, p.z + 1}, kind);
   const float h_sw = FluidCellHeight(
-      fluid_table, group_table, bounds, {p.x - 1, p.y, p.z + 1}, kind);
+      fluid, group_table, bounds, {p.x - 1, p.y, p.z + 1}, kind);
   return FluidCornerHeights{/*nw=*/CornerHeight(h_self, h_n, h_w, h_nw),
                             /*ne=*/CornerHeight(h_self, h_n, h_e, h_ne),
                             /*se=*/CornerHeight(h_self, h_s, h_e, h_se),
@@ -558,31 +623,35 @@ struct FluidCornerHeights {
 // component the renderer ignores, so it is omitted; out-of-bounds
 // cells act like air with air below (no contribution).
 [[nodiscard]] std::pair<float, float> FluidFlowAt(
-    const std::vector<std::uint8_t>& fluid_table,
+    const FluidLookup& fluid,
     const internal::BlockGroupTable& group_table,
     const ir::BoundingBox& bounds,
     filters::LocalPos p,
     std::uint8_t kind) noexcept {
   float fx = 0.0f;
   float fz = 0.0f;
-  const std::uint8_t own = fluid_table[filters::LinearIndex(p, bounds)];
+  const std::uint8_t own = fluid.At(
+      static_cast<std::size_t>(filters::LinearIndex(p, bounds)));
   const float own_h = static_cast<float>(own & 0x0F) / 9.0f;
   const std::int32_t dirs[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
   for (const auto& d : dirs) {
     const filters::LocalPos q{p.x + d[0], p.y, p.z + d[1]};
     if (!InBounds(bounds, q)) continue;
-    const std::uint8_t cell = fluid_table[filters::LinearIndex(q, bounds)];
+    const std::size_t q_linear =
+        static_cast<std::size_t>(filters::LinearIndex(q, bounds));
+    const std::uint8_t cell = fluid.At(q_linear);
     float distance = 0.0f;
     if (cell != 0xFF) {
       if ((cell >> 4) != kind) continue;  // different fluid: no effect
       const float nh = static_cast<float>(cell & 0x0F) / 9.0f;
       if (nh > 0.0f) distance = own_h - nh;
-    } else if (group_table.bytes[filters::LinearIndex(q, bounds)] == 0) {
+    } else if (group_table.bytes[q_linear] == 0) {
       // Fluidless, motion-free neighbor: a hole (same fluid below)
       // pulls toward it (FlowingFluid#getFlow).
       const filters::LocalPos below{q.x, q.y - 1, q.z};
       if (InBounds(bounds, below)) {
-        const std::uint8_t b = fluid_table[filters::LinearIndex(below, bounds)];
+        const std::uint8_t b = fluid.At(
+            static_cast<std::size_t>(filters::LinearIndex(below, bounds)));
         if (b != 0xFF && (b >> 4) == kind) {
           const float bh = static_cast<float>(b & 0x0F) / 9.0f;
           if (bh > 0.0f) distance = own_h - (bh - 8.0f / 9.0f);
@@ -673,7 +742,7 @@ struct FluidMorph {
 
 [[nodiscard]] FluidMorph BuildFluidMorph(
     const FluidPaletteInfo& fluid,
-    const std::vector<std::uint8_t>& fluid_table,
+    const FluidLookup& fluid_lookup,
     const internal::BlockGroupTable& group_table,
     const ir::BoundingBox& bounds,
     filters::LocalPos p,
@@ -681,13 +750,14 @@ struct FluidMorph {
     std::uint32_t flow_slot) noexcept {
   FluidMorph m;
   if (!fluid.morphable) return m;
-  m.corners = FluidCornersAt(fluid_table, group_table, bounds, p, fluid.kind);
+  m.corners = FluidCornersAt(fluid_lookup, group_table, bounds, p,
+                             fluid.kind);
   // Only water's fluid model carries an overlay material in vanilla.
   m.overlay_slot = fluid.kind == 1 ? overlay_slot : kNoSlot;
   m.flow_slot = flow_slot;
   if (m.flow_slot == kNoSlot) return m;
   const auto [fx, fz] =
-      FluidFlowAt(fluid_table, group_table, bounds, p, fluid.kind);
+      FluidFlowAt(fluid_lookup, group_table, bounds, p, fluid.kind);
   m.flow = {fx, fz};
   m.flowing = fx != 0.0f || fz != 0.0f;
   return m;
@@ -826,9 +896,11 @@ void MorphFluidFace(ModelFace& face, const FluidMorph& fm, bool overlay_side) {
 // vertex; its cull face flips so the exported normal matches the
 // visible orientation (FastSchema normals are per-face, unlike
 // vanilla's hardcoded up for every fluid vertex).
-template <bool kStream>
+template <typename Sink>
 void EmitFluidBackFace(const internal::VisibleFaceInfo& front,
-                       FaceSink<kStream>& sink) {
+                       Sink& sink,
+                       std::uint16_t pal_idx,
+                       std::uint16_t face_idx) {
   internal::VisibleFaceInfo back = front;
   for (int i = 0; i < 4; ++i) {
     back.world_corners[i] = front.world_corners[3 - i];
@@ -836,7 +908,7 @@ void EmitFluidBackFace(const internal::VisibleFaceInfo& front,
     back.ao[i] = front.ao[3 - i];
   }
   back.cull_face = OppositeCullFace(front.cull_face);
-  sink.Put(std::move(back));
+  sink.Put(back, pal_idx, face_idx);
 }
 
 // Walks one block: culls faces against the row caches, resolves atlas
@@ -844,12 +916,17 @@ void EmitFluidBackFace(const internal::VisibleFaceInfo& front,
 // fluid faces, computes AO and hands the record to the sink. `row_i`
 // is the block's offset within the current X row segment, indexing
 // the neighbor rows in `rows` (only read when ctx.cull).
-template <bool kStream>
+//
+// The face-loop decisions (air skip, cull, slot pick, fluid back
+// face) run identically for every sink so that CountSink (phase 1)
+// and the emitting sinks (phase 2) agree on the exact quad count;
+// only the record building and the writes are emit-only.
+template <typename Sink>
 void ProcessBlock(const WalkCtx& ctx,
                   filters::LocalPos p,
                   std::size_t row_i,
                   RowNeighborBuffers& rows,
-                  FaceSink<kStream>& sink) {
+                  Sink& sink) {
   const ir::Region& region = *ctx.region;
   const std::uint16_t pal_idx = static_cast<std::uint16_t>(
       region.block_indices[filters::LinearIndex(p, region.bounds)]);
@@ -858,6 +935,11 @@ void ProcessBlock(const WalkCtx& ctx,
   const ResolvedModel& model = (*ctx.models)[pal_idx];
   const std::uint8_t cur_group = ctx.palette_groups[pal_idx];
   const std::uint32_t* face_slots = ctx.slots->face_slots[pal_idx].data();
+  const std::size_t face_count = model.faces.size();
+  // Entries with no model (unresolved-under-kSkipAndWarn, air with an
+  // empty pack model) emit nothing: skip the block before the fluid
+  // lookup and the face loop.
+  if (face_count == 0) return;
 
   // Synthesized fluid faces are morphed per block: their corner
   // heights and flow direction depend on fluid neighbors, which the
@@ -865,14 +947,16 @@ void ProcessBlock(const WalkCtx& ctx,
   // FluidRenderer#tesselate).
   const FluidPaletteInfo& fluid = ctx.palette_fluid[pal_idx];
   const FluidMorph fluid_m =
-      BuildFluidMorph(fluid, *ctx.fluid_table, *ctx.group_table,
+      BuildFluidMorph(fluid, ctx.fluid, *ctx.group_table,
                       region.bounds, p, ctx.slots->overlay_slot,
                       ctx.slots->flow_slots[pal_idx]);
   ModelFace morphed;
-  std::size_t fi = 0;
-  for (const ModelFace& face : model.faces) {
+  for (std::size_t fi = 0; fi < face_count; ++fi) {
+    const ModelFace& face = model.faces[fi];
     const std::uint32_t own_slot = face_slots[fi];
-    ++fi;
+    // MorphFluidFace never touches the flags, so the cull/slot
+    // decisions below read the same values in counting and emitting
+    // mode; only the geometry morph is emit-side.
     const ModelFace* fp = &face;
     // Overlay flag is consulted per horizontal side (vanilla swaps the
     // sprite per face direction); up/down faces never overlay. Hoisted
@@ -880,7 +964,6 @@ void ProcessBlock(const WalkCtx& ctx,
     // needs it too.
     bool overlay_side = false;
     if (fluid.morphable && face.IsFluidFace()) {
-      morphed = face;
       if (fluid_m.overlay_slot != kNoSlot) {
         const std::uint8_t dir = face.CullFace();
         if (IsHorizontalFace(dir)) {
@@ -891,11 +974,14 @@ void ProcessBlock(const WalkCtx& ctx,
           }
         }
       }
-      MorphFluidFace(morphed, fluid_m, overlay_side);
-      fp = &morphed;
+      if constexpr (!Sink::kCounting) {
+        morphed = face;
+        MorphFluidFace(morphed, fluid_m, overlay_side);
+        fp = &morphed;
+      }
     }
-    if (ctx.cull && fp->CullFace() != 0 &&
-        internal::NeighborCulls(rows.groups[fp->CullFace()][row_i],
+    if (ctx.cull && face.CullFace() != 0 &&
+        internal::NeighborCulls(rows.groups[face.CullFace()][row_i],
                                 cur_group)) {
       continue;
     }
@@ -907,35 +993,42 @@ void ProcessBlock(const WalkCtx& ctx,
     if (overlay_side) {
       slot = fluid_m.overlay_slot;
     } else if (fluid.morphable && face.IsFluidFace() &&
-               fp->CullFace() ==
+               face.CullFace() ==
                    static_cast<std::uint8_t>(internal::FaceDir::kPosY) &&
                fluid_m.flowing) {
       slot = fluid_m.flow_slot;
     }
     if (slot == kNoSlot) continue;
 
-    const filters::LocalPos world_p{p.x + ctx.world_offset[0],
-                                    p.y + ctx.world_offset[1],
-                                    p.z + ctx.world_offset[2]};
-    internal::VisibleFaceInfo info = BuildFaceRecord(*fp, p, world_p, slot,
-                                                     *ctx.group_table,
-                                                     region.bounds,
-                                                     ctx.ao_strength);
-    sink.Put(info);
-    // Vanilla FluidRenderer#addFace doubles every emitted fluid face
-    // with a reversed-winding copy except the down face and overlay
-    // sides: sides pass addBackFace = !isOverlay, the up face only
-    // while shouldRenderBackwardUpFace holds.
+    // Back-face decision (vanilla FluidRenderer#addFace doubles every
+    // emitted fluid face except the down face and overlay sides: sides
+    // pass addBackFace = !isOverlay, the up face only while
+    // shouldRenderBackwardUpFace holds). Shared with the counting
+    // sink because it changes the emitted quad count.
+    bool back = false;
     if (fluid.morphable && face.IsFluidFace()) {
-      const auto dir = static_cast<internal::FaceDir>(fp->CullFace());
-      bool back = false;
+      const auto dir = static_cast<internal::FaceDir>(face.CullFace());
       if (dir == internal::FaceDir::kPosY) {
-        back = ShouldRenderBackwardUpFace(*ctx.fluid_table, *ctx.group_table,
+        back = ShouldRenderBackwardUpFace(ctx.fluid, *ctx.group_table,
                                           region.bounds, p, fluid.kind);
       } else if (dir != internal::FaceDir::kNegY) {
         back = !overlay_side;
       }
-      if (back) EmitFluidBackFace(info, sink);
+    }
+
+    if constexpr (Sink::kCounting) {
+      sink.Put(face.IsTransparent(), face.IsFluidFace());
+      if (back) sink.Put(face.IsTransparent(), face.IsFluidFace());
+    } else {
+      const filters::LocalPos world_p{p.x + ctx.world_offset[0],
+                                      p.y + ctx.world_offset[1],
+                                      p.z + ctx.world_offset[2]};
+      internal::VisibleFaceInfo info =
+          BuildFaceRecord(*fp, p, world_p, slot, *ctx.group_table,
+                          region.bounds, ctx.ao_strength);
+      const std::uint16_t fi16 = static_cast<std::uint16_t>(fi);
+      sink.Put(info, pal_idx, fi16);
+      if (back) EmitFluidBackFace(info, sink, pal_idx, fi16);
     }
   }
 }
@@ -945,14 +1038,14 @@ void ProcessBlock(const WalkCtx& ctx,
 // which are contiguous in the YZX table layout; out-of-bounds rows
 // read as air), then visits the blocks. The buffers persist across
 // rows and chunks, so a worker pays the allocation once per thread.
-template <bool kStream>
+template <typename Sink>
 void ProcessRow(const WalkCtx& ctx,
                 filters::LocalPos x_start,
                 std::int32_t y,
                 std::int32_t z,
                 std::int32_t x_count,
                 RowNeighborBuffers& rows,
-                FaceSink<kStream>& sink) {
+                Sink& sink) {
   if (x_count <= 0) return;
   const ir::Region& region = *ctx.region;
   const ir::BoundingBox& b = region.bounds;
@@ -1000,6 +1093,23 @@ void ProcessRow(const WalkCtx& ctx,
   }
 }
 
+// Walks every row of one chunk (or of the whole region when the chunk
+// spans it): the shared y/z loop of the counting and emitting passes.
+template <typename Sink>
+void WalkChunk(const WalkCtx& ctx,
+               filters::LocalPos origin,
+               std::int32_t x_end,
+               std::int32_t y_end,
+               std::int32_t z_end,
+               RowNeighborBuffers& rows,
+               Sink& sink) {
+  for (std::int32_t y = origin.y; y < y_end; ++y) {
+    for (std::int32_t z = origin.z; z < z_end; ++z) {
+      ProcessRow(ctx, origin, y, z, x_end - origin.x, rows, sink);
+    }
+  }
+}
+
 void AppendMesh(Mesh& dst, const Mesh& src) {
   const std::uint32_t base = static_cast<std::uint32_t>(dst.VertexCount());
   dst.positions.insert(
@@ -1008,9 +1118,11 @@ void AppendMesh(Mesh& dst, const Mesh& src) {
   dst.uvs.insert(dst.uvs.end(), src.uvs.begin(), src.uvs.end());
   dst.ao.insert(dst.ao.end(), src.ao.begin(), src.ao.end());
   dst.tints.insert(dst.tints.end(), src.tints.begin(), src.tints.end());
-  dst.indices.reserve(dst.indices.size() + src.indices.size());
-  for (auto idx : src.indices) {
-    dst.indices.push_back(idx + base);
+  const std::size_t idx0 = dst.indices.size();
+  dst.indices.resize(idx0 + src.indices.size());
+  std::uint32_t* out = dst.indices.data() + idx0;
+  for (std::uint32_t idx : src.indices) {
+    *out++ = idx + base;
   }
 }
 
@@ -1096,34 +1208,111 @@ BuildAtlasWithSlots(const ResourcePack& pack,
   }
 }
 
-// Emit collected faces into the target mesh. Dispatches to direct emit
-// or greedy merge based on opts.merge_coplanar_faces.
-void EmitCollectedFaces(
-    std::vector<internal::VisibleFaceInfo>& opaque_faces,
-    std::vector<internal::VisibleFaceInfo>& transparent_faces,
-    const TextureAtlas& atlas,
-    const TessellationOptions& opts,
-    Mesh& out_opaque,
-    Mesh& out_transparent) {
-  if (opts.merge_coplanar_faces) {
-    // Fluid faces carry sub-block/sloped corners; MergeGroup rebuilds
-    // quads from block-grid bounds and would flatten them. Splice them
-    // out in place and emit them directly, per output mesh.
-    std::vector<internal::VisibleFaceInfo> opaque_fluid;
-    std::vector<internal::VisibleFaceInfo> transparent_fluid;
-    internal::SpliceFluidFacesInPlace(opaque_faces, opaque_fluid);
-    internal::SpliceFluidFacesInPlace(transparent_faces, transparent_fluid);
-    internal::MergeAndEmitFaces(opaque_faces, atlas, out_opaque);
-    internal::MergeAndEmitFaces(transparent_faces, atlas, out_transparent);
-    internal::EmitFacesDirectly(opaque_fluid, atlas, out_opaque);
-    internal::EmitFacesDirectly(transparent_fluid, atlas, out_transparent);
-  } else {
-    internal::EmitFacesDirectly(opaque_faces, atlas, out_opaque);
-    internal::EmitFacesDirectly(transparent_faces, atlas, out_transparent);
+// Sizes a mesh for an exact quad count: 4 vertices and 6 indices per
+// quad, one allocation per array. resize (not reserve) because the
+// fixed-window appenders of phase 2 write through raw pointers into
+// storage that must already exist.
+void SizeMeshForQuads(Mesh& mesh, std::size_t quads) {
+  mesh.positions.resize(quads * 12);
+  mesh.normals.resize(quads * 12);
+  mesh.uvs.resize(quads * 8);
+  mesh.ao.resize(quads * 4);
+  mesh.tints.resize(quads * 4);
+  mesh.indices.resize(quads * 6);
+}
+
+// Emits collected merge faces into the target mesh: slim records go
+// through the greedy merge, fluid records (kept as full fat records,
+// since their geometry is per-block morphed) emit directly. The
+// buffers are cleared but keep their capacity for the next chunk.
+void EmitCollectedFaces(CollectBuffers& buf,
+                        const std::vector<ResolvedModel>& models,
+                        const TextureAtlas& atlas,
+                        Mesh& out_opaque,
+                        Mesh& out_transparent) {
+  internal::MergeAndEmitFaces(*buf.opaque, models, atlas, out_opaque);
+  internal::MergeAndEmitFaces(*buf.transparent, models, atlas,
+                              out_transparent);
+  internal::EmitFacesDirectly(*buf.opaque_fluid, atlas, out_opaque);
+  internal::EmitFacesDirectly(*buf.transparent_fluid, atlas,
+                              out_transparent);
+  buf.ClearAll();
+}
+
+// ---- Streaming sizing strategy ----
+//
+// The streaming emit path either sizes its output exactly (two-phase:
+// count every quad first, then write disjoint pre-sized slices) or
+// falls back to a reserve estimate plus growing appenders. The count
+// pass costs one extra walk, which pays off only when the output is
+// large -- below the threshold the doubling slack and the TLS fold
+// it eliminates are small in absolute terms, and walk-dominated
+// scenes (big solid volumes) would feel the doubled walk instead.
+//
+// The estimate comes from sampling a few whole units (chunks or rows)
+// with the counting sink, so the extrapolation observes real cull and
+// slot decisions rather than a block-count heuristic that is off by
+// orders of magnitude between solid and sparse scenes.
+constexpr std::size_t kExactStreamingThreshold = 1u << 18;  // quads
+constexpr double kReserveHeadroom = 1.3;
+
+// Counts the faces of a handful of evenly spaced chunks and
+// extrapolates over all of them.
+[[nodiscard]] std::size_t EstimateFacesByChunkSampling(
+    const WalkCtx& ctx,
+    const std::vector<filters::LocalPos>& chunk_origins,
+    const ir::BoundingBox& b,
+    std::uint32_t chunk_edge,
+    tbb::enumerable_thread_specific<RowNeighborBuffers>& tls_rows) {
+  constexpr std::size_t kSampleChunks = 4;
+  const std::size_t n = chunk_origins.size();
+  const std::size_t samples = std::min(kSampleChunks, n);
+  std::size_t sampled_faces = 0;
+  for (std::size_t s = 0; s < samples; ++s) {
+    const std::size_t ci = (n * s) / samples;  // evenly spaced
+    const filters::LocalPos origin = chunk_origins[ci];
+    const std::int32_t x_end =
+        std::min(origin.x + static_cast<std::int32_t>(chunk_edge),
+                 b.size[0]);
+    const std::int32_t y_end =
+        std::min(origin.y + static_cast<std::int32_t>(chunk_edge),
+                 b.size[1]);
+    const std::int32_t z_end =
+        std::min(origin.z + static_cast<std::int32_t>(chunk_edge),
+                 b.size[2]);
+    CountSink count;
+    WalkChunk(ctx, origin, x_end, y_end, z_end, tls_rows.local(), count);
+    sampled_faces += count.Total();
   }
-  // Drop the records (capacity stays for the next chunk's reuse).
-  opaque_faces.clear();
-  transparent_faces.clear();
+  if (samples == 0) return 0;
+  return sampled_faces * n / samples;
+}
+
+// Counts the faces of a handful of evenly spaced rows and
+// extrapolates over all rows of the region (the scalar paths have no
+// chunks to sample).
+[[nodiscard]] std::size_t EstimateFacesByRowSampling(
+    const WalkCtx& ctx,
+    const ir::BoundingBox& b,
+    RowNeighborBuffers& rows) {
+  constexpr std::int64_t kSampleRows = 24;
+  const std::int64_t total_rows =
+      static_cast<std::int64_t>(b.size[1]) * b.size[2];
+  const std::int64_t samples = std::min(kSampleRows, total_rows);
+  std::size_t sampled_faces = 0;
+  for (std::int64_t s = 0; s < samples; ++s) {
+    // Evenly spaced (y, z) pairs in YZX order.
+    const std::int64_t flat = total_rows * s / samples;
+    const std::int32_t y = static_cast<std::int32_t>(flat / b.size[2]);
+    const std::int32_t z = static_cast<std::int32_t>(flat % b.size[2]);
+    CountSink count;
+    ProcessRow(ctx, {0, y, z}, y, z, b.size[0], rows, count);
+    sampled_faces += count.Total();
+  }
+  if (samples == 0) return 0;
+  return static_cast<std::size_t>(
+      static_cast<double>(sampled_faces) *
+      (static_cast<double>(total_rows) / static_cast<double>(samples)));
 }
 
 }  // namespace
@@ -1187,7 +1376,6 @@ ParseResult<TessellationResult> TessellateRegion(const ir::Region& region,
     overlay_texture = "minecraft:block/water_overlay";
     all_texture_paths.emplace("minecraft:block/water_overlay");
   }
-  const FluidOverlayInfo overlay{overlay_texture, palette_overlay};
   auto atlas_and_slots =
       BuildAtlasWithSlots(pack, all_texture_paths, opts, skip_unresolved, opts);
   if (!atlas_and_slots) return std::unexpected(atlas_and_slots.error());
@@ -1196,8 +1384,8 @@ ParseResult<TessellationResult> TessellateRegion(const ir::Region& region,
   TessellationResult result;
   result.atlas = std::move(atlas_and_slots->first);
 
-  // Fluid slope inputs. Skip the per-cell table entirely when the
-  // palette holds no morphable fluid (stone-only regions pay nothing).
+  // Fluid slope inputs. Without morphable fluid the lookup stays
+  // empty (stone-only regions pay nothing).
   const std::vector<FluidPaletteInfo> palette_fluid =
       BuildPaletteFluid(region, palette_models);
   bool any_fluid = false;
@@ -1207,9 +1395,13 @@ ParseResult<TessellationResult> TessellateRegion(const ir::Region& region,
       break;
     }
   }
-  const std::vector<std::uint8_t> fluid_table =
-      any_fluid ? BuildFluidTable(region, palette_fluid)
-                : std::vector<std::uint8_t>{};
+  FluidLookup fluid_lookup;
+  if (any_fluid) {
+    fluid_lookup.palette = &palette_fluid;
+    fluid_lookup.blocks = reinterpret_cast<const std::uint16_t*>(
+        region.block_indices.data());
+    fluid_lookup.block_count = region.block_indices.size();
+  }
 
   // Per-palette atlas slots, resolved once: the walk emits by table
   // lookup instead of hashing each face's texture path per block.
@@ -1227,8 +1419,8 @@ ParseResult<TessellationResult> TessellateRegion(const ir::Region& region,
                     palette_groups.data(),
                     palette_fluid.data(),
                     &slots,
-                    overlay.palette_eligible.data(),
-                    &fluid_table,
+                    palette_overlay.data(),
+                    fluid_lookup,
                     &group_table,
                     opts.ambient_occlusion ? opts.ao_strength : 0.0f,
                     opts.cull_interior_faces,
@@ -1240,93 +1432,237 @@ ParseResult<TessellationResult> TessellateRegion(const ir::Region& region,
       internal::ComputeChunkOrigins(b, opts.chunk_edge);
   const bool use_parallel = opts.chunk_edge > 0 && chunk_origins.size() > 1;
 
+  if (opts.merge_coplanar_faces) {
+    // Merge path: collect per chunk (parallel) or per region (scalar)
+    // and run the greedy merge. Collecting buffers slim records, so
+    // the transient is 24 bytes per non-fluid face; the scalar path
+    // pre-reserves from a count when the estimate is large.
+    if (!use_parallel) {
+      std::vector<internal::CollectedFace> all_opaque;
+      std::vector<internal::CollectedFace> all_transparent;
+      std::vector<internal::VisibleFaceInfo> opaque_fluid;
+      std::vector<internal::VisibleFaceInfo> transparent_fluid;
+      RowNeighborBuffers rows;
+      // Reserve by a sampled estimate; a doubling pass over the slim
+      // 24-byte records is cheap, and an exact count walk would cost
+      // more than the slack it removes on merge-sized outputs.
+      const std::size_t est =
+          EstimateFacesByRowSampling(ctx, b, rows);
+      const std::size_t reserve =
+          static_cast<std::size_t>(static_cast<double>(est) *
+                                   kReserveHeadroom) +
+          16;
+      all_opaque.reserve(reserve);
+      all_transparent.reserve(reserve);
+      CollectBuffers sink{&all_opaque, &all_transparent, &opaque_fluid,
+                          &transparent_fluid};
+      WalkChunk(ctx, {0, 0, 0}, b.size[0], b.size[1], b.size[2], rows, sink);
+      EmitCollectedFaces(sink, palette_models, result.atlas,
+                         result.opaque_mesh, result.transparent_mesh);
+    } else {
+      tbb::enumerable_thread_specific<Mesh> tls_opaque;
+      tbb::enumerable_thread_specific<Mesh> tls_transparent;
+      tbb::enumerable_thread_specific<RowNeighborBuffers> tls_rows;
+
+      tbb::parallel_for(
+          tbb::blocked_range<std::size_t>(0, chunk_origins.size()),
+          [&](const tbb::blocked_range<std::size_t>& r) {
+            Mesh& local_opaque = tls_opaque.local();
+            Mesh& local_transparent = tls_transparent.local();
+            RowNeighborBuffers& rows = tls_rows.local();
+            // Collected per chunk and hoisted out of the loop so the
+            // capacity persists across a worker's chunks.
+            std::vector<internal::CollectedFace> chunk_opaque;
+            std::vector<internal::CollectedFace> chunk_transparent;
+            std::vector<internal::VisibleFaceInfo> chunk_opaque_fluid;
+            std::vector<internal::VisibleFaceInfo> chunk_transparent_fluid;
+            CollectBuffers sink{&chunk_opaque, &chunk_transparent,
+                                &chunk_opaque_fluid,
+                                &chunk_transparent_fluid};
+            for (std::size_t ci = r.begin(); ci != r.end(); ++ci) {
+              const filters::LocalPos origin = chunk_origins[ci];
+              const std::int32_t x_end =
+                  std::min(origin.x +
+                               static_cast<std::int32_t>(opts.chunk_edge),
+                           b.size[0]);
+              const std::int32_t y_end =
+                  std::min(origin.y +
+                               static_cast<std::int32_t>(opts.chunk_edge),
+                           b.size[1]);
+              const std::int32_t z_end =
+                  std::min(origin.z +
+                               static_cast<std::int32_t>(opts.chunk_edge),
+                           b.size[2]);
+              WalkChunk(ctx, origin, x_end, y_end, z_end, rows, sink);
+              EmitCollectedFaces(sink, palette_models, result.atlas,
+                                 local_opaque, local_transparent);
+            }
+          });
+
+      MergeTlsMeshes(tls_opaque, result.opaque_mesh);
+      MergeTlsMeshes(tls_transparent, result.transparent_mesh);
+    }
+    return result;
+  }
+
+  // Streaming path: faces go straight into the output meshes, no
+  // intermediate record buffer at all.
   if (!use_parallel) {
     RowNeighborBuffers rows;
-    if (!opts.merge_coplanar_faces) {
-      // Scalar streaming: faces go straight into the output meshes, no
-      // intermediate record buffer at all.
-      FaceSink<true> sink{&result.atlas, &result.opaque_mesh,
-                          &result.transparent_mesh};
-      for (std::int32_t y = 0; y < b.size[1]; ++y) {
-        for (std::int32_t z = 0; z < b.size[2]; ++z) {
-          ProcessRow(ctx, {0, y, z}, y, z, b.size[0], rows, sink);
-        }
-      }
+    const std::size_t est = EstimateFacesByRowSampling(ctx, b, rows);
+    if (est >= kExactStreamingThreshold) {
+      // Count once, size exactly, emit through a fixed window.
+      CountSink count;
+      WalkChunk(ctx, {0, 0, 0}, b.size[0], b.size[1], b.size[2], rows,
+                count);
+      SizeMeshForQuads(result.opaque_mesh,
+                       count.faces[0][0] + count.faces[0][1]);
+      SizeMeshForQuads(result.transparent_mesh,
+                       count.faces[1][0] + count.faces[1][1]);
+      internal::MeshAppender opaque_app = internal::MeshAppender::Window(
+          result.opaque_mesh, 0, 0,
+          (count.faces[0][0] + count.faces[0][1]) * 4,
+          (count.faces[0][0] + count.faces[0][1]) * 6);
+      internal::MeshAppender transparent_app =
+          internal::MeshAppender::Window(
+              result.transparent_mesh, 0, 0,
+              (count.faces[1][0] + count.faces[1][1]) * 4,
+              (count.faces[1][0] + count.faces[1][1]) * 6);
+      StreamSlices sink{&result.atlas, &opaque_app, &transparent_app};
+      WalkChunk(ctx, {0, 0, 0}, b.size[0], b.size[1], b.size[2], rows, sink);
     } else {
-      // Scalar merge: merging needs the records, so collect the whole
-      // region first (chunking would cap merged rectangles at chunk
-      // boundaries).
-      std::vector<internal::VisibleFaceInfo> all_opaque;
-      std::vector<internal::VisibleFaceInfo> all_transparent;
-      FaceSink<false> sink{&all_opaque, &all_transparent};
-      for (std::int32_t y = 0; y < b.size[1]; ++y) {
-        for (std::int32_t z = 0; z < b.size[2]; ++z) {
-          ProcessRow(ctx, {0, y, z}, y, z, b.size[0], rows, sink);
-        }
-      }
-      EmitCollectedFaces(all_opaque,
-                         all_transparent,
-                         result.atlas,
-                         opts,
-                         result.opaque_mesh,
-                         result.transparent_mesh);
+      // Small output: reserve by estimate, grow only if it was short.
+      const std::size_t reserve =
+          static_cast<std::size_t>(static_cast<double>(est) *
+                                   kReserveHeadroom) +
+          16;
+      result.opaque_mesh.Reserve(reserve * 4, reserve * 6);
+      result.transparent_mesh.Reserve(reserve * 4, reserve * 6);
+      StreamTail sink{&result.atlas,
+                      internal::MeshAppender::Attach(result.opaque_mesh),
+                      internal::MeshAppender::Attach(result.transparent_mesh)};
+      WalkChunk(ctx, {0, 0, 0}, b.size[0], b.size[1], b.size[2], rows, sink);
+      sink.Finish();
     }
-  } else {
-    // Parallel path. Non-merging workers stream straight into their
-    // thread-local meshes; merging workers collect per chunk (records
-    // bounded by one chunk) and merge into their thread-local meshes.
+    return result;
+  }
+
+  // Parallel streaming. The exact two-phase path only runs when the
+  // sampled estimate clears the threshold: below it, the count walk
+  // would cost more than the growth and fold it saves.
+  tbb::enumerable_thread_specific<RowNeighborBuffers> tls_rows;
+  const std::size_t est = EstimateFacesByChunkSampling(
+      ctx, chunk_origins, b, opts.chunk_edge, tls_rows);
+
+  if (est < kExactStreamingThreshold) {
+    // Small output: keep the TLS-mesh structure, but reserve the fold
+    // target by estimate so the final meshes never reallocate, and
+    // batch each worker's writes through an appender.
     tbb::enumerable_thread_specific<Mesh> tls_opaque;
     tbb::enumerable_thread_specific<Mesh> tls_transparent;
-    tbb::enumerable_thread_specific<RowNeighborBuffers> tls_rows;
-
     tbb::parallel_for(
         tbb::blocked_range<std::size_t>(0, chunk_origins.size()),
         [&](const tbb::blocked_range<std::size_t>& r) {
-          Mesh& local_opaque = tls_opaque.local();
-          Mesh& local_transparent = tls_transparent.local();
+          StreamTail sink{
+              &result.atlas,
+              internal::MeshAppender::Attach(tls_opaque.local()),
+              internal::MeshAppender::Attach(tls_transparent.local())};
           RowNeighborBuffers& rows = tls_rows.local();
           for (std::size_t ci = r.begin(); ci != r.end(); ++ci) {
             const filters::LocalPos origin = chunk_origins[ci];
             const std::int32_t x_end =
-                std::min(origin.x + static_cast<std::int32_t>(opts.chunk_edge),
+                std::min(origin.x +
+                             static_cast<std::int32_t>(opts.chunk_edge),
                          b.size[0]);
             const std::int32_t y_end =
-                std::min(origin.y + static_cast<std::int32_t>(opts.chunk_edge),
+                std::min(origin.y +
+                             static_cast<std::int32_t>(opts.chunk_edge),
                          b.size[1]);
             const std::int32_t z_end =
-                std::min(origin.z + static_cast<std::int32_t>(opts.chunk_edge),
+                std::min(origin.z +
+                             static_cast<std::int32_t>(opts.chunk_edge),
                          b.size[2]);
-
-            if (!opts.merge_coplanar_faces) {
-              FaceSink<true> sink{&result.atlas, &local_opaque,
-                                   &local_transparent};
-              for (std::int32_t y = origin.y; y < y_end; ++y) {
-                for (std::int32_t z = origin.z; z < z_end; ++z) {
-                  ProcessRow(ctx, origin, y, z, x_end - origin.x, rows, sink);
-                }
-              }
-            } else {
-              std::vector<internal::VisibleFaceInfo> chunk_opaque;
-              std::vector<internal::VisibleFaceInfo> chunk_transparent;
-              FaceSink<false> sink{&chunk_opaque, &chunk_transparent};
-              for (std::int32_t y = origin.y; y < y_end; ++y) {
-                for (std::int32_t z = origin.z; z < z_end; ++z) {
-                  ProcessRow(ctx, origin, y, z, x_end - origin.x, rows, sink);
-                }
-              }
-              EmitCollectedFaces(chunk_opaque,
-                                 chunk_transparent,
-                                 result.atlas,
-                                 opts,
-                                 local_opaque,
-                                 local_transparent);
-            }
+            WalkChunk(ctx, origin, x_end, y_end, z_end, rows, sink);
           }
+          sink.Finish();
         });
-
+    const std::size_t reserve =
+        static_cast<std::size_t>(static_cast<double>(est) *
+                                 kReserveHeadroom) +
+        16;
+    result.opaque_mesh.Reserve(reserve * 4, reserve * 6);
+    result.transparent_mesh.Reserve(reserve * 4, reserve * 6);
     MergeTlsMeshes(tls_opaque, result.opaque_mesh);
     MergeTlsMeshes(tls_transparent, result.transparent_mesh);
+    return result;
   }
+
+  // Exact two-phase streaming: phase 1 counts every chunk's quads,
+  // the output is sized once, and phase 2 writes disjoint per-chunk
+  // windows in parallel -- no thread-local meshes, no fold, no
+  // growth reallocations, and no doubling slack: the output arrays
+  // exist exactly once at their final size.
+  const std::size_t n_chunks = chunk_origins.size();
+  std::vector<std::array<std::size_t, 2>> chunk_faces(n_chunks);
+  tbb::parallel_for(
+      tbb::blocked_range<std::size_t>(0, n_chunks),
+      [&](const tbb::blocked_range<std::size_t>& r) {
+        RowNeighborBuffers& rows = tls_rows.local();
+        for (std::size_t ci = r.begin(); ci != r.end(); ++ci) {
+          const filters::LocalPos origin = chunk_origins[ci];
+          const std::int32_t x_end =
+              std::min(origin.x + static_cast<std::int32_t>(opts.chunk_edge),
+                       b.size[0]);
+          const std::int32_t y_end =
+              std::min(origin.y + static_cast<std::int32_t>(opts.chunk_edge),
+                       b.size[1]);
+          const std::int32_t z_end =
+              std::min(origin.z + static_cast<std::int32_t>(opts.chunk_edge),
+                       b.size[2]);
+          CountSink count;
+          WalkChunk(ctx, origin, x_end, y_end, z_end, rows, count);
+          chunk_faces[ci] = {count.faces[0][0] + count.faces[0][1],
+                             count.faces[1][0] + count.faces[1][1]};
+        }
+      });
+
+  std::vector<std::size_t> opaque_prefix(n_chunks + 1, 0);
+  std::vector<std::size_t> transparent_prefix(n_chunks + 1, 0);
+  for (std::size_t ci = 0; ci < n_chunks; ++ci) {
+    opaque_prefix[ci + 1] = opaque_prefix[ci] + chunk_faces[ci][0];
+    transparent_prefix[ci + 1] = transparent_prefix[ci] + chunk_faces[ci][1];
+  }
+  SizeMeshForQuads(result.opaque_mesh, opaque_prefix[n_chunks]);
+  SizeMeshForQuads(result.transparent_mesh, transparent_prefix[n_chunks]);
+
+  tbb::parallel_for(
+      tbb::blocked_range<std::size_t>(0, n_chunks),
+      [&](const tbb::blocked_range<std::size_t>& r) {
+        RowNeighborBuffers& rows = tls_rows.local();
+        for (std::size_t ci = r.begin(); ci != r.end(); ++ci) {
+          const filters::LocalPos origin = chunk_origins[ci];
+          const std::int32_t x_end =
+              std::min(origin.x + static_cast<std::int32_t>(opts.chunk_edge),
+                       b.size[0]);
+          const std::int32_t y_end =
+              std::min(origin.y + static_cast<std::int32_t>(opts.chunk_edge),
+                       b.size[1]);
+          const std::int32_t z_end =
+              std::min(origin.z + static_cast<std::int32_t>(opts.chunk_edge),
+                       b.size[2]);
+          internal::MeshAppender opaque_app = internal::MeshAppender::Window(
+              result.opaque_mesh, opaque_prefix[ci] * 4,
+              opaque_prefix[ci] * 6, chunk_faces[ci][0] * 4,
+              chunk_faces[ci][0] * 6);
+          internal::MeshAppender transparent_app =
+              internal::MeshAppender::Window(
+                  result.transparent_mesh, transparent_prefix[ci] * 4,
+                  transparent_prefix[ci] * 6, chunk_faces[ci][1] * 4,
+                  chunk_faces[ci][1] * 6);
+          StreamSlices sink{&result.atlas, &opaque_app, &transparent_app};
+          WalkChunk(ctx, origin, x_end, y_end, z_end, rows, sink);
+        }
+      });
 
   return result;
 }
@@ -1487,15 +1823,19 @@ void EmitSheepBox(const SheepBoxSpec& box,
         (slot.u1 - slot.u0) / static_cast<float>(slot.repeats_x);
     const float tile_v =
         (slot.v1 - slot.v0) / static_cast<float>(slot.repeats_y);
+    const std::array<float, 3> normal{nx, ny, nz};
     for (int i = 0; i < 4; ++i) {
-      out_mesh.positions.push_back(pos[i][0]);
-      out_mesh.positions.push_back(pos[i][1]);
-      out_mesh.positions.push_back(pos[i][2]);
-      out_mesh.normals.push_back(nx);
-      out_mesh.normals.push_back(ny);
-      out_mesh.normals.push_back(nz);
-      out_mesh.uvs.push_back(slot.u0 + tile_u * uvs[i][0]);
-      out_mesh.uvs.push_back(slot.v0 + tile_v * uvs[i][1]);
+      const float quad_pos[3] = {pos[i][0], pos[i][1], pos[i][2]};
+      const float quad_uv[2] = {slot.u0 + tile_u * uvs[i][0],
+                                slot.v0 + tile_v * uvs[i][1]};
+      out_mesh.positions.push_back(quad_pos[0]);
+      out_mesh.positions.push_back(quad_pos[1]);
+      out_mesh.positions.push_back(quad_pos[2]);
+      out_mesh.normals.push_back(normal[0]);
+      out_mesh.normals.push_back(normal[1]);
+      out_mesh.normals.push_back(normal[2]);
+      out_mesh.uvs.push_back(quad_uv[0]);
+      out_mesh.uvs.push_back(quad_uv[1]);
       out_mesh.ao.push_back(255);
       out_mesh.tints.push_back(0);
     }
@@ -1560,6 +1900,20 @@ void AppendSheep(const ir::Schematic& schematic,
   }
 }
 
+// Per-sheep worst case: 12 boxes (skin + wool) x 6 faces x 4 verts
+// (resp. 6 indices).
+constexpr std::size_t kSheepVertices = 12 * 6 * 4;
+constexpr std::size_t kSheepIndices = 12 * 6 * 6;
+
+[[nodiscard]] std::size_t CountSheep(const ir::Schematic& schematic) {
+  std::size_t n = 0;
+  for (const ir::Region& region : schematic.regions) {
+    for (const ir::Entity& ent : region.entities) {
+      if (ent.id == "minecraft:sheep") ++n;
+    }
+  }
+  return n;
+}
 
 ParseResult<TessellationResult> TessellateSchematic(
     const ir::Schematic& schematic,
@@ -1567,14 +1921,15 @@ ParseResult<TessellationResult> TessellateSchematic(
     TessellationOptions opts) {
   // Resolve every region's palette and collect the union of texture
   // paths.
+  const std::size_t n_regions = schematic.regions.size();
   std::vector<std::vector<ResolvedModel>> per_region_models;
-  per_region_models.reserve(schematic.regions.size());
+  per_region_models.reserve(n_regions);
   std::vector<std::vector<bool>> per_region_skipped;
-  per_region_skipped.reserve(schematic.regions.size());
+  per_region_skipped.reserve(n_regions);
+  std::vector<std::vector<std::uint8_t>> per_region_overlay;
+  per_region_overlay.reserve(n_regions);
 
   absl::flat_hash_set<std::string> all_texture_paths;
-  std::vector<std::vector<std::uint8_t>> per_region_overlay;
-  per_region_overlay.reserve(schematic.regions.size());
   bool any_water = false;
   for (const ir::Region& region : schematic.regions) {
     // Materialize before anything below reads region.block_indices:
@@ -1603,7 +1958,8 @@ ParseResult<TessellationResult> TessellateSchematic(
           models[i] = ResolvedModel{};
           continue;
         }
-        if (opts.unresolved_resources == UnresolvedResourcePolicy::kSkipAndWarn) {
+        if (opts.unresolved_resources ==
+            UnresolvedResourcePolicy::kSkipAndWarn) {
           RecordWarning(opts, region.palette[i].name, m.error());
           skipped[i] = true;
           continue;
@@ -1664,84 +2020,146 @@ ParseResult<TessellationResult> TessellateSchematic(
       atlas_and_slots->second;
   TextureAtlas atlas = std::move(atlas_and_slots->first);
 
-  // Per-region walk. Each region uses its own BlockGroupTable for AO
-  // and cull; cross-region neighbor checks are not performed, so faces
-  // at region boundaries stay visible. Non-merging walks stream each
-  // region's faces straight into the output meshes (no record buffer);
-  // merging walks collect per region, emit, and reuse the buffers.
+  // Per-region walk state. Each region uses its own BlockGroupTable
+  // for AO and cull; cross-region neighbor checks are not performed,
+  // so faces at region boundaries stay visible. The tables are built
+  // once here and reused by both the counting and the emitting pass
+  // (the per-block group-table build is not worth paying twice).
   TessellationResult result;
   result.atlas = atlas;
 
-  std::vector<internal::VisibleFaceInfo> collect_opaque;
-  std::vector<internal::VisibleFaceInfo> collect_transparent;
-  RowNeighborBuffers rows;
-
-  for (std::size_t ri = 0; ri < schematic.regions.size(); ++ri) {
+  std::vector<std::vector<std::uint8_t>> per_region_groups;
+  std::vector<internal::BlockGroupTable> per_region_tables;
+  std::vector<std::vector<FluidPaletteInfo>> per_region_fluid;
+  std::vector<PaletteSlotTable> per_region_slots;
+  per_region_groups.reserve(n_regions);
+  per_region_tables.reserve(n_regions);
+  per_region_fluid.reserve(n_regions);
+  per_region_slots.reserve(n_regions);
+  for (std::size_t ri = 0; ri < n_regions; ++ri) {
     const ir::Region& region = schematic.regions[ri];
     const std::vector<ResolvedModel>& models = per_region_models[ri];
 
-    // Build the group table for AO and cull (within this region only).
-    const std::vector<std::uint8_t> palette_groups =
-        BuildPaletteGroups(region, models, per_region_skipped[ri]);
-    internal::BlockGroupTable group_table;
-    group_table.BuildFrom(region, palette_groups);
+    per_region_groups.push_back(
+        BuildPaletteGroups(region, models, per_region_skipped[ri]));
+    internal::BlockGroupTable& table = per_region_tables.emplace_back();
+    table.BuildFrom(region, per_region_groups.back());
 
-    const std::vector<FluidPaletteInfo> palette_fluid =
-        BuildPaletteFluid(region, models);
-    bool any_fluid = false;
-    for (const FluidPaletteInfo& f : palette_fluid) {
+    per_region_fluid.push_back(BuildPaletteFluid(region, models));
+    const std::vector<FluidPaletteInfo>& fluid = per_region_fluid.back();
+    // Per-palette atlas slots for this region's palette, resolved once
+    // (no per-face texture hashing in the walk).
+    per_region_slots.push_back(
+        BuildPaletteSlots(models, fluid, texture_to_slot,
+                          !overlay_texture.empty(), overlay_texture));
+  }
+
+  // One WalkCtx per region, pointing at the stable storage above (all
+  // vectors are pre-reserved, so the data pointers never move).
+  std::vector<WalkCtx> ctxs;
+  ctxs.reserve(n_regions);
+  for (std::size_t ri = 0; ri < n_regions; ++ri) {
+    const ir::Region& region = schematic.regions[ri];
+    const std::vector<FluidPaletteInfo>& fluid = per_region_fluid[ri];
+    FluidLookup fluid_lookup;
+    for (const FluidPaletteInfo& f : fluid) {
       if (f.morphable) {
-        any_fluid = true;
+        fluid_lookup.palette = &fluid;
+        fluid_lookup.blocks = reinterpret_cast<const std::uint16_t*>(
+            region.block_indices.data());
+        fluid_lookup.block_count = region.block_indices.size();
         break;
       }
     }
-    const std::vector<std::uint8_t> fluid_table =
-        any_fluid ? BuildFluidTable(region, palette_fluid)
-                  : std::vector<std::uint8_t>{};
+    ctxs.push_back(WalkCtx{&region,
+                           &per_region_models[ri],
+                           per_region_groups[ri].data(),
+                           fluid.data(),
+                           &per_region_slots[ri],
+                           per_region_overlay[ri].data(),
+                           fluid_lookup,
+                           &per_region_tables[ri],
+                           opts.ambient_occlusion ? opts.ao_strength : 0.0f,
+                           opts.cull_interior_faces,
+                           opts.include_air,
+                           /*world_offset=*/{region.bounds.origin[0],
+                                             region.bounds.origin[1],
+                                             region.bounds.origin[2]}});
+  }
 
-    // Per-palette atlas slots for this region's palette, resolved once
-    // (no per-face texture hashing in the walk).
-    const PaletteSlotTable slots =
-        BuildPaletteSlots(models, palette_fluid, texture_to_slot,
-                          !overlay_texture.empty(), overlay_texture);
+  RowNeighborBuffers rows;
 
-    const WalkCtx ctx{&region,
-                       &models,
-                       palette_groups.data(),
-                       palette_fluid.data(),
-                       &slots,
-                       per_region_overlay[ri].data(),
-                       &fluid_table,
-                       &group_table,
-                       opts.ambient_occlusion ? opts.ao_strength : 0.0f,
-                       opts.cull_interior_faces,
-                       opts.include_air,
-                       /*world_offset=*/{region.bounds.origin[0],
-                                          region.bounds.origin[1],
-                                          region.bounds.origin[2]}};
+  if (!opts.merge_coplanar_faces) {
+    // Streaming: count every region's quads first (the walk decisions
+    // without records or AO), size the output exactly once, then emit
+    // each region into its window -- no growth reallocation, no
+    // doubling slack, and the sheep tail is reserved headroom so its
+    // push_backs never grow the fully sized arrays either.
+    std::vector<std::array<std::size_t, 2>> region_faces(n_regions);
+    for (std::size_t ri = 0; ri < n_regions; ++ri) {
+      const ir::BoundingBox& b = schematic.regions[ri].bounds;
+      CountSink count;
+      WalkChunk(ctxs[ri], {0, 0, 0}, b.size[0], b.size[1], b.size[2], rows,
+                count);
+      region_faces[ri] = {count.faces[0][0] + count.faces[0][1],
+                          count.faces[1][0] + count.faces[1][1]};
+    }
+    const std::size_t total_opaque =
+        std::accumulate(region_faces.begin(), region_faces.end(),
+                        std::size_t{0},
+                        [](std::size_t s, const auto& f) { return s + f[0]; });
+    const std::size_t total_transparent = std::accumulate(
+        region_faces.begin(), region_faces.end(), std::size_t{0},
+        [](std::size_t s, const auto& f) { return s + f[1]; });
+    SizeMeshForQuads(result.opaque_mesh, total_opaque);
+    SizeMeshForQuads(result.transparent_mesh, total_transparent);
+    if (any_sheep) {
+      const std::size_t n_sheep = CountSheep(schematic);
+      result.opaque_mesh.Reserve(
+          result.opaque_mesh.VertexCount() + n_sheep * kSheepVertices,
+          result.opaque_mesh.indices.size() + n_sheep * kSheepIndices);
+    }
 
-    const ir::BoundingBox& b = region.bounds;
-    if (!opts.merge_coplanar_faces) {
-      FaceSink<true> sink{&result.atlas, &result.opaque_mesh,
-                          &result.transparent_mesh};
-      for (std::int32_t y = 0; y < b.size[1]; ++y) {
-        for (std::int32_t z = 0; z < b.size[2]; ++z) {
-          ProcessRow(ctx, {0, y, z}, y, z, b.size[0], rows, sink);
-        }
-      }
-    } else {
-      FaceSink<false> sink{&collect_opaque, &collect_transparent};
-      for (std::int32_t y = 0; y < b.size[1]; ++y) {
-        for (std::int32_t z = 0; z < b.size[2]; ++z) {
-          ProcessRow(ctx, {0, y, z}, y, z, b.size[0], rows, sink);
-        }
-      }
-      EmitCollectedFaces(collect_opaque,
-                         collect_transparent,
-                         result.atlas,
-                         opts,
-                         result.opaque_mesh,
-                         result.transparent_mesh);
+    std::size_t opaque_cursor = 0;
+    std::size_t transparent_cursor = 0;
+    for (std::size_t ri = 0; ri < n_regions; ++ri) {
+      const ir::BoundingBox& b = schematic.regions[ri].bounds;
+      internal::MeshAppender opaque_app = internal::MeshAppender::Window(
+          result.opaque_mesh, opaque_cursor * 4, opaque_cursor * 6,
+          region_faces[ri][0] * 4, region_faces[ri][0] * 6);
+      internal::MeshAppender transparent_app =
+          internal::MeshAppender::Window(
+              result.transparent_mesh, transparent_cursor * 4,
+              transparent_cursor * 6, region_faces[ri][1] * 4,
+              region_faces[ri][1] * 6);
+      StreamSlices sink{&result.atlas, &opaque_app, &transparent_app};
+      WalkChunk(ctxs[ri], {0, 0, 0}, b.size[0], b.size[1], b.size[2], rows,
+                sink);
+      opaque_cursor += region_faces[ri][0];
+      transparent_cursor += region_faces[ri][1];
+    }
+  } else {
+    // Merge: collect per region into buffers reused across regions;
+    // the slim 24-byte records make a doubling pass cheap enough that
+    // a per-region count walk is not worth its walk.
+    std::vector<internal::CollectedFace> collect_opaque;
+    std::vector<internal::CollectedFace> collect_transparent;
+    std::vector<internal::VisibleFaceInfo> collect_opaque_fluid;
+    std::vector<internal::VisibleFaceInfo> collect_transparent_fluid;
+    for (std::size_t ri = 0; ri < n_regions; ++ri) {
+      const ir::BoundingBox& b = schematic.regions[ri].bounds;
+      CollectBuffers sink{&collect_opaque, &collect_transparent,
+                          &collect_opaque_fluid, &collect_transparent_fluid};
+      WalkChunk(ctxs[ri], {0, 0, 0}, b.size[0], b.size[1], b.size[2], rows,
+                sink);
+      EmitCollectedFaces(sink, per_region_models[ri], result.atlas,
+                         result.opaque_mesh, result.transparent_mesh);
+    }
+    if (any_sheep) {
+      const std::size_t n_sheep = CountSheep(schematic);
+      result.opaque_mesh.Reserve(
+          result.opaque_mesh.VertexCount() + n_sheep * kSheepVertices,
+          result.opaque_mesh.indices.size() + n_sheep * kSheepIndices);
     }
   }
 

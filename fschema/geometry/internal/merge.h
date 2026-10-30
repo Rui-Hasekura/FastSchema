@@ -21,12 +21,15 @@
 #include <vector>
 
 #include "fschema/filters/pos.h"
+#include "fschema/geometry/internal/mesh_append.h"
 #include "fschema/geometry/types.h"
 
 namespace fschema::geometry::internal {
 
-// A visible face after cull, with all info needed to emit it directly
-// or as part of a merged rectangle.
+// A visible face with everything the direct emit needs: world-space
+// corners, uvs, per-vertex AO. Used as the streaming sink's stack
+// record and for fluid faces, whose per-block morphed geometry cannot
+// be derived from the palette model.
 struct VisibleFaceInfo {
   filters::LocalPos block_pos;
   std::uint8_t cull_face;    // 1..6
@@ -45,8 +48,24 @@ struct VisibleFaceInfo {
   std::array<std::uint8_t, 4> ao{};
 };
 
-// Emits faces unmerged: one quad (4 verts + 6 indices) per face. The
-// fallback path when opts.merge_coplanar_faces is false.
+// Slim merge-collect record: everything the greedy merge buffers per
+// non-fluid face. Corners, uvs, tint and transparency are re-derived
+// from the palette model through (palette_index, face_index); the
+// atlas slot (per-block for fluid overlay/flow swaps) and the AO bytes
+// are per-block and carried. 24 bytes instead of the 108 the fat
+// record costs, which directly bounds the merge path's collect buffer.
+struct CollectedFace {
+  filters::LocalPos block_pos;  // world-space
+  std::uint32_t slot_index;     // atlas slot
+  std::uint16_t palette_index;
+  std::uint16_t face_index;
+  std::array<std::uint8_t, 4> ao{};
+};
+
+// Emits faces unmerged through a growing appender: one quad (4 verts +
+// 6 indices) per face. The fallback path when
+// opts.merge_coplanar_faces is false, and the path fluid faces always
+// take.
 void EmitFacesDirectly(const std::vector<VisibleFaceInfo>& faces,
                        const TextureAtlas& atlas,
                        Mesh& out_mesh);
@@ -56,24 +75,21 @@ void EmitFacesDirectly(const std::vector<VisibleFaceInfo>& faces,
 // winding as EmitFacesDirectly.
 void EmitFaceDirectly(const VisibleFaceInfo& face,
                       const TextureAtlas& atlas,
-                      Mesh& out_mesh);
+                      MeshAppender& out);
 
 // Outward normal for a face record: axis normal for directed faces,
 // corner-winding normal for rotated-element faces (cull_face 0).
 [[nodiscard]] std::array<float, 3> FaceRecordNormal(
     const VisibleFaceInfo& face);
 
-// Splits `faces` in place: fluid records move to `out_fluid`, the rest
-// compact to the front of `faces` (order preserved). Avoids the full
-// copy the old keep-vector splice paid.
-void SpliceFluidFacesInPlace(std::vector<VisibleFaceInfo>& faces,
-                             std::vector<VisibleFaceInfo>& out_fluid);
-
-// Greedy merge + emit. Groups faces by (cull_face, plane_pos, slot, tint,
-// transparency), builds a 2D occupancy grid per group, grows rectangles
-// greedily, and emits one quad per merged rectangle -- roughly 5-10x fewer
-// triangles on cube-heavy scenes.
-void MergeAndEmitFaces(const std::vector<VisibleFaceInfo>& faces,
+// Greedy merge + emit over slim collected faces. Groups by (cull_face,
+// plane_pos, slot, tint, transparency), builds a 2D occupancy grid per
+// group, grows rectangles greedily, and emits one quad per merged
+// rectangle -- roughly 5-10x fewer triangles on cube-heavy scenes.
+// `palette_models` must outlive the call; corner/uv/tint data is
+// re-derived from it per record.
+void MergeAndEmitFaces(const std::vector<CollectedFace>& faces,
+                       const std::vector<ResolvedModel>& palette_models,
                        const TextureAtlas& atlas,
                        Mesh& out_mesh);
 

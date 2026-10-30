@@ -61,22 +61,28 @@ void ComputeXAxisNeighborGroupBatchImpl(const BlockGroupTable& table,
                                         std::uint8_t* out_groups) {
   const std::ptrdiff_t neighbor_offset = kDirection;
   const std::uint8_t* base_ptr = table.bytes.data();
+  const std::ptrdiff_t table_size =
+      static_cast<std::ptrdiff_t>(table.bytes.size());
+
+  // The blocks base..base+count-1 sit at consecutive x inside one row
+  // (col = x, because base is row-aligned), so at most ONE lane's
+  // +-X neighbor can cross the row boundary: +X at col == row_width-1,
+  // -X at col == 0. The old code re-derived this with a modulo and a
+  // compare for EVERY lane of every SIMD batch.
+  std::size_t cross_j = count;  // count = "no lane crosses"
+  if (row_width > 0) {
+    const std::size_t x0 = base % row_width;
+    if constexpr (kDirection > 0) {
+      if (static_cast<std::size_t>(row_width - 1) >= x0) {
+        cross_j = static_cast<std::size_t>(row_width - 1) - x0;
+      }
+    } else {
+      if (x0 == 0) cross_j = 0;
+    }
+  }
 
   const hn::ScalableTag<std::uint8_t> d;
   const std::size_t N = hn::Lanes(d);
-
-  // Is the neighbor of block `block_idx` in the same X row?
-  //   +X: (block_idx % row_width) < row_width - 1
-  //   -X: (block_idx % row_width) > 0
-  auto SameRow = [&](std::size_t block_idx) -> bool {
-    if (row_width == 0) return false;
-    const std::size_t col = block_idx % row_width;
-    if constexpr (kDirection > 0) {
-      return col < row_width - 1;
-    } else {
-      return col > 0;
-    }
-  };
 
   std::size_t i = 0;
   for (; i + N <= count; i += N) {
@@ -84,22 +90,19 @@ void ComputeXAxisNeighborGroupBatchImpl(const BlockGroupTable& table,
         static_cast<std::ptrdiff_t>(base + i) + neighbor_offset;
     bool in_bounds;
     if constexpr (kDirection > 0) {
-      in_bounds = neighbor_idx + static_cast<std::ptrdiff_t>(N) <=
-                  static_cast<std::ptrdiff_t>(table.bytes.size());
+      in_bounds = neighbor_idx + static_cast<std::ptrdiff_t>(N) <= table_size;
     } else {
       in_bounds = neighbor_idx >= 0;
     }
     if (!in_bounds) {
       // Scalar fallback for this batch.
       for (std::size_t j = 0; j < N && i + j < count; ++j) {
-        const std::size_t block_idx = base + i + j;
         const std::ptrdiff_t nb_idx =
-            static_cast<std::ptrdiff_t>(block_idx) + neighbor_offset;
-        if (!SameRow(block_idx) || nb_idx < 0 ||
-            nb_idx >= static_cast<std::ptrdiff_t>(table.bytes.size())) {
+            static_cast<std::ptrdiff_t>(base + i + j) + neighbor_offset;
+        if ((i + j) == cross_j || nb_idx < 0 || nb_idx >= table_size) {
           out_groups[i + j] = 0;
         } else {
-          out_groups[i + j] = table.bytes[nb_idx];
+          out_groups[i + j] = base_ptr[nb_idx];
         }
       }
       continue;
@@ -108,25 +111,20 @@ void ComputeXAxisNeighborGroupBatchImpl(const BlockGroupTable& table,
     const auto v = hn::LoadU(d, base_ptr + neighbor_idx);
     hn::Store(v, d, out_groups + i);
 
-    // Zero lanes whose neighbor crossed a row boundary; only the row-end
-    // (+X) or row-start (-X) element can be affected.
-    for (std::size_t j = 0; j < N; ++j) {
-      const std::size_t block_idx = base + i + j;
-      if (!SameRow(block_idx)) {
-        out_groups[i + j] = 0;
-      }
+    // Zero the single lane (if any) whose neighbor crossed the row
+    // boundary.
+    if (i <= cross_j && cross_j < i + N) {
+      out_groups[cross_j] = 0;
     }
   }
   // Scalar tail for the last partial batch.
   for (; i < count; ++i) {
-    const std::size_t block_idx = base + i;
     const std::ptrdiff_t nb_idx =
-        static_cast<std::ptrdiff_t>(block_idx) + neighbor_offset;
-    if (!SameRow(block_idx) || nb_idx < 0 ||
-        nb_idx >= static_cast<std::ptrdiff_t>(table.bytes.size())) {
+        static_cast<std::ptrdiff_t>(base + i) + neighbor_offset;
+    if (i == cross_j || nb_idx < 0 || nb_idx >= table_size) {
       out_groups[i] = 0;
     } else {
-      out_groups[i] = table.bytes[nb_idx];
+      out_groups[i] = base_ptr[nb_idx];
     }
   }
 }

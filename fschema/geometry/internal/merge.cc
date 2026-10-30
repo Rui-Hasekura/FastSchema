@@ -25,7 +25,6 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
-#include "fschema/base/hash.h"
 #include "fschema/geometry/internal/resolver.h"
 #include "fschema/geometry/types.h"
 
@@ -87,52 +86,100 @@ constexpr std::pair<int, int> InPlaneAxes(std::uint8_t cf) {
   }
 }
 
-// Group key for merging: faces with the same key are coplanar and can
-// potentially be merged.
-struct GroupKey {
-  std::uint8_t cull_face;
-  std::int32_t plane_pos;  // coordinate along normal axis
-  std::uint32_t slot_index;
-  std::uint8_t tint_slot;
-  bool is_transparent;
+// Group key packed into one 64-bit word:
+//   plane_pos (32) | slot (20) | cull_face (3) | tint (3) | transparent (1)
+// A flat u64 key hashes without re-reading the record bytes; the old
+// struct key paid an xxhash pass over an 11-byte buffer per face.
+// Slot indices beyond 2^20 cannot occur (the atlas is bounded by
+// max_extent^2 / texture pixels), and kNoSlot faces never merge.
+[[nodiscard]] std::uint64_t PackGroupKey(std::uint8_t cull_face,
+                                         std::int32_t plane_pos,
+                                         std::uint32_t slot_index,
+                                         std::uint8_t tint_slot,
+                                         bool is_transparent) {
+  return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(plane_pos))
+          << 32) |
+         (static_cast<std::uint64_t>(slot_index & 0xFFFFFu) << 12) |
+         (static_cast<std::uint64_t>(cull_face & 0x7u) << 9) |
+         (static_cast<std::uint64_t>(tint_slot & 0x7u) << 6) |
+         (is_transparent ? std::uint64_t{1} : std::uint64_t{0});
+}
 
-  bool operator==(const GroupKey&) const = default;
+// World-space corners and model uvs of one collected face, re-derived
+// from the palette model. Non-fluid faces translate the model's
+// block-local corners by the record's world block position; their uvs
+// are the model's own (fluid faces, the only per-block-morphed ones,
+// never take the merge path).
+struct FaceGeom {
+  std::array<std::array<float, 3>, 4> corners;
+  std::array<std::array<float, 2>, 4> uvs;
 };
 
-struct GroupKeyHash {
-  std::size_t operator()(const GroupKey& k) const noexcept {
-    std::array<std::uint8_t, 11> buf{};
-    buf[0] = k.cull_face;
-    std::memcpy(buf.data() + 1, &k.plane_pos, 4);
-    std::memcpy(buf.data() + 5, &k.slot_index, 4);
-    buf[9] = k.tint_slot;
-    buf[10] = k.is_transparent ? std::uint8_t{1} : std::uint8_t{0};
-    return static_cast<std::size_t>(
-        base::Hash64WithSeed(buf.data(), buf.size()));
+[[nodiscard]] FaceGeom FaceGeometryOf(
+    const CollectedFace& f,
+    const std::vector<ResolvedModel>& models) {
+  const ModelFace& mf = models[f.palette_index].faces[f.face_index];
+  FaceGeom g;
+  const float bx = static_cast<float>(f.block_pos.x);
+  const float by = static_cast<float>(f.block_pos.y);
+  const float bz = static_cast<float>(f.block_pos.z);
+  for (int i = 0; i < 4; ++i) {
+    g.corners[i] = {bx + mf.corners[i][0], by + mf.corners[i][1],
+                    bz + mf.corners[i][2]};
+    g.uvs[i] = mf.uvs[i];
   }
-};
+  return g;
+}
 
-// Emits the six indices of one quad (vertices base+0..base+3).
-//
-// The triangle winding follows the glTF front-face convention: a
-// triangle is front-facing (counter-clockwise) when viewed from the
-// direction its face normal points. BuildCubeFace and the merge
-// reconstructor lay out corners clockwise from outside -- with the
-// natural (0,1,2)(0,2,3) split the cross-product normal would point
-// AGAINST the exported per-vertex normal, so backface-culling consumers
-// (glTF viewers, RaXhine's CCW/Back pipeline) would cull every exterior
-// face and show the mesh inside-out. Flipping the vertex order per
-// triangle aligns the geometric winding with the exported normal;
-// vertex order (positions/uvs/ao per corner) is untouched, and fluid
-// back-face quads -- whose corners are already reversed relative to
-// their front -- flip consistently with them.
-void PushQuadIndices(Mesh& out_mesh, std::uint32_t base) {
-  out_mesh.indices.push_back(base + 0);
-  out_mesh.indices.push_back(base + 2);
-  out_mesh.indices.push_back(base + 1);
-  out_mesh.indices.push_back(base + 0);
-  out_mesh.indices.push_back(base + 3);
-  out_mesh.indices.push_back(base + 2);
+// Outward normal for collected-face geometry: axis normal for
+// directed faces, corner-winding normal for rotated-element faces
+// (cull_face 0).
+[[nodiscard]] std::array<float, 3> FaceGeomNormal(
+    std::uint8_t cull_face, const FaceGeom& g) {
+  if (cull_face >= 1 && cull_face <= 6) {
+    return NormalForCullFace(cull_face);
+  }
+  const auto& c = g.corners;
+  const float ax = c[2][0] - c[0][0], ay = c[2][1] - c[0][1],
+             az = c[2][2] - c[0][2];
+  const float bx = c[1][0] - c[0][0], by = c[1][1] - c[0][1],
+             bz = c[1][2] - c[0][2];
+  float nx = ay * bz - az * by;
+  float ny = az * bx - ax * bz;
+  float nz = ax * by - ay * bx;
+  const float len = std::sqrt(nx * nx + ny * ny + nz * nz);
+  if (len < 1e-9f) return {0.0f, 1.0f, 0.0f};
+  return {nx / len, ny / len, nz / len};
+}
+
+// Emits one face as its own quad: its carried uvs (model-side
+// convention, mapped per texture tile into the atlas slot), its own
+// ao and tint, with the winding fix. Used by the direct path and by
+// the merge fallback for rects whose faces disagree on the uv layout
+// (mixed blockstate rotations in one group).
+void EmitSingleFaceGeom(const std::array<std::array<float, 3>, 4>& corners,
+                        const std::array<std::array<float, 2>, 4>& uvs,
+                        const std::array<std::uint8_t, 4>& ao,
+                        std::uint32_t slot_index,
+                        std::uint8_t tint_slot,
+                        const std::array<float, 3>& normal,
+                        const TextureAtlas& atlas,
+                        MeshAppender& out) {
+  const TextureAtlas::Slot& slot = atlas.slots[slot_index];
+  const float tile_u =
+      (slot.u1 - slot.u0) / static_cast<float>(slot.repeats_x);
+  const float tile_v =
+      (slot.v1 - slot.v0) / static_cast<float>(slot.repeats_y);
+
+  // Atlas-mapped uvs per corner; the tile mapping cannot be expressed
+  // as a flat array because each axis scales differently, so the eight
+  // floats are materialized per face.
+  float uv8[8];
+  for (int i = 0; i < 4; ++i) {
+    uv8[i * 2 + 0] = slot.u0 + tile_u * uvs[i][0];
+    uv8[i * 2 + 1] = slot.v0 + tile_v * uvs[i][1];
+  }
+  out.AppendQuad(&corners[0][0], normal.data(), uv8, ao.data(), tint_slot);
 }
 
 // The affine uv map of one face: how its in-plane world coordinates
@@ -149,92 +196,37 @@ struct FaceUvMap {
   bool ok = false;
 };
 
-[[nodiscard]] FaceUvMap FitFaceUvMap(const VisibleFaceInfo& f,
-                                     int axis1,
-                                     int axis2) {
+[[nodiscard]] FaceUvMap FitFaceUvMap(const FaceGeom& g, int axis1, int axis2) {
   FaceUvMap m;
-  float p1min = f.world_corners[0][axis1], p1max = p1min;
-  float p2min = f.world_corners[0][axis2], p2max = p2min;
-  for (const auto& c : f.world_corners) {
-    p1min = std::min(p1min, c[axis1]);
-    p1max = std::max(p1max, c[axis1]);
-    p2min = std::min(p2min, c[axis2]);
-    p2max = std::max(p2max, c[axis2]);
+  const auto& c = g.corners;
+  float p1min = c[0][axis1], p1max = p1min;
+  float p2min = c[0][axis2], p2max = p2min;
+  for (const auto& corner : c) {
+    p1min = std::min(p1min, corner[axis1]);
+    p1max = std::max(p1max, corner[axis1]);
+    p2min = std::min(p2min, corner[axis2]);
+    p2max = std::max(p2max, corner[axis2]);
   }
   const float d1 = p1max - p1min, d2 = p2max - p2min;
   if (d1 < 1e-4f || d2 < 1e-4f) return m;
   int i00 = -1, i01 = -1, i10 = -1, i11 = -1;
   for (int k = 0; k < 4; ++k) {
-    const bool hi1 = f.world_corners[k][axis1] > p1min + d1 * 0.5f;
-    const bool hi2 = f.world_corners[k][axis2] > p2min + d2 * 0.5f;
+    const bool hi1 = c[k][axis1] > p1min + d1 * 0.5f;
+    const bool hi2 = c[k][axis2] > p2min + d2 * 0.5f;
     int& slot = !hi1 && !hi2 ? i00 : !hi1 && hi2 ? i01
                              : hi1 && !hi2 ? i10 : i11;
     if (slot != -1) return m;  // ambiguous: corners not on the bbox
     slot = k;
   }
   if (i00 < 0 || i01 < 0 || i10 < 0 || i11 < 0) return m;
-  m.au = (f.uvs[i10][0] - f.uvs[i00][0]) / d1;
-  m.bu = (f.uvs[i01][0] - f.uvs[i00][0]) / d2;
-  m.cu = f.uvs[i00][0] - m.au * p1min - m.bu * p2min;
-  m.av = (f.uvs[i10][1] - f.uvs[i00][1]) / d1;
-  m.bv = (f.uvs[i01][1] - f.uvs[i00][1]) / d2;
-  m.cv = f.uvs[i00][1] - m.av * p1min - m.bv * p2min;
+  m.au = (g.uvs[i10][0] - g.uvs[i00][0]) / d1;
+  m.bu = (g.uvs[i01][0] - g.uvs[i00][0]) / d2;
+  m.cu = g.uvs[i00][0] - m.au * p1min - m.bu * p2min;
+  m.av = (g.uvs[i10][1] - g.uvs[i00][1]) / d1;
+  m.bv = (g.uvs[i01][1] - g.uvs[i00][1]) / d2;
+  m.cv = g.uvs[i00][1] - m.av * p1min - m.bv * p2min;
   m.ok = true;
   return m;
-}
-
-// Emits one face as its own quad: its carried uvs (model-side
-// convention, mapped per texture tile into the atlas slot), its own
-// ao and tint, with the winding fix. Used by the direct path and by
-// the merge fallback for rects whose faces disagree on the uv layout
-// (mixed blockstate rotations in one group).
-void EmitSingleFace(const VisibleFaceInfo& f,
-                     const TextureAtlas& atlas,
-                     const std::array<float, 3>& normal,
-                     Mesh& out_mesh) {
-  const TextureAtlas::Slot& slot = atlas.slots[f.slot_index];
-  const float tile_u =
-      (slot.u1 - slot.u0) / static_cast<float>(slot.repeats_x);
-  const float tile_v =
-      (slot.v1 - slot.v0) / static_cast<float>(slot.repeats_y);
-  const std::uint32_t base =
-      static_cast<std::uint32_t>(out_mesh.positions.size() / 3);
-  for (int i = 0; i < 4; ++i) {
-    out_mesh.positions.push_back(f.world_corners[i][0]);
-    out_mesh.positions.push_back(f.world_corners[i][1]);
-    out_mesh.positions.push_back(f.world_corners[i][2]);
-    out_mesh.normals.push_back(normal[0]);
-    out_mesh.normals.push_back(normal[1]);
-    out_mesh.normals.push_back(normal[2]);
-    out_mesh.uvs.push_back(slot.u0 + tile_u * f.uvs[i][0]);
-    out_mesh.uvs.push_back(slot.v0 + tile_v * f.uvs[i][1]);
-    out_mesh.ao.push_back(f.ao[i]);
-    out_mesh.tints.push_back(f.tint_slot);
-  }
-  PushQuadIndices(out_mesh, base);
-}
-
-// Outward normal for a face record. Faces with a direction (cull_face
-// 1..6) use the axis normal; rotated element faces (cull_face 0) have
-// no axis, so their normal comes from the corner winding -- the same
-// (c2-c0)x(c1-c0) that PushQuadIndices' flipped triangles make
-// front-facing.
-[[nodiscard]] std::array<float, 3> FaceRecordNormalImpl(
-    const VisibleFaceInfo& f) {
-  if (f.cull_face >= 1 && f.cull_face <= 6) {
-    return NormalForCullFace(f.cull_face);
-  }
-  const auto& c = f.world_corners;
-  const float ax = c[2][0] - c[0][0], ay = c[2][1] - c[0][1],
-             az = c[2][2] - c[0][2];
-  const float bx = c[1][0] - c[0][0], by = c[1][1] - c[0][1],
-             bz = c[1][2] - c[0][2];
-  float nx = ay * bz - az * by;
-  float ny = az * bx - ax * bz;
-  float nz = ax * by - ay * bx;
-  const float len = std::sqrt(nx * nx + ny * ny + nz * nz);
-  if (len < 1e-9f) return {0.0f, 1.0f, 0.0f};
-  return {nx / len, ny / len, nz / len};
 }
 
 // Whether a face exactly covers its block cell on the merge grid:
@@ -245,32 +237,32 @@ void EmitSingleFace(const VisibleFaceInfo& f,
 // rebuilt as full-cell quads and same-cell coplanar siblings would
 // overwrite each other in the single-pointer grid cell. Faces of
 // rotated elements (cull_face 0) have no grid direction either.
-[[nodiscard]] bool IsUnitCellFace(const VisibleFaceInfo& f) {
-  const std::uint8_t cf = f.cull_face;
-  if (cf < 1 || cf > 6) return false;
-  const auto [a1, a2] = InPlaneAxes(cf);
-  const float b1 = static_cast<float>((&f.block_pos.x)[a1]);
-  const float b2 = static_cast<float>((&f.block_pos.x)[a2]);
-  float lo1 = f.world_corners[0][a1], hi1 = lo1;
-  float lo2 = f.world_corners[0][a2], hi2 = lo2;
-  for (const auto& c : f.world_corners) {
+[[nodiscard]] bool IsUnitCellFace(std::uint8_t cull_face,
+                                  const FaceGeom& g) {
+  if (cull_face < 1 || cull_face > 6) return false;
+  const auto [a1, a2] = InPlaneAxes(cull_face);
+  float lo1 = g.corners[0][a1], hi1 = lo1;
+  float lo2 = g.corners[0][a2], hi2 = lo2;
+  for (const auto& c : g.corners) {
     lo1 = std::min(lo1, c[a1]);
     hi1 = std::max(hi1, c[a1]);
     lo2 = std::min(lo2, c[a2]);
     hi2 = std::max(hi2, c[a2]);
   }
   constexpr float kEps = 1e-4f;
-  return lo1 <= b1 + kEps && hi1 >= b1 + 1.0f - kEps &&
-         lo2 <= b2 + kEps && hi2 >= b2 + 1.0f - kEps;
+  return hi1 - lo1 >= 1.0f - 2 * kEps && hi2 - lo2 >= 1.0f - 2 * kEps;
 }
 
 // Greedy merge for one group of coplanar faces.
-void MergeGroup(const std::vector<const VisibleFaceInfo*>& group_faces,
+void MergeGroup(const std::vector<const CollectedFace*>& group_faces,
+                const std::vector<ResolvedModel>& palette_models,
                 const TextureAtlas& atlas,
-                Mesh& out_mesh) {
+                MeshAppender& out) {
   if (group_faces.empty()) return;
 
-  const std::uint8_t cf = group_faces[0]->cull_face;
+  const std::uint8_t cf = palette_models[group_faces[0]->palette_index]
+                             .faces[group_faces[0]->face_index]
+                             .CullFace();
   const auto [axis1, axis2] = InPlaneAxes(cf);
   const auto normal = NormalForCullFace(cf);
 
@@ -289,7 +281,7 @@ void MergeGroup(const std::vector<const VisibleFaceInfo*>& group_faces,
   std::int32_t max_a1 = std::numeric_limits<std::int32_t>::min();
   std::int32_t min_a2 = std::numeric_limits<std::int32_t>::max();
   std::int32_t max_a2 = std::numeric_limits<std::int32_t>::min();
-  for (const auto* f : group_faces) {
+  for (const CollectedFace* f : group_faces) {
     const int a1 = (&f->block_pos.x)[axis1];
     const int a2 = (&f->block_pos.x)[axis2];
     min_a1 = std::min(min_a1, static_cast<std::int32_t>(a1));
@@ -297,7 +289,6 @@ void MergeGroup(const std::vector<const VisibleFaceInfo*>& group_faces,
     min_a2 = std::min(min_a2, static_cast<std::int32_t>(a2));
     max_a2 = std::max(max_a2, static_cast<std::int32_t>(a2));
   }
-
   const int grid_w = max_a2 - min_a2 + 1;
   const int grid_h = max_a1 - min_a1 + 1;
   if (grid_w <= 0 || grid_h <= 0) return;
@@ -306,14 +297,18 @@ void MergeGroup(const std::vector<const VisibleFaceInfo*>& group_faces,
   // cell: a second coplanar same-direction unit face of the same cell
   // (duplicate model elements) would silently drop the first, so the
   // extra is emitted verbatim instead.
-  std::vector<const VisibleFaceInfo*> grid(
+  std::vector<const CollectedFace*> grid(
       static_cast<std::size_t>(grid_w) * grid_h, nullptr);
-  for (const auto* f : group_faces) {
+  for (const CollectedFace* f : group_faces) {
     const int a1 = (&f->block_pos.x)[axis1] - min_a1;
     const int a2 = (&f->block_pos.x)[axis2] - min_a2;
     auto& cell = grid[static_cast<std::size_t>(a1) * grid_w + a2];
     if (cell != nullptr) {
-      EmitSingleFace(*f, atlas, FaceRecordNormalImpl(*f), out_mesh);
+      const FaceGeom g = FaceGeometryOf(*f, palette_models);
+      const ModelFace& mf = palette_models[f->palette_index].faces[f->face_index];
+      EmitSingleFaceGeom(g.corners, g.uvs, f->ao, f->slot_index,
+                         mf.TintSlot(), FaceGeomNormal(mf.CullFace(), g),
+                         atlas, out);
       continue;
     }
     cell = f;
@@ -354,25 +349,40 @@ void MergeGroup(const std::vector<const VisibleFaceInfo*>& group_faces,
       // Mark the rectangle's cells as merged.
       for (int y = 0; y < rect_h; ++y) {
         for (int x = 0; x < rect_w; ++x) {
-          merged[static_cast<std::size_t>(row + y) * grid_w + (col + x)] = 1;
+          merged[static_cast<std::size_t>(row + y) * grid_w +
+                 (col + x)] = 1;
         }
       }
 
       // Corner blocks for AO.
-      const VisibleFaceInfo* bl =
+      const CollectedFace* bl =
           grid[static_cast<std::size_t>(row) * grid_w + col];
-      const VisibleFaceInfo* br =
+      const CollectedFace* br =
           grid[static_cast<std::size_t>(row) * grid_w + (col + rect_w - 1)];
-      const VisibleFaceInfo* tr =
+      const CollectedFace* tr =
           grid[static_cast<std::size_t>(row + rect_h - 1) * grid_w +
                (col + rect_w - 1)];
-      const VisibleFaceInfo* tl =
+      const CollectedFace* tl =
           grid[static_cast<std::size_t>(row + rect_h - 1) * grid_w + col];
+
+      // A 1x1 rectangle merges nothing. Emit it exactly as the direct
+      // path would -- its own corners, uv layout and AO -- skipping
+      // the affine map fit, the integer rebase and the AO corner
+      // matching that the multi-cell reconstruction below needs. This
+      // is the dominant case in sparse scenes.
+      const FaceGeom bl_geom = FaceGeometryOf(*bl, palette_models);
+      if (rect_w == 1 && rect_h == 1) {
+        const ModelFace& mf =
+            palette_models[bl->palette_index].faces[bl->face_index];
+        EmitSingleFaceGeom(bl_geom.corners, bl_geom.uvs, bl->ao,
+                           bl->slot_index, mf.TintSlot(), normal, atlas, out);
+        continue;
+      }
 
       // Reconstruct quad corners from the rect geometry. Assumes unit
       // cube faces; corner order matches BuildCubeFace's winding.
       const int na = NormalAxis(cf);
-      const float na_coord = bl->world_corners[0][na];
+      const float na_coord = bl_geom.corners[0][na];
       const float a1_min = static_cast<float>(min_a1 + row);
       const float a1_max = static_cast<float>(min_a1 + row + rect_h);
       const float a2_min = static_cast<float>(min_a2 + col);
@@ -411,15 +421,16 @@ void MergeGroup(const std::vector<const VisibleFaceInfo*>& group_faces,
       // cull face silently rotated merged textures of rotated models
       // (a lying barrel's side read upright instead of along the
       // barrel axis).
-      const FaceUvMap rep = FitFaceUvMap(*bl, axis1, axis2);
+      const FaceUvMap rep = FitFaceUvMap(bl_geom, axis1, axis2);
       bool layout_ok = rep.ok;
       for (int y = 0; y < rect_h && layout_ok; ++y) {
         for (int x = 0; x < rect_w && layout_ok; ++x) {
-          const VisibleFaceInfo* f = grid[static_cast<std::size_t>(row + y) *
-                                          grid_w +
-                                      (col + x)];
+          const CollectedFace* f = grid[static_cast<std::size_t>(row + y) *
+                                            grid_w +
+                                        (col + x)];
           if (f == bl) continue;
-          const FaceUvMap fm = FitFaceUvMap(*f, axis1, axis2);
+          const FaceUvMap fm =
+              FitFaceUvMap(FaceGeometryOf(*f, palette_models), axis1, axis2);
           layout_ok = fm.ok && std::abs(fm.au - rep.au) < 1e-4f &&
                       std::abs(fm.bu - rep.bu) < 1e-4f &&
                       std::abs(fm.av - rep.av) < 1e-4f &&
@@ -433,9 +444,13 @@ void MergeGroup(const std::vector<const VisibleFaceInfo*>& group_faces,
         // own carried uvs.
         for (int y = 0; y < rect_h; ++y) {
           for (int x = 0; x < rect_w; ++x) {
-            EmitSingleFace(*grid[static_cast<std::size_t>(row + y) * grid_w +
-                                     (col + x)],
-                           atlas, normal, out_mesh);
+            const CollectedFace* f =
+                grid[static_cast<std::size_t>(row + y) * grid_w + (col + x)];
+            const FaceGeom g = FaceGeometryOf(*f, palette_models);
+            const ModelFace& mf =
+                palette_models[f->palette_index].faces[f->face_index];
+            EmitSingleFaceGeom(g.corners, g.uvs, f->ao, f->slot_index,
+                               mf.TintSlot(), normal, atlas, out);
           }
         }
         continue;
@@ -468,113 +483,151 @@ void MergeGroup(const std::vector<const VisibleFaceInfo*>& group_faces,
       }
 
       // AO source per corner, in the same order.
-      const VisibleFaceInfo* src[4] = {
+      const CollectedFace* src[4] = {
           bl, mode_a ? br : tl, tr, mode_a ? tl : br};
       std::array<std::uint8_t, 4> ao{};
-      for (int i = 0; i < 4; ++i) {
-        ao[i] = 255;
-        for (int k = 0; k < 4; ++k) {
-          if (std::abs(src[i]->world_corners[k][axis1] - corners[i][axis1]) <
-                  0.001f &&
-              std::abs(src[i]->world_corners[k][axis2] - corners[i][axis2]) <
-                  0.001f) {
-            ao[i] = src[i]->ao[k];
-            break;
+      {
+        const FaceGeom src_geom[4] = {FaceGeometryOf(*src[0], palette_models),
+                                      FaceGeometryOf(*src[1], palette_models),
+                                      FaceGeometryOf(*src[2], palette_models),
+                                      FaceGeometryOf(*src[3], palette_models)};
+        for (int i = 0; i < 4; ++i) {
+          ao[i] = 255;
+          for (int k = 0; k < 4; ++k) {
+            if (std::abs(src_geom[i].corners[k][axis1] - corners[i][axis1]) <
+                    0.001f &&
+                std::abs(src_geom[i].corners[k][axis2] - corners[i][axis2]) <
+                    0.001f) {
+              ao[i] = src[i]->ao[k];
+              break;
+            }
           }
         }
       }
 
-      const std::uint32_t base =
-          static_cast<std::uint32_t>(out_mesh.positions.size() / 3);
       const TextureAtlas::Slot& slot = atlas.slots[bl->slot_index];
       const float tile_u =
           (slot.u1 - slot.u0) / static_cast<float>(slot.repeats_x);
       const float tile_v =
           (slot.v1 - slot.v0) / static_cast<float>(slot.repeats_y);
-
+      float uv8[8];
       for (int i = 0; i < 4; ++i) {
-        out_mesh.positions.push_back(corners[i][0]);
-        out_mesh.positions.push_back(corners[i][1]);
-        out_mesh.positions.push_back(corners[i][2]);
-        out_mesh.normals.push_back(normal[0]);
-        out_mesh.normals.push_back(normal[1]);
-        out_mesh.normals.push_back(normal[2]);
-        const float u = slot.u0 + tile_u * uvs[i][0];
-        const float v = slot.v0 + tile_v * uvs[i][1];
-        out_mesh.uvs.push_back(u);
-        out_mesh.uvs.push_back(v);
-        out_mesh.ao.push_back(ao[i]);
-        out_mesh.tints.push_back(bl->tint_slot);
+        uv8[i * 2 + 0] = slot.u0 + tile_u * uvs[i][0];
+        uv8[i * 2 + 1] = slot.v0 + tile_v * uvs[i][1];
       }
-      PushQuadIndices(out_mesh, base);
+      out.AppendQuad(&corners[0][0], normal.data(), uv8, ao.data(),
+                     palette_models[bl->palette_index]
+                         .faces[bl->face_index]
+                         .TintSlot());
     }
   }
 }
 
 }  // namespace
 
+// Axis normals indexed by cull_face (1..6): the emit hot path pays a
+// table load instead of a switch per face.
+constexpr std::array<std::array<float, 3>, 7> kCullFaceNormals = {{
+    {{0.0f, 0.0f, 0.0f}},
+    {{1.0f, 0.0f, 0.0f}},   // +X
+    {{-1.0f, 0.0f, 0.0f}},  // -X
+    {{0.0f, 1.0f, 0.0f}},   // +Y
+    {{0.0f, -1.0f, 0.0f}},  // -Y
+    {{0.0f, 0.0f, 1.0f}},   // +Z
+    {{0.0f, 0.0f, -1.0f}},  // -Z
+}};
+
 void EmitFaceDirectly(const VisibleFaceInfo& face,
                       const TextureAtlas& atlas,
-                      Mesh& out_mesh) {
-  EmitSingleFace(face, atlas, FaceRecordNormalImpl(face), out_mesh);
+                      MeshAppender& out) {
+  const TextureAtlas::Slot& slot = atlas.slots[face.slot_index];
+  const float tile_u =
+      (slot.u1 - slot.u0) / static_cast<float>(slot.repeats_x);
+  const float tile_v =
+      (slot.v1 - slot.v0) / static_cast<float>(slot.repeats_y);
+  float uv8[8];
+  for (int i = 0; i < 4; ++i) {
+    uv8[i * 2 + 0] = slot.u0 + tile_u * face.uvs[i][0];
+    uv8[i * 2 + 1] = slot.v0 + tile_v * face.uvs[i][1];
+  }
+  // Directed faces (the overwhelming majority) read their normal from
+  // the table; only rotated-element faces (cull_face 0) derive it
+  // from the corner winding.
+  std::array<float, 3> winding{};
+  const float* normal3;
+  if (face.cull_face >= 1 && face.cull_face <= 6) {
+    normal3 = kCullFaceNormals[face.cull_face].data();
+  } else {
+    winding = FaceRecordNormal(face);
+    normal3 = winding.data();
+  }
+  out.AppendQuad(&face.world_corners[0][0], normal3, uv8, face.ao.data(),
+                 face.tint_slot);
 }
 
 std::array<float, 3> FaceRecordNormal(const VisibleFaceInfo& face) {
-  return FaceRecordNormalImpl(face);
-}
-
-void SpliceFluidFacesInPlace(std::vector<VisibleFaceInfo>& faces,
-                             std::vector<VisibleFaceInfo>& out_fluid) {
-  std::size_t write = 0;
-  for (std::size_t read = 0; read < faces.size(); ++read) {
-    if (faces[read].is_fluid) {
-      out_fluid.push_back(std::move(faces[read]));
-    } else {
-      if (write != read) faces[write] = std::move(faces[read]);
-      ++write;
-    }
+  if (face.cull_face >= 1 && face.cull_face <= 6) {
+    return kCullFaceNormals[face.cull_face];
   }
-  faces.resize(write);
+  const auto& c = face.world_corners;
+  const float ax = c[2][0] - c[0][0], ay = c[2][1] - c[0][1],
+             az = c[2][2] - c[0][2];
+  const float bx = c[1][0] - c[0][0], by = c[1][1] - c[0][1],
+             bz = c[1][2] - c[0][2];
+  float nx = ay * bz - az * by;
+  float ny = az * bx - ax * bz;
+  float nz = ax * by - ay * bx;
+  const float len = std::sqrt(nx * nx + ny * ny + nz * nz);
+  if (len < 1e-9f) return {0.0f, 1.0f, 0.0f};
+  return {nx / len, ny / len, nz / len};
 }
 
 void EmitFacesDirectly(const std::vector<VisibleFaceInfo>& faces,
                        const TextureAtlas& atlas,
                        Mesh& out_mesh) {
-  for (const auto& f : faces) {
-    EmitSingleFace(f, atlas, FaceRecordNormalImpl(f), out_mesh);
+  MeshAppender out = MeshAppender::Attach(out_mesh);
+  for (const VisibleFaceInfo& f : faces) {
+    EmitFaceDirectly(f, atlas, out);
   }
+  out.Finish();
 }
 
-void MergeAndEmitFaces(const std::vector<VisibleFaceInfo>& faces,
+void MergeAndEmitFaces(const std::vector<CollectedFace>& faces,
+                       const std::vector<ResolvedModel>& palette_models,
                        const TextureAtlas& atlas,
                        Mesh& out_mesh) {
   if (faces.empty()) return;
 
-  absl::flat_hash_map<GroupKey,
-                      std::vector<const VisibleFaceInfo*>,
-                      GroupKeyHash>
+  MeshAppender out_app = MeshAppender::Attach(out_mesh);
+  absl::flat_hash_map<std::uint64_t, std::vector<const CollectedFace*>>
       groups;
-  for (const auto& f : faces) {
-    if (!IsUnitCellFace(f)) {
-      EmitSingleFace(f, atlas, FaceRecordNormalImpl(f), out_mesh);
+  groups.reserve(faces.size() / 8 + 1);
+  for (const CollectedFace& f : faces) {
+    const ModelFace& mf = palette_models[f.palette_index].faces[f.face_index];
+    const FaceGeom g = FaceGeometryOf(f, palette_models);
+    if (!IsUnitCellFace(mf.CullFace(), g)) {
+      EmitSingleFaceGeom(g.corners, g.uvs, f.ao, f.slot_index, mf.TintSlot(),
+                         FaceGeomNormal(mf.CullFace(), g), atlas, out_app);
       continue;
     }
-    const int na = NormalAxis(f.cull_face);
+    const int na = NormalAxis(mf.CullFace());
     // Group by the face's ACTUAL plane, quantized to 1/256 blocks:
     // coplanar faces share a group, and faces at different heights in
     // one block column stay apart. The previous block-index key put a
     // half-slab's top (y+0.5) and a neighbouring full block's top
     // (y+1.0) into the same group, mangling both.
     const std::int32_t plane_pos = static_cast<std::int32_t>(
-        std::lround(f.world_corners[0][na] * 256.0f));
-    GroupKey key{
-        f.cull_face, plane_pos, f.slot_index, f.tint_slot, f.is_transparent};
+        std::lround(g.corners[0][na] * 256.0f));
+    const std::uint64_t key =
+        PackGroupKey(mf.CullFace(), plane_pos, f.slot_index, mf.TintSlot(),
+                     mf.IsTransparent());
     groups[key].push_back(&f);
   }
 
   for (const auto& [key, group_faces] : groups) {
-    MergeGroup(group_faces, atlas, out_mesh);
+    MergeGroup(group_faces, palette_models, atlas, out_app);
   }
+  out_app.Finish();
 }
 
 }  // namespace fschema::geometry::internal

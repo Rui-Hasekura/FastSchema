@@ -86,7 +86,7 @@ struct GeometryFixture {
              R"(   "east":  {"texture": "#all", "uv": [0,0,16,16]},)"
              R"(   "west":  {"texture": "#all", "uv": [0,0,16,16]},)"
              R"(   "up":    {"texture": "#all", "uv": [0,0,16,16]},)"
-             R"(   "down":  {"texture": "#all", "uv": [0,0,16,16]}}"
+             R"(   "down":  {"texture": "#all", "uv": [0,0,16,16]})"
             R"( }}]})");
 
     std::vector<std::uint8_t> rgba(16 * 16 * 4);
