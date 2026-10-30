@@ -521,6 +521,7 @@ if(FASTSCHEMA_BUILD_GEOMETRY)
         fschema/geometry/internal/chunk_dispatch.h
         fschema/geometry/internal/cull.h
         fschema/geometry/internal/merge.h
+        fschema/geometry/internal/mesh_append.h
         fschema/geometry/internal/png_decode.h
         fschema/geometry/internal/png_encode.h
         fschema/geometry/internal/resolver.h
